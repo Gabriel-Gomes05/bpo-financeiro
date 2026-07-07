@@ -27,14 +27,17 @@ _tentativas_login: dict[str, list[float]] = {}
 # ---------------------------------------------------------------------------
 
 def hash_senha(senha: str) -> str:
+    """Gera um hash bcrypt irreversível para armazenamento da senha."""
     return pwd_context.hash(senha)
 
 
 def verificar_senha(senha_plana: str, senha_hash: str) -> bool:
+    """Compara uma senha informada com o hash bcrypt persistido."""
     return pwd_context.verify(senha_plana, senha_hash)
 
 
 def criar_token(data: dict) -> str:
+    """Cria um JWT assinado com expiração configurada para a sessão web."""
     payload = data.copy()
     expira = datetime.now(timezone.utc) + timedelta(minutes=EXPIRE_MINUTES)
     payload.update({"exp": expira})
@@ -42,6 +45,7 @@ def criar_token(data: dict) -> str:
 
 
 def decodificar_token(token: str) -> Optional[dict]:
+    """Valida assinatura e expiração do JWT, retornando `None` se inválido."""
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
@@ -49,6 +53,7 @@ def decodificar_token(token: str) -> Optional[dict]:
 
 
 def login_bloqueado(chave: str) -> bool:
+    """Informa se IP/e-mail excedeu o limite de tentativas na janela atual."""
     agora = time()
     tentativas = [
         ts for ts in _tentativas_login.get(chave, [])
@@ -59,6 +64,7 @@ def login_bloqueado(chave: str) -> bool:
 
 
 def registrar_tentativa_login(chave: str) -> None:
+    """Registra uma falha de autenticação para controle de força bruta."""
     agora = time()
     tentativas = [
         ts for ts in _tentativas_login.get(chave, [])
@@ -69,6 +75,7 @@ def registrar_tentativa_login(chave: str) -> None:
 
 
 def limpar_tentativas_login(chave: str) -> None:
+    """Remove falhas acumuladas após uma autenticação bem-sucedida."""
     _tentativas_login.pop(chave, None)
 
 
@@ -77,6 +84,7 @@ def limpar_tentativas_login(chave: str) -> None:
 # ---------------------------------------------------------------------------
 
 def get_token_do_cookie(request: Request) -> Optional[str]:
+    """Obtém o token JWT do cookie HttpOnly da requisição."""
     return request.cookies.get("access_token")
 
 
@@ -124,6 +132,7 @@ def get_usuario_atual(
 
 
 def requer_coordenador(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario:
+    """Autoriza somente coordenadores e responde 403 para os demais perfis."""
     """Garante que apenas coordenadores acessem a rota."""
     if usuario.perfil != PerfilUsuario.coordenador:
         raise HTTPException(status_code=403, detail="Acesso restrito ao coordenador.")
@@ -131,6 +140,7 @@ def requer_coordenador(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario
 
 
 def tem_acesso_geral(usuario: Usuario) -> bool:
+    """Informa se o perfil pode operar todos os clientes da organização."""
     return usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor)
 
 

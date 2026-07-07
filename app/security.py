@@ -28,6 +28,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     )
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """Valida a origem de mutações e aplica headers defensivos à resposta."""
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not _origem_permitida(request):
                 return PlainTextResponse("Origem da requisicao nao permitida.", status_code=403)
@@ -55,6 +56,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def _origem_permitida(request: Request) -> bool:
+    """Compara Origin/Referer com a lista explícita de origens autorizadas."""
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
 
@@ -68,6 +70,7 @@ def _origem_permitida(request: Request) -> bool:
 
 
 def _normalizar_origem(valor: str) -> str:
+    """Reduz uma URL a esquema, hostname e porta para comparação segura."""
     parsed = urlparse(valor)
     scheme = parsed.scheme
     hostname = parsed.hostname or ""

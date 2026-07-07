@@ -44,6 +44,7 @@ EMAIL_FROM: str = os.getenv("EMAIL_FROM", "FLIC <noreply@bpo.com>")
 
 
 def _validar_configuracao_sensivel() -> None:
+    """Interrompe o startup quando segredos ou controles críticos são inseguros."""
     exemplos = {
         "GERE-COM-openssl-rand-hex-32",
         "troque-isso-em-producao-use-uma-chave-longa-e-aleatoria",

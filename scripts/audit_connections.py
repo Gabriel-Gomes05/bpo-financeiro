@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -16,6 +17,20 @@ from app.models import ClienteBPO, PerfilUsuario, Usuario  # registra todos os m
 
 erros: list[str] = []
 insp = inspect(engine)
+
+
+def aguardar_aplicacao(base_url: str, timeout_seconds: int = 30) -> None:
+    """Aguarda o Uvicorn aceitar conexões antes das verificações de rota."""
+    limite = time.monotonic() + timeout_seconds
+    while time.monotonic() < limite:
+        try:
+            resposta = httpx.get(f"{base_url}/login", timeout=2)
+            if resposta.status_code == 200:
+                return
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError(f"Aplicação não respondeu em {base_url} após {timeout_seconds}s.")
 
 with engine.connect() as conn:
     assert conn.execute(text("SELECT 1")).scalar_one() == 1
@@ -83,7 +98,9 @@ rotas = (
 )
 
 cookies = {"access_token": token, "cliente_ativo": str(cliente_id)}
-with httpx.Client(base_url="http://127.0.0.1:8000", cookies=cookies, timeout=30) as client:
+base_url = "http://127.0.0.1:8000"
+aguardar_aplicacao(base_url)
+with httpx.Client(base_url=base_url, cookies=cookies, timeout=30) as client:
     for rota in rotas:
         resposta = client.get(rota, params={"cliente_id": cliente_id}, follow_redirects=False)
         if resposta.status_code not in (200, 302, 303):

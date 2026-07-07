@@ -1,0 +1,18 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["uploads", "backups"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "E712"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+

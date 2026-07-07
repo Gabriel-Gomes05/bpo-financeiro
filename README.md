@@ -1,187 +1,190 @@
-# FLIC
+# FLIC — Gestão financeira para BPO
 
-Sistema web interno para gestão financeira de clínicas e consultórios médicos.
+Aplicação web interna para operação financeira de clínicas e consultórios: receitas,
+contas a pagar, centros de custo, rateios, conciliação bancária e de cartões, orçamento,
+DRE, rotinas e fechamento.
 
----
+O projeto usa FastAPI, SQLAlchemy, PostgreSQL, Jinja2 e Docker. Foi estruturado como um
+monólito simples para facilitar manutenção, implantação e entendimento por desenvolvedores
+em início de carreira.
+
+## Estado atual
+
+- Banco PostgreSQL 15 com 24 tabelas e separação por cliente.
+- Campos pessoais e bancários cifrados na aplicação.
+- Autenticação por JWT em cookie `HttpOnly`.
+- Perfis de coordenador, editor, funcionário, secretária e médico.
+- Auditorias automáticas de banco, ORM, relacionamentos, rotas e criptografia.
+- Aplicação local em `http://localhost:8888`.
+
+## Documentação
+
+| Documento | Quando consultar |
+|---|---|
+| [Arquitetura](docs/ARQUITETURA.md) | Para entender módulos, banco e fluxo das requisições. |
+| [Guia de manutenção](docs/GUIA_MANUTENCAO.md) | Antes de criar ou alterar funcionalidades. |
+| [Referência de funções](docs/REFERENCIA_FUNCOES.md) | Para localizar e entender cada função Python. |
+| [Segurança e dados](docs/SEGURANCA_E_DADOS.md) | Ao trabalhar com dados pessoais, chaves e produção. |
+| [Como contribuir](CONTRIBUTING.md) | Padrões, validação e mensagens de commit. |
+| [Manual do usuário](docs/Manual_do_Usuario_FINLUZ.pdf) | Uso operacional das telas. |
 
 ## Pré-requisitos
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado e rodando
-- Windows, Mac ou Linux
+- Docker Desktop instalado e iniciado.
+- Git para versionamento.
+- Python 3.11 apenas para executar ferramentas fora do Docker, opcional.
 
-Só isso. Não precisa instalar Python, PostgreSQL nem nada mais.
+Não é necessário instalar PostgreSQL localmente.
 
----
+## Primeira execução
 
-## Como subir o sistema pela primeira vez
+No PowerShell:
 
-```bash
-# 1. Entre na pasta do projeto
-cd bpo-financeiro
-
-# 2. Copie o arquivo de configuração
-cp .env.example .env
-
-# 3. Suba os containers (banco + sistema)
-docker-compose up --build
+```powershell
+Copy-Item .env.example .env
+python scripts/setup_encryption_key.py
 ```
 
-Aguarde aparecer a mensagem:
-```
-FLIC iniciado. Acesse: http://localhost:8888
-```
+Edite o `.env` e substitua os placeholders de `DATABASE_URL`, `DB_PASSWORD` e
+`SECRET_KEY`. Nunca reutilize a mesma chave para JWT e criptografia de campos.
 
----
+Depois execute:
 
-## Como acessar
-
-Abra o navegador em: **http://localhost:8888**
-
----
-
-## Como criar o primeiro usuário coordenador (seed)
-
-Com o sistema rodando, abra outro terminal:
-
-```bash
-docker-compose exec web python seed.py
+```powershell
+docker compose up -d --build
+curl.exe --max-time 10 -o NUL -w "HTTP=%{http_code}" http://localhost:8888/login
 ```
 
-Isso cria 4 usuários e 9 clientes de exemplo. Credenciais criadas:
+O resultado esperado é `HTTP=200`. Acesse:
 
-| E-mail               | Senha    | Perfil       |
-|----------------------|----------|--------------|
-| renato@bpo.com       | admin123 | Coordenador  |
-| ana@bpo.com          | 123456   | Funcionário  |
-| marcos@bpo.com       | 123456   | Funcionário  |
-| julia@bpo.com        | 123456   | Funcionário  |
+http://localhost:8888/login
 
-> **Atenção:** O seed apaga todos os dados existentes antes de recriar. Use só em ambiente de teste.
+## Variáveis de ambiente
 
----
+| Variável | Finalidade |
+|---|---|
+| `DATABASE_URL` | URL SQLAlchemy usada pela aplicação. |
+| `DB_PASSWORD` | Senha usada na criação do PostgreSQL pelo Compose. |
+| `SECRET_KEY` | Assinatura dos tokens JWT. Mínimo de 32 caracteres. |
+| `FIELD_ENCRYPTION_KEY` | Chave Base64 de 64 bytes para os campos cifrados. |
+| `APP_ENV` | `development` ou `production`. |
+| `DB_SSL_MODE` | Modo TLS do PostgreSQL; produção exige modo seguro. |
+| `HTTPS_ONLY` | Obriga cookies seguros em produção. |
+| `ALLOWED_ORIGINS` | Origens web autorizadas, separadas por vírgula. |
 
-## Como fazer backup do banco
+Veja todos os valores disponíveis em [.env.example](.env.example). O arquivo `.env` real é
+ignorado pelo Git.
 
-```bash
-# Salva um arquivo .sql com todos os dados
-docker-compose exec db pg_dump -U bpo bpo_financeiro > backup_$(date +%Y%m%d).sql
+## Dados de demonstração
+
+Com os contêineres em execução:
+
+```powershell
+docker compose exec -T web python seed.py
 ```
 
-Para restaurar:
+> Atenção: `seed.py` é destrutivo e apaga os dados existentes. Use apenas em desenvolvimento.
 
-```bash
-docker-compose exec -T db psql -U bpo bpo_financeiro < backup_20240101.sql
+Para uma base maior de testes, revise primeiro `app/seed_massivo.py`. Nunca execute seeds em
+produção.
+
+## Comandos do dia a dia
+
+```powershell
+# Estado dos serviços
+docker compose ps
+
+# Logs da aplicação
+docker compose logs --tail 100 web
+
+# Reiniciar somente a aplicação
+docker compose restart web
+
+# Recriar após mudar dependências ou Dockerfile
+docker compose up -d --build --force-recreate web
+
+# Parar sem excluir o volume do banco
+docker compose down
 ```
 
----
+Não use `docker compose down -v` sem um backup validado: `-v` remove o volume do PostgreSQL.
 
-## Como adicionar um novo cliente
+## Validação antes de publicar
 
-1. Faça login com uma conta de coordenador
-2. Vá em **Admin → Equipe**
-3. Clique em **Novo cliente BPO**
-4. Preencha nome, especialidade e atribua um funcionário responsável
-5. O cliente aparecerá nos painéis do funcionário atribuído
+```powershell
+python -m compileall app scripts
+python scripts/generate_function_reference.py --check
 
----
+docker compose exec -T web python scripts/audit_connections.py
+docker compose exec -T web python scripts/verify_field_encryption.py
 
-## Como atualizar o sistema após mudança de código
-
-Se você alterou algum arquivo Python ou HTML:
-
-```bash
-# Para e reinicia só o container web (banco continua rodando)
-docker-compose restart web
+curl.exe --max-time 10 -o NUL -w "HTTP=%{http_code}" http://localhost:8888/login
 ```
 
-Se adicionou um novo pacote ao `requirements.txt`:
+O auditor de conexões verifica tabelas, chaves estrangeiras, models, relacionamentos ORM e
+as principais telas autenticadas. O verificador de criptografia confirma que não restou
+texto legado nos campos protegidos.
 
-```bash
-# Rebuilda a imagem do zero
-docker-compose up --build
+## Backup seguro
+
+Crie o dump dentro do contêiner e copie para a pasta ignorada pelo Git:
+
+```powershell
+New-Item -ItemType Directory -Force backups | Out-Null
+docker compose exec -T db pg_dump -U bpo -d bpo_financeiro -Fc -f /tmp/flic.dump
+docker cp bpo-financeiro-db-1:/tmp/flic.dump backups/flic.dump
+python scripts/backup_crypto.py encrypt backups/flic.dump backups/flic.dump.enc --delete-source
 ```
 
----
+Para preparar uma restauração:
 
-## Estrutura de pastas
-
+```powershell
+python scripts/backup_crypto.py decrypt backups/flic.dump.enc backups/flic.restore.dump
 ```
+
+Depois valide o arquivo em um banco isolado. Não teste restauração sobre a base ativa.
+
+## Estrutura resumida
+
+```text
 bpo-financeiro/
-│
-├── app/                        ← Todo o código Python
-│   ├── main.py                 ← Ponto de entrada — registra routers e middleware
-│   ├── database.py             ← Conexão com o PostgreSQL (SQLAlchemy)
-│   ├── models.py               ← Todas as tabelas do banco (ORM)
-│   ├── auth.py                 ← Login, JWT, proteção de rotas
-│   │
-│   ├── routers/                ← Uma rota por funcionalidade
-│   │   ├── auth.py             ← GET/POST /login e POST /logout
-│   │   ├── dashboard.py        ← GET / (visão geral)
-│   │   ├── lancamentos.py      ← Atendimentos (contas a receber)
-│   │   ├── conciliacao.py      ← Upload de extratos + matching automático
-│   │   ├── contas_pagar.py     ← Despesas e vencimentos
-│   │   ├── fechamento.py       ← Fechamento diário por cliente
-│   │   ├── rotinas.py          ← Tarefas diárias com checkbox (HTMX)
-│   │   └── admin.py            ← Usuários e clientes (só coordenador)
-│   │
-│   ├── services/               ← Lógica de negócio separada dos routers
-│   │   ├── conciliacao_service.py  ← Lê Excel/CSV e pareia com lançamentos
-│   │   └── fechamento_service.py   ← Calcula totais e gera texto para cliente
-│   │
-│   └── templates/              ← HTML com Jinja2
-│       ├── base.html           ← Layout base (sidebar + topbar)
-│       ├── login.html
-│       ├── dashboard.html
-│       ├── lancamentos.html
-│       ├── conciliacao.html
-│       ├── contas_pagar.html
-│       ├── fechamento.html
-│       ├── rotinas.html
-│       └── admin/
-│           └── equipe.html
-│
-├── static/
-│   └── app.js                  ← JS mínimo (fechamento de alertas)
-│
-├── uploads/                    ← Arquivos enviados (documentos, extratos)
-├── seed.py                     ← Popula o banco com dados de exemplo
-├── docker-compose.yml          ← Define os serviços web + db
-├── Dockerfile                  ← Imagem do sistema
-├── requirements.txt            ← Pacotes Python
-└── .env                        ← Configurações sensíveis (não commitar)
+|- app/
+|  |- main.py              # inicialização e routers
+|  |- config.py            # configurações e validações
+|  |- database.py          # conexão, sessão e schema
+|  |- models.py            # tabelas e relacionamentos
+|  |- field_encryption.py  # criptografia de campos sensíveis
+|  |- routers/             # endpoints por funcionalidade
+|  |- services/            # regras reutilizáveis
+|  `- templates/           # telas Jinja2
+|- docs/                   # arquitetura, segurança e manuais
+|- scripts/                # auditoria, chaves, backup e documentação
+|- static/                 # JavaScript e imagens
+|- docker-compose.yml      # aplicação e PostgreSQL
+|- Dockerfile
+`- requirements.txt
 ```
 
----
+## Fluxos principais
 
-## Fluxo de trabalho do dia a dia
+1. Cadastre usuários, clientes, contas bancárias e centros de custo.
+2. Lance receitas e despesas, com rateio quando necessário.
+3. Importe movimentos bancários e vendas de cartão.
+4. Revise e confirme as sugestões de conciliação.
+5. Acompanhe orçamento, DRE, rotinas e fechamento.
 
-1. **Lançar atendimentos** → `/lancamentos` — registra consultas e gera parcelas automaticamente
-2. **Conciliar** → `/conciliacao` — faz upload do extrato da maquininha e pareia com os lançamentos
-3. **Contas a pagar** → `/contas-pagar` — verifica vencimentos e marca como pago
-4. **Rotinas** → `/rotinas` — marca as tarefas do dia como concluídas
-5. **Fechamento** → `/fechamento` — calcula o dia e gera o texto para enviar ao cliente
+## Produção
 
----
+Antes de usar dados reais:
 
-## Perfis de acesso
+- configure `APP_ENV=production`, HTTPS e TLS do PostgreSQL;
+- use banco gerenciado e usuário sem privilégios administrativos;
+- armazene chaves em um gerenciador de segredos;
+- configure backup automático cifrado e teste de restauração;
+- mantenha `FIELD_ENCRYPTION_KEY` fora do repositório e com cópia segura;
+- restrinja `ALLOWED_ORIGINS` ao domínio oficial;
+- execute as auditorias em cada publicação.
 
-| Perfil       | O que pode fazer                                                  |
-|--------------|-------------------------------------------------------------------|
-| Coordenador  | Tudo + gerenciar usuários e clientes em `/admin/equipe`           |
-| Funcionário  | Vê e opera apenas os clientes atribuídos a ele                    |
+Este repositório é privado. Ainda assim, trate qualquer commit como potencialmente público:
+segredos e dados de clientes nunca devem entrar no histórico Git.
 
----
-
-## Dúvidas frequentes
-
-**O sistema não abre no navegador**
-→ Verifique se o Docker está rodando: `docker-compose ps`
-
-**Esqueci a senha de um usuário**
-→ Acesse como coordenador → Admin → Equipe → crie um novo usuário (não há recuperação de senha ainda)
-
-**Quero acessar de outra máquina na rede**
-→ Troque `localhost` pelo IP da máquina onde o Docker está rodando
-
-**Como parar o sistema**
-→ `docker-compose down` (banco é preservado no volume `postgres_data`)

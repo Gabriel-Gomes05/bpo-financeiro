@@ -67,11 +67,14 @@ SENSITIVE_FIELDS = (
 
 
 class FieldEncryptionError(RuntimeError):
+    """Indica chave inválida, formato desconhecido ou falha de integridade."""
+
     pass
 
 
 @lru_cache(maxsize=1)
 def _key() -> bytes:
+    """Carrega e valida a chave de 64 bytes, mantendo-a em cache no processo."""
     from app.config import FIELD_ENCRYPTION_KEY
     encoded = FIELD_ENCRYPTION_KEY
     if not encoded:
@@ -88,10 +91,12 @@ def _key() -> bytes:
 
 
 def is_encrypted(value: object) -> bool:
+    """Informa se o valor usa o envelope versionado de criptografia do projeto."""
     return isinstance(value, str) and value.startswith(PREFIX)
 
 
 def encrypt_value(value: object, context: str, deterministic: bool = False) -> str | None:
+    """Cifra um valor com contexto autenticado e retorna texto seguro para persistência."""
     if value is None:
         return None
     text = str(value)
@@ -111,6 +116,7 @@ def encrypt_value(value: object, context: str, deterministic: bool = False) -> s
 
 
 def decrypt_value(value: object, context: str) -> str | None:
+    """Valida e decifra um valor; aceita plaintext somente para migração de legado."""
     if value is None:
         return None
     text = str(value)
@@ -137,12 +143,15 @@ class EncryptedText(TypeDecorator):
     cache_ok = True
 
     def __init__(self, context: str, *, deterministic: bool = False, **kwargs):
+        """Configura o contexto da coluna e se ela precisa permitir comparação exata."""
         super().__init__(**kwargs)
         self.context = context
         self.deterministic = deterministic
 
     def process_bind_param(self, value, dialect):
+        """Cifra valores automaticamente antes de enviá-los ao banco."""
         return encrypt_value(value, self.context, self.deterministic)
 
     def process_result_value(self, value, dialect):
+        """Decifra valores automaticamente ao materializar um objeto ORM."""
         return decrypt_value(value, self.context)
