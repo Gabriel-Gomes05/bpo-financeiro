@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Funcionários - FLIC{% endblock %}
+{% block page_title %}Cadastro de Funcionários{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if request.query_params.get('sucesso') == 'editado' %}
+  <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Funcionário atualizado com sucesso.</div>
+  {% elif request.query_params.get('sucesso') == 'excluido' %}
+  <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Funcionário excluído com sucesso.</div>
+  {% endif %}
+  {% if request.query_params.get('erro') %}
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    {% set erro = request.query_params.get('erro') %}
+    {% if erro == 'email_duplicado' %}Este e-mail já está cadastrado.
+    {% elif erro == 'excluir_proprio' %}Você não pode excluir a própria conta.
+    {% elif erro == 'perfil_proprio' %}Você não pode retirar o perfil de coordenador da própria conta.
+    {% elif erro == 'senha_curta' %}A nova senha deve ter pelo menos 6 caracteres.
+    {% else %}Não foi possível concluir a operação. Confira os dados e tente novamente.{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Novo funcionário</h3>
+      <button onclick="document.getElementById('form-usuario').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+
+    <form id="form-usuario" method="post" action="/admin/funcionarios/usuario"
+          class="hidden p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
+        <input type="text" name="nome" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">E-mail *</label>
+        <input type="email" name="email" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha *</label>
+        <input type="password" name="senha" required minlength="6"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Perfil *</label>
+        <select name="perfil"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="funcionario">Funcionário</option>
+          <option value="editor">Editor</option>
+          <option value="coordenador">Coordenador</option>
+          <option value="secretaria">Secretaria</option>
+          <option value="medico">Médico</option>
+        </select>
+      </div>
+      <div class="md:col-span-2 lg:col-span-2 flex justify-end items-end">
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+          Criar funcionário
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-100 px-5 py-4">
+      <h3 class="font-semibold text-gray-700">Funcionários do sistema</h3>
+      <p class="mt-0.5 text-xs text-slate-400">{{ usuarios|length }} usuário(s)</p>
+    </div>
+    <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for u in usuarios %}
+      <article class="min-w-0 rounded-xl border border-slate-200 p-5 transition hover:border-[#5e93cc]/50 hover:shadow-md {% if not u.ativo %}bg-slate-50 opacity-70{% else %}bg-white{% endif %}">
+        <div class="flex min-w-0 items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h4 class="truncate text-lg font-bold text-[#222049]">{{ u.nome }}</h4>
+            <p class="truncate text-sm text-slate-500" title="{{ u.email }}">{{ u.email }}</p>
+          </div>
+          <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold {% if u.ativo %}bg-green-50 text-green-700{% else %}bg-slate-200 text-slate-500{% endif %}">{% if u.ativo %}Ativo{% else %}Inativo{% endif %}</span>
+        </div>
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <span class="rounded-full bg-[#5e93cc]/10 px-2.5 py-1 text-xs font-semibold capitalize text-[#222049]">{{ u.perfil.value }}</span>
+          <span class="text-xs text-slate-500">{{ u.clientes|length }} cliente(s)</span>
+        </div>
+        {% if u.clientes %}
+        <div class="mt-3 flex min-w-0 flex-wrap gap-1.5">
+          {% for c in u.clientes[:3] %}<span class="max-w-full truncate rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{{ c.nome }}</span>{% endfor %}
+          {% if u.clientes|length > 3 %}<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">+{{ u.clientes|length - 3 }}</span>{% endif %}
+        </div>
+        {% endif %}
+        <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <button type="button" onclick="document.getElementById('editar-usuario-{{ u.id }}').classList.toggle('hidden')" class="flex-1 rounded-lg bg-[#222049] px-3 py-2 text-sm font-semibold text-white">Editar cadastro</button>
+          {% if u.id != usuario.id %}
+          <form method="post" action="/admin/funcionarios/usuario/{{ u.id }}/toggle">
+            <button type="submit" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">{% if u.ativo %}Desativar{% else %}Ativar{% endif %}</button>
+          </form>
+          <form method="post" action="/admin/funcionarios/usuario/{{ u.id }}/excluir" onsubmit="return confirm('Excluir permanentemente este funcionário? Os clientes serão desvinculados e as tarefas atribuídas serão removidas.');">
+            <button type="submit" class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Excluir</button>
+          </form>
+          {% endif %}
+        </div>
+        <form id="editar-usuario-{{ u.id }}" method="post" action="/admin/funcionarios/usuario/{{ u.id }}/editar" class="mt-4 hidden space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <input type="text" name="nome" value="{{ u.nome }}" required aria-label="Nome completo" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <input type="email" name="email" value="{{ u.email }}" required aria-label="E-mail" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <select name="perfil" aria-label="Perfil" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            {% for valor, rotulo in [('funcionario', 'Funcionário'), ('editor', 'Editor'), ('coordenador', 'Coordenador'), ('secretaria', 'Secretaria'), ('medico', 'Médico')] %}<option value="{{ valor }}" {% if u.perfil.value == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+          </select>
+          <input type="password" name="senha" minlength="6" placeholder="Nova senha (opcional)" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <button type="submit" class="w-full rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white">Salvar alterações</button>
+        </form>
+      </article>
+      {% else %}
+      <div class="col-span-full rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">Nenhum funcionário cadastrado.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

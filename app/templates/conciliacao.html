@@ -1,0 +1,633 @@
+{% extends "base.html" %}
+{% block title %}Conciliação - FLIC{% endblock %}
+{% block page_title %}Conciliacao Bancaria{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Importar extrato da operadora -->
+  <div class="rounded-2xl shadow-sm p-5 text-white" style="background-color:#222049;border:1px solid rgba(94,147,204,0.2);">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="flex-1">
+        <h3 class="font-semibold">Importar extrato da operadora</h3>
+        <p class="text-xs text-white/60">Excel/CSV da maquininha de cartão</p>
+      </div>
+      {% if receitas_pendentes %}
+      <span class="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70">
+        {{ receitas_pendentes|length }} lançamento(s)
+      </span>
+      {% endif %}
+    </div>
+    <form method="post" action="/conciliacao/processar" enctype="multipart/form-data"
+          class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="tipo" value="cartao">
+      <div class="flex-1 min-w-[180px]">
+        {% if not cliente_selecionado %}
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-white/60 mb-1">Cliente</label>
+        <select id="cliente_id" name="cliente_id" required
+                class="w-full rounded-xl border border-white/20 bg-white px-3 py-2 text-sm text-slate-800 outline-none">
+          <option value="">Selecione...</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input type="hidden" id="cliente_id" name="cliente_id" value="{{ cliente_selecionado }}">
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-white/60 mb-1">Arquivo do extrato</label>
+        <input type="file" name="arquivo" required accept=".xlsx,.xls,.csv"
+               class="w-full text-sm text-white/80 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-800 hover:file:bg-gray-100" />
+        {% endif %}
+      </div>
+      <button type="submit"
+              class="rounded-xl bg-[#5e93cc] hover:bg-[#4d82bc] text-white font-semibold px-4 py-2 text-sm">
+        Conciliar
+      </button>
+    </form>
+    <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
+      {% if cliente_selecionado %}
+      <a href="/conciliacao?cliente_id={{ cliente_selecionado }}"
+         class="rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20">
+        Abrir painel
+      </a>
+      {% else %}
+      <form method="get" action="/conciliacao" class="flex items-center gap-2">
+        <select name="cliente_id" required
+                class="rounded-xl border border-white/20 bg-white/10 px-2 py-1.5 text-xs font-semibold text-white outline-none">
+          <option value="">Selecione o cliente...</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit"
+                class="rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20">
+          Abrir painel
+        </button>
+      </form>
+      {% endif %}
+      <a href="/conciliacao/lancamentos{% if cliente_selecionado %}?cliente_id={{ cliente_selecionado }}{% endif %}"
+         class="text-xs text-white/50 hover:text-white/80 transition">
+        Importar lançamentos →
+      </a>
+    </div>
+  </div>
+
+  {% if resultado %}
+  <section class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Arquivo processado</p>
+      <p class="mt-2 text-sm font-medium text-slate-700">{{ resultado.arquivo }}</p>
+      <p class="mt-1 text-xs text-slate-400">{{ resultado.linhas_importadas }} linha(s) lida(s)</p>
+    </div>
+    <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Conciliados agora</p>
+      <p class="mt-2 text-3xl font-bold text-emerald-800">{{ resultado.conciliados | length }}</p>
+    </div>
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Pendentes para revisar</p>
+      <p class="mt-2 text-3xl font-bold text-amber-800">{{ resultado.divergencias | length }}</p>
+    </div>
+    <div class="rounded-2xl border border-[#5e93cc]/30 bg-[#5e93cc]/5 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#5e93cc]">Proxima acao</p>
+      <p class="mt-2 text-sm font-medium text-[#222049]">Revise as sugestoes e feche as pendencias do banco.</p>
+    </div>
+  </section>
+
+  {% if resultado.conciliados %}
+  <section class="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
+    <div class="border-b border-emerald-100 bg-emerald-50 px-5 py-4">
+      <h3 class="font-semibold text-emerald-900">Lancamentos conciliados neste processamento</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left">ID</th>
+            <th class="px-4 py-3 text-left">Paciente</th>
+            <th class="px-4 py-3 text-right">Valor</th>
+            <th class="px-4 py-3 text-left">Data credito</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for item in resultado.conciliados %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3 font-mono text-slate-500">#{{ item.atendimento_id }}</td>
+            <td class="px-4 py-3 text-slate-700">{{ item.paciente or '-' }}</td>
+            <td class="px-4 py-3 text-right font-medium text-slate-900">R$ {{ '%.2f'|format(item.valor|float) }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ item.data_credito }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+
+  {% if cliente_selecionado and painel %}
+  <section class="grid grid-cols-2 gap-4 md:grid-cols-4">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Banco pendente</p>
+      <p class="mt-2 text-3xl font-bold text-slate-900">{{ painel.totais.movimentos_banco }}</p>
+    </div>
+    <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm flex flex-col justify-between">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Sem divergência</p>
+        <p class="mt-2 text-3xl font-bold text-emerald-800">{{ painel.totais.sugestoes_prontas }}</p>
+      </div>
+      {% if painel.totais.sugestoes_prontas > 0 %}
+      <form method="post" action="/conciliacao/conciliar-todos-prontos" class="mt-3">
+        <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+        <button type="submit"
+                class="w-full rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700">
+          Conciliar todos ({{ painel.totais.sugestoes_prontas }})
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Com divergência</p>
+      <p class="mt-2 text-3xl font-bold text-amber-800">{{ painel.totais.revisar }}</p>
+      <p class="mt-1 text-xs text-amber-600">Revisão manual obrigatória</p>
+    </div>
+    <div class="rounded-2xl border border-[#5e93cc]/30 bg-[#5e93cc]/5 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#5e93cc]">ERP aguardando</p>
+      <p class="mt-2 text-3xl font-bold text-[#222049]">{{ painel.totais.lancamentos_erp }}</p>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+    <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Coluna do banco</p>
+          <h3 class="mt-1 font-semibold text-slate-800">Conciliacoes pendentes</h3>
+          <p class="mt-1 text-xs text-slate-400">Movimentacoes realmente importadas do extrato e ainda nao fechadas.</p>
+        </div>
+        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+          {{ painel.totais.movimentos_banco }} item(ns)
+        </span>
+      </div>
+
+      {% if painel.banco_pendente %}
+      <div class="space-y-3 p-4">
+        {% for item in painel.banco_pendente %}
+        {% set mov = item.movimentacao %}
+        {% set sugestao = item.sugestao %}
+        <article class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]
+                             {% if mov.tipo == 'cartao' %}bg-sky-100 text-[#5e93cc]{% else %}bg-violet-100 text-violet-700{% endif %}">
+                  {{ 'Cartao' if mov.tipo == 'cartao' else 'Pix/TED' }}
+                </span>
+                {% if sugestao and sugestao.status == 'sugestao_pronta' %}
+                <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Sugestao pronta
+                </span>
+                {% elif sugestao and sugestao.status == 'revisar' %}
+                <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                  Revisar valores
+                </span>
+                {% elif sugestao %}
+                <span class="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-orange-700">
+                  Conferencia manual
+                </span>
+                {% else %}
+                <span class="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
+                  Sem sugestao
+                </span>
+                {% endif %}
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Data banco</p>
+                  <p class="mt-1 text-sm font-medium text-slate-700">{{ mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '-' }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Valor</p>
+                  <p class="mt-1 text-lg font-semibold text-slate-900">
+                    {% if mov.valor %}R$ {{ '%.2f'|format(mov.valor|float) }}{% else %}-{% endif %}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Digitos / referencia</p>
+                  <p class="mt-1 font-mono text-sm text-slate-600">{{ mov.digitos_cartao or '-' }}</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Descricao do extrato</p>
+                  <p class="mt-1 text-sm text-slate-600">{{ mov.descricao or 'Sem descricao no arquivo' }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Arquivo importado</p>
+                  <p class="mt-1 text-sm text-slate-600">{{ mov.origem_arquivo or '-' }}</p>
+                </div>
+              </div>
+
+              {% if sugestao %}
+              {% set atendimento = sugestao.atendimento %}
+              <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-4">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Sugestao do sistema</p>
+                <div class="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                  <div class="rounded-2xl border border-[#5e93cc]/20 bg-[#5e93cc]/5 p-4">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5e93cc]">Movimentacao do banco</p>
+                    <div class="mt-3 space-y-2 text-sm text-slate-700">
+                      <p><span class="font-semibold text-slate-900">Valor:</span> R$ {{ '%.2f'|format(mov.valor|float) }}</p>
+                      <p><span class="font-semibold text-slate-900">Data:</span> {{ mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '-' }}</p>
+                      <p><span class="font-semibold text-slate-900">Descricao:</span> {{ mov.descricao or '-' }}</p>
+                      <p><span class="font-semibold text-slate-900">Referencia:</span> {{ mov.digitos_cartao or '-' }}</p>
+                    </div>
+                  </div>
+                  <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Lancamento sugerido</p>
+                    <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Lancamento</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-800">#{{ atendimento.id }}</p>
+                      </div>
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Paciente</p>
+                        <p class="mt-1 text-sm text-slate-700">{{ atendimento.nome_paciente or '-' }}</p>
+                      </div>
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Previsto</p>
+                        <p class="mt-1 text-sm text-slate-700">
+                          {{ atendimento.data_prevista_recebimento.strftime('%d/%m/%Y') if atendimento.data_prevista_recebimento else '-' }}
+                        </p>
+                      </div>
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Valor do sistema</p>
+                        <p class="mt-1 text-sm text-slate-700">R$ {{ '%.2f'|format(atendimento.valor_servico|float) }}</p>
+                      </div>
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Medico</p>
+                        <p class="mt-1 text-sm text-slate-700">{{ atendimento.medico or '-' }}</p>
+                      </div>
+                      <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Diferenca</p>
+                        <p class="mt-1 text-sm text-slate-700">R$ {{ '%.2f'|format(sugestao.diferenca_valor|float) }} / {{ sugestao.diferenca_dias }} dia(s)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p class="mt-3 text-sm text-slate-500">{{ sugestao.motivo }}</p>
+                {% if sugestao.status == 'sugestao_pronta' %}
+                <form method="post" action="/conciliacao/movimentacao/{{ mov.id }}/conciliar" class="mt-4">
+                  <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                  <input type="hidden" name="atendimento_id" value="{{ atendimento.id }}">
+                  <input type="hidden" name="origem" value="sugestao">
+                  <button type="submit"
+                          class="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600">
+                    Conciliar esta sugestao
+                  </button>
+                </form>
+                {% elif sugestao.status == 'revisar' %}
+                <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p class="text-sm font-semibold text-amber-800">Divergência detectada — conciliação automática bloqueada</p>
+                  <p class="mt-1 text-xs text-amber-700">
+                    Diferença de R$ {{ '%.2f'|format(sugestao.diferenca_valor|float) }} e {{ sugestao.diferenca_dias }} dia(s).
+                    Use a busca manual abaixo para localizar e confirmar o lançamento correto.
+                  </p>
+                </div>
+                {% else %}
+                <p class="mt-4 text-sm font-medium text-orange-700">
+                  Sugestao fraca demais para conciliacao direta. Use a busca manual.
+                </p>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Busca manual no sistema</p>
+                    <p class="mt-1 text-sm text-slate-500">Se a sugestao nao servir, procure um lancamento pendente e concilie manualmente.</p>
+                  </div>
+                  <form method="get" action="/conciliacao" class="flex flex-col gap-2 sm:flex-row">
+                    <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                    <input type="hidden" name="buscar_mov" value="{{ mov.id }}">
+                    <input type="text" name="termo" value="{{ item.busca_termo }}"
+                           placeholder="Paciente, CPF, medico ou descricao"
+                           class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none sm:w-72">
+                    <button type="submit"
+                            class="rounded-xl border border-[#5e93cc]/30 bg-[#5e93cc]/5 px-4 py-2 text-sm font-semibold text-[#5e93cc] transition hover:bg-[#5e93cc]/10">
+                      Buscar no sistema
+                    </button>
+                  </form>
+                </div>
+
+                {% if item.busca_aberta %}
+                  {% if item.resultados_busca %}
+                  <form method="post" action="/conciliacao/movimentacao/{{ mov.id }}/conciliar" class="mt-4 space-y-4">
+                    <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                    <input type="hidden" name="origem" value="manual">
+                    <div>
+                      <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Resultados encontrados</label>
+                      <div class="space-y-3">
+                        {% for encontrado in item.resultados_busca %}
+                        <label class="block cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-[#5e93cc]/40 hover:bg-[#5e93cc]/5">
+                          <div class="flex items-start gap-3">
+                            <input type="radio" name="atendimento_id" value="{{ encontrado.id }}" required
+                                   class="mt-1 h-4 w-4 border-slate-300 text-[#5e93cc] focus:ring-[#5e93cc]">
+                            <div class="min-w-0 flex-1">
+                              <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <p class="text-sm font-semibold text-slate-800">
+                                    #{{ encontrado.id }} - {{ encontrado.nome_paciente or 'Sem paciente' }}
+                                  </p>
+                                  <p class="mt-1 text-sm text-slate-500">
+                                    {{ encontrado.descricao_servico or 'Sem descricao' }}
+                                  </p>
+                                </div>
+                                <div class="text-left md:text-right">
+                                  <p class="text-lg font-semibold text-slate-900">
+                                    R$ {{ '%.2f'|format(encontrado.valor_servico|float) }}
+                                  </p>
+                                  <p class="text-xs text-slate-500">
+                                    Previsto em {{ encontrado.data_prevista_recebimento.strftime('%d/%m/%Y') if encontrado.data_prevista_recebimento else '-' }}
+                                  </p>
+                                </div>
+                              </div>
+                              <div class="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-500 md:grid-cols-4">
+                                <p><span class="font-semibold text-slate-600">Medico:</span> {{ encontrado.medico or '-' }}</p>
+                                <p><span class="font-semibold text-slate-600">CPF:</span> {{ encontrado.cpf_paciente or '-' }}</p>
+                                <p><span class="font-semibold text-slate-600">Forma:</span> {{ (encontrado.forma_pagamento.value if encontrado.forma_pagamento else '-') | replace('_', ' ') }}</p>
+                                <p><span class="font-semibold text-slate-600">Atendimento:</span> {{ encontrado.data_atendimento.strftime('%d/%m/%Y') if encontrado.data_atendimento else '-' }}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                        {% endfor %}
+                      </div>
+                    </div>
+                    <button type="submit"
+                            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">
+                      Conciliar com o lancamento selecionado
+                    </button>
+                  </form>
+                  {% else %}
+                  <p class="mt-4 text-sm text-rose-600">Nenhum lancamento pendente encontrado para essa busca.</p>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="shrink-0 flex flex-col gap-2">
+              <button type="button"
+                      data-mov-id="{{ mov.id }}"
+                      data-data-credito="{{ mov.data_movimento.strftime('%Y-%m-%d') if mov.data_movimento else '' }}"
+                      data-digitos="{{ mov.digitos_cartao or '' }}"
+                      data-tipo="{{ mov.tipo }}"
+                      data-valor="{{ mov.valor }}"
+                      onclick="abrirModalCriar(this)"
+                      class="btn-criar-conciliar rounded-xl bg-[#222049] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1a1836]">
+                + Criar e conciliar
+              </button>
+              <form method="post" action="/conciliacao/movimentacao/{{ mov.id }}/revisar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit"
+                        class="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                  Marcar como revisado
+                </button>
+              </form>
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-6 py-12 text-center">
+        <p class="text-sm text-slate-500">Nenhuma movimentacao do banco aguardando conciliacao.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Coluna do ERP</p>
+          <h3 class="mt-1 font-semibold text-slate-800">Lancamentos aguardando banco</h3>
+          <p class="mt-1 text-xs text-slate-400">Receitas que ainda nao foram confirmadas no extrato.</p>
+        </div>
+        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+          {{ painel.totais.lancamentos_erp }} item(ns)
+        </span>
+      </div>
+
+      {% if receitas_pendentes %}
+      <div class="space-y-3 p-4">
+        {% for a in receitas_pendentes %}
+        <article class="rounded-2xl border border-slate-200 bg-white p-4">
+          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                  {{ (a.forma_pagamento.value if a.forma_pagamento else 'sem forma') | replace('_', ' ') }}
+                </span>
+                {% if a.status_conciliacao == 'divergencia' %}
+                <span class="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
+                  Divergencia
+                </span>
+                {% else %}
+                <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                  Aguardando banco
+                </span>
+                {% endif %}
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Lancamento</p>
+                  <p class="mt-1 text-sm font-semibold text-slate-800">#{{ a.id }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Paciente</p>
+                  <p class="mt-1 text-sm text-slate-700">{{ a.nome_paciente or '-' }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Atendimento</p>
+                  <p class="mt-1 text-sm text-slate-700">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Recebimento previsto</p>
+                  <p class="mt-1 text-sm text-slate-700">
+                    {{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '-' }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-left md:text-right">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Valor</p>
+              <p class="mt-1 text-xl font-semibold text-slate-900">R$ {{ '%.2f'|format(a.valor_servico|float) }}</p>
+              {% if a.ultimos_digitos_cartao %}
+              <p class="mt-1 text-xs font-mono text-slate-500">Cartao final {{ a.ultimos_digitos_cartao }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-6 py-12 text-center">
+        <p class="text-sm text-slate-500">Nenhum lancamento do sistema aguardando conciliacao.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+    <p class="text-sm text-slate-500">Selecione um cliente e importe um extrato para abrir o painel de conciliacao.</p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Modal: Criar lançamento e conciliar -->
+<div id="modal-criar" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Criar lançamento e conciliar</h3>
+        <p class="mt-0.5 text-xs text-slate-400">O valor e a data de crédito são preenchidos automaticamente pelo extrato.</p>
+      </div>
+      <button onclick="fecharModalCriar()" class="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form id="form-criar" method="post" action="" class="p-6 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+
+      <div class="rounded-2xl border border-[#5e93cc]/20 bg-[#5e93cc]/5 px-4 py-3 grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-[#5e93cc]">Valor do extrato</p>
+          <p id="modal-valor" class="mt-1 font-semibold text-slate-900">—</p>
+        </div>
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-[#5e93cc]">Data de crédito</p>
+          <p id="modal-data-credito" class="mt-1 text-slate-700">—</p>
+        </div>
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-[#5e93cc]">Tipo / Dígitos</p>
+          <p id="modal-tipo" class="mt-1 text-slate-700">—</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Data do atendimento <span class="text-red-500">*</span></label>
+          <input type="date" id="modal-data-atendimento" name="data_atendimento" required
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Nome do paciente</label>
+          <input type="text" name="nome_paciente" placeholder="Nome completo"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">CPF</label>
+          <input type="text" name="cpf_paciente" placeholder="000.000.000-00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Médico</label>
+          <input type="text" name="medico" placeholder="Nome do médico"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Especialidade</label>
+          <input type="text" name="especialidade" placeholder="Ex: Cardiologia"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Tipo de serviço</label>
+          <input type="text" name="tipo_servico" placeholder="Ex: Consulta, Exame"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div id="campo-bandeira" class="hidden">
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Bandeira do cartão</label>
+          <select name="bandeira_cartao"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+            <option value="">Não informado</option>
+            <option>Visa</option>
+            <option>Mastercard</option>
+            <option>Elo</option>
+            <option>Amex</option>
+            <option>Hipercard</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Descrição do serviço</label>
+          <input type="text" name="descricao_servico" placeholder="Descrição resumida"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Observação</label>
+          <input type="text" name="observacao" placeholder="Opcional"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" onclick="fecharModalCriar()"
+                class="rounded-xl border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+          Cancelar
+        </button>
+        <button type="submit"
+                class="rounded-xl bg-[#222049] px-5 py-2 text-sm font-semibold text-white hover:bg-[#1a1836]">
+          Criar lançamento e conciliar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  function abrirModalCriar(btn) {
+    const movId = btn.dataset.movId;
+    const dataCredito = btn.dataset.dataCredito;
+    const digitos = btn.dataset.digitos;
+    const tipo = btn.dataset.tipo;
+    const valor = btn.dataset.valor;
+
+    const modal = document.getElementById("modal-criar");
+    const form = document.getElementById("form-criar");
+    if (!modal || !form) return;
+
+    form.action = `/conciliacao/movimentacao/${movId}/criar-e-conciliar`;
+
+    document.getElementById("modal-valor").textContent = valor
+      ? "R$ " + parseFloat(valor).toLocaleString("pt-BR", {minimumFractionDigits: 2}) : "—";
+    document.getElementById("modal-data-credito").textContent = dataCredito
+      ? dataCredito.split("-").reverse().join("/") : "—";
+    document.getElementById("modal-tipo").textContent =
+      (tipo === "cartao" ? "Cartão" : "Pix/TED") + (digitos ? ` · ****${digitos}` : "");
+
+    document.getElementById("modal-data-atendimento").value = dataCredito || "";
+
+    const campoBandeira = document.getElementById("campo-bandeira");
+    if (campoBandeira) campoBandeira.classList.toggle("hidden", tipo !== "cartao");
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  function fecharModalCriar() {
+    const modal = document.getElementById("modal-criar");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+
+  const _modal = document.getElementById("modal-criar");
+  if (_modal) {
+    _modal.addEventListener("click", function(e) {
+      if (e.target === this) fecharModalCriar();
+    });
+  }
+</script>
+{% endblock %}

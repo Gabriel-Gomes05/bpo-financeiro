@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}{{ cliente.nome }} - FLIC{% endblock %}
+{% block page_title %}Cadastro do Cliente{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <a href="/admin/clientes" class="text-sm text-[#5e93cc] hover:underline">← Voltar para clientes</a>
+      <h2 class="mt-1 text-2xl font-bold text-[#222049]">{{ cliente.nome }}</h2>
+      <p class="text-sm text-slate-500">Edite os dados cadastrais, bancários e operacionais.</p>
+    </div>
+    {% if pode_coordenar %}
+    <form method="post" action="/admin/clientes/cliente/{{ cliente.id }}/excluir"
+          onsubmit="return confirm('Excluir este cliente das telas operacionais? O histórico financeiro será preservado.');">
+      <button type="submit" class="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+        Excluir cliente
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if request.query_params.get('sucesso') %}
+  <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Cadastro atualizado com sucesso.</div>
+  {% elif request.query_params.get('erro') %}
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Confira os dados obrigatórios e tente novamente.</div>
+  {% endif %}
+
+  <form method="post" action="/admin/clientes/cliente/{{ cliente.id }}/editar" class="space-y-6">
+    <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div class="border-b border-slate-100 px-6 py-4">
+        <h3 class="font-semibold text-slate-800">Dados cadastrais</h3>
+      </div>
+      <div class="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Nome / sigla *</label>
+          <input name="nome" value="{{ cliente.nome }}" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div class="lg:col-span-2">
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Razão social</label>
+          <input name="razao_social" value="{{ cliente.razao_social or '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">CNPJ</label>
+          <input name="cnpj" value="{{ cliente.cnpj or '' }}" placeholder="00.000.000/0001-00" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Especialidade</label>
+          <input name="especialidade" value="{{ cliente.especialidade or '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Regime tributário</label>
+          <select name="regime_tributario" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+            <option value="">Não informado</option>
+            {% for regime in ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune / Isenta'] %}
+            <option value="{{ regime }}" {% if cliente.regime_tributario == regime %}selected{% endif %}>{{ regime }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if pode_coordenar %}
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Funcionário responsável</label>
+          <select name="funcionario_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+            <option value="">Sem responsável</option>
+            {% for f in funcionarios %}
+            <option value="{{ f.id }}" {% if cliente.funcionario_id == f.id %}selected{% endif %}>{{ f.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div class="border-b border-slate-100 px-6 py-4">
+        <h3 class="font-semibold text-slate-800">Dados bancários</h3>
+      </div>
+      <div class="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Banco</label>
+          <input name="banco" value="{{ cliente.banco or '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Agência</label>
+          <input name="agencia" value="{{ cliente.agencia or '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Conta</label>
+          <input name="conta" value="{{ cliente.conta or '' }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div class="border-b border-slate-100 px-6 py-4">
+        <h3 class="font-semibold text-slate-800">Operação de cartão</h3>
+      </div>
+      <div class="grid grid-cols-1 gap-4 p-6 md:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Tem maquininha?</label>
+          <select id="editar-tem-maquininha" name="tem_maquininha" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="nao" {% if not cliente.tem_maquininha %}selected{% endif %}>Não</option>
+            <option value="sim" {% if cliente.tem_maquininha %}selected{% endif %}>Sim</option>
+          </select>
+        </div>
+        <div data-maquininha>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Rede principal</label>
+          <select name="rede_maquininha" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Não informada</option>
+            {% for rede in redes_maquininha %}
+            <option value="{{ rede }}" {% if cliente.rede_maquininha == rede %}selected{% endif %}>{{ rede }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div data-maquininha>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Antecipa recebíveis?</label>
+          <select name="antecipa" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="nao" {% if not cliente.antecipa %}selected{% endif %}>Não</option>
+            <option value="sim" {% if cliente.antecipa %}selected{% endif %}>Sim</option>
+          </select>
+        </div>
+        <div class="md:col-span-3 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
+          <a href="/admin/taxas-cartao?cliente_id={{ cliente.id }}" class="rounded-lg border border-[#5e93cc]/30 px-4 py-2 text-sm font-semibold text-[#222049] hover:bg-[#5e93cc]/10">Editar taxas de cartão</a>
+          <a href="/admin/centros-custo?cliente_id={{ cliente.id }}" class="rounded-lg border border-[#5e93cc]/30 px-4 py-2 text-sm font-semibold text-[#222049] hover:bg-[#5e93cc]/10">Editar centros de custo</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="flex justify-end gap-3">
+      <a href="/admin/clientes" class="rounded-lg border border-slate-300 px-5 py-2.5 text-sm text-slate-600">Cancelar</a>
+      <button type="submit" class="rounded-lg bg-[#222049] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#1a1836]">Salvar alterações</button>
+    </div>
+  </form>
+
+  {% set maquininhas_ativas = cliente.maquininhas | selectattr('ativa') | list %}
+  {% if maquininhas_ativas %}
+  <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h3 class="mb-4 font-semibold text-slate-800">Maquininhas cadastradas</h3>
+    <div class="space-y-3">
+      {% for m in maquininhas_ativas %}
+      <div class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-end">
+        <form method="post" action="/admin/maquininha/{{ m.id }}/editar" class="contents">
+          <div class="flex-1">
+            <label class="mb-1 block text-xs text-slate-500">Rede</label>
+            <select name="rede" required class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              {% for rede in redes_maquininha %}<option value="{{ rede }}" {% if m.rede == rede %}selected{% endif %}>{{ rede }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="flex-1">
+            <label class="mb-1 block text-xs text-slate-500">Apelido</label>
+            <input name="apelido" value="{{ m.apelido or '' }}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-slate-500">Antecipa?</label>
+            <select name="antecipa" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="nao" {% if not m.antecipa %}selected{% endif %}>Não</option>
+              <option value="sim" {% if m.antecipa %}selected{% endif %}>Sim</option>
+            </select>
+          </div>
+          <button type="submit" class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white">Salvar maquininha</button>
+        </form>
+        <form method="post" action="/admin/maquininha/{{ m.id }}/remover" onsubmit="return confirm('Remover esta maquininha?');">
+          <button type="submit" class="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700">Remover</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const seletorMaquininha = document.getElementById('editar-tem-maquininha');
+  function atualizarCamposMaquininha() {
+    const ocultar = seletorMaquininha.value !== 'sim';
+    document.querySelectorAll('[data-maquininha]').forEach(el => el.classList.toggle('hidden', ocultar));
+  }
+  seletorMaquininha.addEventListener('change', atualizarCamposMaquininha);
+  atualizarCamposMaquininha();
+</script>
+{% endblock %}

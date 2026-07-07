@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Cadastros — FLIC{% endblock %}
+{% block page_title %}Cadastros{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Formulário novo usuário -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Novo usuário</h3>
+      <button onclick="document.getElementById('form-usuario').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+
+    <form id="form-usuario" method="post" action="/admin/equipe/usuario"
+          class="hidden p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome completo *</label>
+        <input type="text" name="nome" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">E-mail *</label>
+        <input type="email" name="email" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha *</label>
+        <input type="password" name="senha" required minlength="6"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Perfil *</label>
+        <select name="perfil"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="funcionario">Funcionário</option>
+          <option value="coordenador">Coordenador</option>
+        </select>
+      </div>
+      <div class="md:col-span-2 lg:col-span-2 flex justify-end items-end">
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+          Criar usuário
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Formulário novo cliente -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Novo cliente BPO</h3>
+      <button onclick="document.getElementById('form-cliente').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+
+    <form id="form-cliente" method="post" action="/admin/equipe/cliente"
+          class="hidden p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome (sigla) *</label>
+        <input type="text" name="nome" required placeholder="Ex: PRESTI"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Razão social</label>
+        <input type="text" name="razao_social"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">CNPJ</label>
+        <input type="text" name="cnpj" placeholder="00.000.000/0001-00"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade</label>
+        <input type="text" name="especialidade" placeholder="Ortopedia, Clínica Geral..."
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tem maquininha? *</label>
+        <select id="tem-maquininha" name="tem_maquininha"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+      </div>
+      <div id="campos-maquininha" class="hidden md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 rounded-lg border border-[#5e93cc]/20 bg-[#5e93cc]/5 p-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Antecipa?</label>
+          <select name="antecipa"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="nao">Não</option>
+            <option value="sim">Sim</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Bandeira</label>
+          <select id="bandeira-cliente" name="bandeira"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="">Selecione...</option>
+            {% for b in bandeiras %}
+            <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Taxa cartão (%)</label>
+          <input id="taxa-cartao-cliente" type="number" name="taxa_percentual" step="0.01" min="0" max="100" placeholder="Ex: 2.50"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Funcionário responsável</label>
+        <select name="funcionario_id"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Sem responsável</option>
+          {% for f in funcionarios %}
+          <option value="{{ f.id }}">{{ f.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex justify-end items-end">
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+          Criar cliente
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Lista de usuários -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-700">Usuários do sistema</h3>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Nome</th>
+          <th class="px-4 py-3 text-left">E-mail</th>
+          <th class="px-4 py-3 text-left">Perfil</th>
+          <th class="px-4 py-3 text-left">Clientes</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3 text-center">Ação</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for u in usuarios %}
+        <tr class="hover:bg-gray-50 {% if not u.ativo %}opacity-50{% endif %}">
+          <td class="px-4 py-3 font-medium text-gray-800">{{ u.nome }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ u.email }}</td>
+          <td class="px-4 py-3 capitalize text-gray-600">{{ u.perfil }}</td>
+          <td class="px-4 py-3">
+            {% for c in u.clientes %}
+            <span class="inline-block bg-[#5e93cc]/10 text-[#222049] text-xs px-2 py-0.5 rounded-full mr-1">{{ c.nome }}</span>
+            {% else %}
+            <span class="text-gray-400 text-xs">—</span>
+            {% endfor %}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if u.ativo %}
+              <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">Ativo</span>
+            {% else %}
+              <span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">Inativo</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if u.id != usuario.id %}
+            <form method="post" action="/admin/equipe/usuario/{{ u.id }}/toggle" style="display:inline">
+              <button type="submit"
+                      class="text-xs {% if u.ativo %}text-red-600 hover:underline{% else %}text-green-600 hover:underline{% endif %}">
+                {% if u.ativo %}Desativar{% else %}Ativar{% endif %}
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Lista de clientes com atribuição -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-700">Clientes BPO — atribuição de responsáveis</h3>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Cliente</th>
+          <th class="px-4 py-3 text-left">CNPJ</th>
+          <th class="px-4 py-3 text-left">Maquininha</th>
+          <th class="px-4 py-3 text-left">Antecipa</th>
+          <th class="px-4 py-3 text-left">Taxas</th>
+          <th class="px-4 py-3 text-left">Especialidade</th>
+          <th class="px-4 py-3 text-left">Responsável</th>
+          <th class="px-4 py-3 text-center">Ação</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in clientes %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium text-gray-800">{{ c.nome }}</td>
+          <td class="px-4 py-3 text-gray-500">{{ c.cnpj or '—' }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ 'Sim' if c.tem_maquininha else 'Não' }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ 'Sim' if c.antecipa else 'Não' }}</td>
+          <td class="px-4 py-3">
+            {% for t in c.taxas_cartao %}
+            {% if t.ativo %}
+            <span class="inline-block bg-[#5e93cc]/10 text-[#222049] text-xs px-2 py-0.5 rounded-full mr-1">
+              {{ t.bandeira }} {{ '%.2f'|format(t.taxa_percentual|float) }}%
+            </span>
+            {% endif %}
+            {% else %}
+            <span class="text-gray-400 text-xs">—</span>
+            {% endfor %}
+          </td>
+          <td class="px-4 py-3 text-gray-600">{{ c.especialidade or '—' }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ c.funcionario.nome if c.funcionario else '—' }}</td>
+          <td class="px-4 py-3">
+            <!-- Reatribuir responsável inline -->
+            <form method="post" action="/admin/equipe/cliente/{{ c.id }}/atribuir"
+                  class="flex items-center gap-2">
+              <select name="funcionario_id"
+                      class="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs outline-none">
+                <option value="">Sem responsável</option>
+                {% for f in funcionarios %}
+                <option value="{{ f.id }}" {% if c.funcionario_id == f.id %}selected{% endif %}>
+                  {{ f.nome }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit"
+                      class="text-xs bg-gray-800 text-white px-2 py-1 rounded-lg hover:bg-gray-700">
+                Salvar
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const temMaquininha = document.getElementById("tem-maquininha");
+  const camposMaquininha = document.getElementById("campos-maquininha");
+  const bandeiraCliente = document.getElementById("bandeira-cliente");
+  const taxaCartaoCliente = document.getElementById("taxa-cartao-cliente");
+
+  function alternarCamposMaquininha() {
+    const exibir = temMaquininha.value === "sim";
+    camposMaquininha.classList.toggle("hidden", !exibir);
+    bandeiraCliente.required = exibir;
+    taxaCartaoCliente.required = exibir;
+  }
+
+  if (temMaquininha) {
+    temMaquininha.addEventListener("change", alternarCamposMaquininha);
+    alternarCamposMaquininha();
+  }
+</script>
+{% endblock %}

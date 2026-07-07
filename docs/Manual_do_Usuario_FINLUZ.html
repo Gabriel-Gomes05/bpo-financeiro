@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Manual do Usuário - FLIC</title>
+  <style>
+    @page { size: A4; margin: 16mm 15mm 17mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #222049; font: 10.5pt/1.48 "Segoe UI", Arial, sans-serif; background: #fff; }
+    h1, h2, h3 { margin: 0; line-height: 1.15; }
+    h1 { font-size: 30pt; letter-spacing: -1px; }
+    h2 { font-size: 20pt; color: #222049; margin-bottom: 10px; }
+    h3 { font-size: 12.5pt; margin: 15px 0 6px; }
+    p { margin: 5px 0 9px; }
+    ul, ol { margin: 5px 0 10px; padding-left: 22px; }
+    li { margin: 3px 0; }
+    strong { color: #171533; }
+    .page { break-after: page; min-height: 257mm; position: relative; }
+    .page:last-child { break-after: auto; }
+    .cover { margin: -16mm -15mm -17mm; min-height: 297mm; padding: 32mm 22mm; color: white;
+      background: linear-gradient(145deg, #171533 0%, #222049 58%, #345f91 100%); }
+    .brand { color: #84b9ec; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+    .cover h1 { margin: 38mm 0 8px; color: white; max-width: 155mm; }
+    .subtitle { font-size: 15pt; color: #dbeeff; max-width: 145mm; }
+    .cover-card { margin-top: 28mm; width: 112mm; padding: 14px 16px; border-radius: 14px;
+      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); }
+    .cover-foot { position: absolute; left: 22mm; bottom: 20mm; color: #c8dff5; font-size: 9pt; }
+    .kicker { color: #5e93cc; font-size: 9pt; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+    .lead { font-size: 12pt; color: #475569; margin-bottom: 15px; }
+    .rule { height: 4px; width: 38mm; margin: 7px 0 18px; border-radius: 2px; background: #5e93cc; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { border: 1px solid #dbe5ef; border-radius: 10px; padding: 11px 13px; background: #f8fbfe; break-inside: avoid; }
+    .card h3 { margin-top: 0; color: #294f79; }
+    .callout { margin: 12px 0; padding: 10px 13px; border-left: 4px solid #5e93cc; background: #edf6ff; border-radius: 0 8px 8px 0; }
+    .warn { border-left-color: #d49323; background: #fff8e8; }
+    .danger { border-left-color: #c74444; background: #fff0f0; }
+    .success { border-left-color: #2d936c; background: #ecfbf5; }
+    .steps { list-style: none; padding: 0; counter-reset: step; }
+    .steps li { counter-increment: step; position: relative; padding: 5px 0 8px 34px; min-height: 30px; }
+    .steps li::before { content: counter(step); position: absolute; left: 0; top: 2px; width: 24px; height: 24px;
+      border-radius: 50%; background: #222049; color: white; text-align: center; line-height: 24px; font-weight: 700; }
+    .flow { display: flex; align-items: stretch; gap: 5px; margin: 14px 0; }
+    .flow div { flex: 1; padding: 9px 6px; border-radius: 8px; background: #222049; color: white; text-align: center; font-size: 9pt; }
+    .flow span { align-self: center; color: #5e93cc; font-size: 16pt; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 9.3pt; break-inside: avoid; }
+    th { background: #222049; color: white; text-align: left; padding: 7px; }
+    td { border-bottom: 1px solid #dce5ed; padding: 7px; vertical-align: top; }
+    tr:nth-child(even) td { background: #f7fafc; }
+    .tag { display: inline-block; padding: 2px 7px; border-radius: 20px; background: #e4f0fb; color: #294f79; font-size: 8.5pt; font-weight: 700; }
+    .check { list-style: none; padding-left: 0; }
+    .check li { padding-left: 22px; position: relative; }
+    .check li::before { content: "✓"; position: absolute; left: 0; color: #2d936c; font-weight: 800; }
+    .footer { position: absolute; bottom: 0; left: 0; right: 0; padding-top: 5px; border-top: 1px solid #dbe5ef;
+      color: #718096; font-size: 8pt; display: flex; justify-content: space-between; }
+    .small { font-size: 8.8pt; color: #64748b; }
+    code { background: #eef3f7; padding: 1px 4px; border-radius: 4px; color: #294f79; }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="brand">FLIC</div>
+    <h1>Manual do Usuário</h1>
+    <p class="subtitle">Guia prático para operar lançamentos, conciliações, contas a pagar, rotinas, fechamentos e relatórios.</p>
+    <div class="cover-card"><strong style="color:white">Objetivo deste guia</strong><br>Levar o usuário do primeiro acesso ao fechamento financeiro com segurança e consistência.</div>
+    <div class="cover-foot">Versão de apoio • 22 de junho de 2026 • Uso interno</div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Comece aqui</div><h2>1. Visão geral</h2><div class="rule"></div>
+    <p class="lead">O sistema organiza a operação financeira de clínicas e consultórios por cliente. Antes de registrar qualquer informação, confirme qual cliente está ativo.</p>
+    <div class="flow"><div>Lançamentos</div><span>›</span><div>Conciliar cartão</div><span>›</span><div>Gerar lote</div><span>›</span><div>Conciliar banco</div><span>›</span><div>Fechar período</div></div>
+    <h3>Acesso</h3>
+    <ol class="steps">
+      <li>Abra <strong>http://localhost:8888</strong> no navegador.</li>
+      <li>Informe seu e-mail e senha e clique em <strong>Entrar</strong>.</li>
+      <li>No menu lateral, use o seletor <strong>Cliente ativo</strong> para escolher a empresa atendida.</li>
+      <li>Confirme o nome do cliente antes de importar arquivos, lançar valores ou aprovar pagamentos.</li>
+    </ol>
+    <div class="callout warn"><strong>Atenção:</strong> trocar o cliente ativo altera o contexto das telas. Uma importação no cliente errado pode exigir revisão manual.</div>
+    <h3>Perfis de acesso</h3>
+    <table><tr><th>Perfil</th><th>Uso típico</th><th>Acesso</th></tr>
+      <tr><td>Coordenador</td><td>Supervisão e administração</td><td>Todos os módulos, funcionários, clientes e logs.</td></tr>
+      <tr><td>Editor / Funcionário</td><td>Operação financeira</td><td>Clientes atribuídos, conciliações, contas, rotinas e gestão.</td></tr>
+      <tr><td>Médico</td><td>Acompanhamento</td><td>Lançamentos, contas e relatórios permitidos.</td></tr>
+      <tr><td>Secretaria</td><td>Registro operacional</td><td>Lançamentos do cliente vinculado.</td></tr>
+    </table>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>2</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Navegação</div><h2>2. Dashboard e tabelas</h2><div class="rule"></div>
+    <h3>Dashboard</h3>
+    <p>A página inicial resume pendências, contas próximas do vencimento e situação dos clientes. Use os cartões como atalhos para abrir a área que exige atenção.</p>
+    <div class="grid">
+      <div class="card"><h3>Cliente ativo</h3><p>Mostra os indicadores de uma empresa específica. Ideal para executar a rotina completa de um cliente.</p></div>
+      <div class="card"><h3>Visão da equipe</h3><p>Disponível conforme o perfil. Ajuda a acompanhar responsáveis, clientes e volume de pendências.</p></div>
+      <div class="card"><h3>Alertas</h3><p>Observe contas vencidas, vencimentos próximos e rotinas ainda não concluídas.</p></div>
+      <div class="card"><h3>Atalhos</h3><p>Os números clicáveis levam diretamente para contas a pagar ou conciliação.</p></div>
+    </div>
+    <h3>Como usar as tabelas</h3>
+    <ul class="check">
+      <li>Digite no campo <strong>Pesquisar nesta tabela</strong> para localizar nome, descrição, valor ou status.</li>
+      <li>Escolha 10, 25, 50, 100 itens por página ou <strong>Todos</strong>.</li>
+      <li>Use <strong>Primeira, Anterior, Próxima e Última</strong> para navegar.</li>
+      <li>Em Lançamentos, use <strong>Colunas</strong> para exibir apenas as informações necessárias.</li>
+      <li>Filtros de cliente, mês e ano devem ser aplicados antes da análise dos totais.</li>
+    </ul>
+    <div class="callout success"><strong>Boa prática:</strong> trabalhe um cliente por vez e conclua o ciclo antes de trocar o cliente ativo.</div>
+    <h3>Menu principal</h3>
+    <table><tr><th>Grupo</th><th>O que você encontra</th></tr>
+      <tr><td>Contas a Receber</td><td>Lançamentos e conciliação de cartão.</td></tr>
+      <tr><td>Conciliação</td><td>Entradas, saídas e lotes no extrato bancário.</td></tr>
+      <tr><td>Contas a Pagar</td><td>Cadastro de despesas e aprovação.</td></tr>
+      <tr><td>Operacional</td><td>Fechamento e rotinas.</td></tr>
+      <tr><td>Gestão</td><td>Receitas, despesas, orçamento e DRE.</td></tr>
+      <tr><td>Cadastros</td><td>Clientes, funcionários e configurações permitidas.</td></tr>
+    </table>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>3</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Contas a receber</div><h2>3. Registrar lançamentos</h2><div class="rule"></div>
+    <p class="lead">Registre cada atendimento ou recebível antes de conciliar. O lançamento cria a base que será comparada com os extratos.</p>
+    <ol class="steps">
+      <li>Acesse <strong>Contas a Receber › Lançamentos</strong>.</li>
+      <li>Selecione o cliente e confira a <strong>Data do atendimento</strong>.</li>
+      <li>Preencha paciente, CPF, médico, especialidade, serviço e valor.</li>
+      <li>Escolha a forma: cartão, Pix, transferência ou dinheiro.</li>
+      <li>Para cartão, informe os 4 dígitos, bandeira, condição e número de parcelas.</li>
+      <li>Quando necessário, informe recorrência, percentual médico e observação.</li>
+      <li>Use <strong>Adicionar mais um serviço</strong> para registrar vários itens na mesma data e depois clique em <strong>Salvar lançamentos</strong>.</li>
+    </ol>
+    <div class="grid">
+      <div class="card"><h3>À vista</h3><p>Um recebível com a data prevista de acordo com a forma selecionada.</p></div>
+      <div class="card"><h3>Parcelado</h3><p>Gera parcelas conforme a quantidade. Confira o total e a bandeira.</p></div>
+      <div class="card"><h3>Recorrência</h3><p>Use padrões como 30/60/90 quando houver datas futuras específicas.</p></div>
+      <div class="card"><h3>Taxa e repasse</h3><p>As configurações do cliente podem calcular taxa de cartão e percentual médico.</p></div>
+    </div>
+    <h3>Importação e lançamento manual</h3>
+    <p>A tela também permite importar uma planilha de lançamentos. Revise o cliente e o arquivo antes de enviar. Para correções pontuais, prefira o formulário manual.</p>
+    <div class="callout danger"><strong>Não duplique:</strong> antes de lançar manualmente, pesquise paciente, data e valor para confirmar que o item ainda não existe.</div>
+    <h3>Editar ou excluir</h3>
+    <p>Na tabela, use <strong>Editar</strong> para corrigir informações. Exclua somente quando tiver certeza de que o lançamento não participa de uma conciliação válida.</p>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>4</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Cartões</div><h2>4. Conciliação de cartão</h2><div class="rule"></div>
+    <p class="lead">A conciliação compara as vendas do extrato da maquininha com os lançamentos do sistema. Depois da conferência, as vendas formam um lote que será localizado no banco.</p>
+    <ol class="steps">
+      <li>Acesse <strong>Contas a Receber › Conc. Cartão</strong> e confirme o cliente.</li>
+      <li>Importe o extrato da maquininha no formato aceito pela tela.</li>
+      <li>Revise as vendas e as sugestões apresentadas.</li>
+      <li>Use <strong>Conciliar todos prontos</strong> somente para correspondências completas.</li>
+      <li>Para uma sugestão que exige análise, pesquise o lançamento correto e faça a vinculação manual.</li>
+      <li>Se a venda não possuir lançamento, use a criação e conciliação quando o caso estiver confirmado.</li>
+      <li>Após revisar o conjunto, clique em <strong>Fechar lote</strong>.</li>
+    </ol>
+    <h3>Como interpretar as sugestões</h3>
+    <table><tr><th>Situação</th><th>Ação recomendada</th></tr>
+      <tr><td><span class="tag">Pronta</span></td><td>Critérios completos; pode entrar na ação automática.</td></tr>
+      <tr><td><span class="tag">Sugestão</span></td><td>Confira data, valor, cartão e paciente antes de conciliar manualmente.</td></tr>
+      <tr><td>Sem correspondência</td><td>Pesquise outro lançamento, crie o lançamento correto ou cancele a venda se realmente inválida.</td></tr>
+      <tr><td>Conciliada</td><td>Não altere sem motivo. Use desvincular apenas para corrigir erro confirmado.</td></tr>
+    </table>
+    <div class="callout warn"><strong>Regra importante:</strong> uma sugestão visual não é confirmação. A automação deve consumir apenas correspondências marcadas como prontas.</div>
+    <h3>Reabrir um lote</h3>
+    <p>Use essa ação somente quando precisar corrigir vendas já agrupadas. Depois da correção, revise e feche o lote novamente.</p>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Banco</div><h2>5. Conciliação bancária</h2><div class="rule"></div>
+    <p class="lead">Esta tela trata recebimentos e pagamentos. Ela também conecta os lotes gerados na conciliação de cartão aos créditos efetivamente recebidos no banco.</p>
+    <ol class="steps">
+      <li>Acesse <strong>Conciliação › Banco</strong> e selecione o cliente.</li>
+      <li>Importe os lançamentos esperados, se aplicável, e depois o extrato bancário.</li>
+      <li>Confira se data, descrição, valor e tipo de movimento foram reconhecidos.</li>
+      <li>Nas <strong>entradas</strong>, compare Pix, TED e recebíveis com os lançamentos.</li>
+      <li>Nos <strong>lotes de cartão</strong>, relacione o crédito bancário com o lote já fechado.</li>
+      <li>Nas <strong>saídas</strong>, relacione débitos bancários com contas a pagar.</li>
+      <li>Use ações automáticas apenas nos itens prontos e revise os demais individualmente.</li>
+    </ol>
+    <div class="grid">
+      <div class="card"><h3>Entrada / recebimento</h3><p>Pix, TED, dinheiro identificado e créditos de vendas.</p></div>
+      <div class="card"><h3>Saída / pagamento</h3><p>Débitos, transferências e pagamentos de despesas.</p></div>
+      <div class="card"><h3>Lote de cartão</h3><p>Nasce após a conciliação das vendas e é conferido contra o crédito bancário.</p></div>
+      <div class="card"><h3>Revisão</h3><p>Permite corrigir um vínculo sem apagar a origem financeira.</p></div>
+    </div>
+    <div class="callout success"><strong>Sequência correta:</strong> venda no extrato do cartão → conciliação com lançamento → fechamento do lote → crédito no extrato bancário → conciliação do lote.</div>
+    <div class="callout danger"><strong>Nunca force um vínculo pelo valor apenas.</strong> Compare também data, descrição, origem e sentido do movimento.</div>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>6</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Despesas</div><h2>6. Contas a pagar e aprovação</h2><div class="rule"></div>
+    <h3>Cadastrar uma conta</h3>
+    <ol class="steps">
+      <li>Acesse <strong>Contas a Pagar › Lançamentos</strong>.</li>
+      <li>Preencha cliente, descrição, fornecedor, tipo, valor e vencimento.</li>
+      <li>Escolha a categoria DRE correta; isso afeta os relatórios gerenciais.</li>
+      <li>Anexe o documento, quando disponível, e registre uma observação útil.</li>
+      <li>Salve e confira o item na tabela. Também é possível importar uma planilha.</li>
+    </ol>
+    <h3>Agendar e aprovar</h3>
+    <p>Uma conta pendente pode ser agendada para pagamento. Na tela <strong>Aprovação</strong>, selecione cliente, data limite e saldo em conta para avaliar o que pode ser pago.</p>
+    <ul class="check">
+      <li>Confira fornecedor, documento, vencimento e valor.</li>
+      <li>Observe o saldo informado e o total selecionado.</li>
+      <li>Leia as pendências em aberto antes de confirmar.</li>
+      <li>Use o texto gerado para comunicar o cliente quando necessário.</li>
+    </ul>
+    <h3>Conciliação do pagamento</h3>
+    <p>O pagamento só fica financeiramente confirmado quando o débito correspondente é identificado no extrato bancário. Faça a vinculação na área de conciliação bancária.</p>
+    <div class="callout warn"><strong>Documento sensível:</strong> abra comprovantes somente dentro da conta autenticada. Não compartilhe links internos nem credenciais.</div>
+    <h3>Status usuais</h3>
+    <table><tr><th>Status</th><th>Significado</th></tr>
+      <tr><td>Pendente</td><td>Conta registrada e ainda não agendada/paga.</td></tr>
+      <tr><td>Agendada</td><td>Pagamento previsto; ainda precisa aparecer no banco.</td></tr>
+      <tr><td>Paga / conciliada</td><td>Débito bancário localizado e vinculado.</td></tr>
+      <tr><td>Cancelada</td><td>Obrigação anulada com justificativa operacional.</td></tr>
+    </table>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>7</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Operação</div><h2>7. Rotinas e fechamento</h2><div class="rule"></div>
+    <h3>Rotinas diárias</h3>
+    <ol class="steps">
+      <li>Acesse <strong>Rotinas</strong> e filtre o cliente.</li>
+      <li>Crie a tarefa com responsável, data, descrição e horário previsto.</li>
+      <li>Marque a tarefa como concluída somente após executar e validar.</li>
+      <li>Cadastre contas recorrentes com fornecedor, valor estimado, dia de vencimento e antecedência do alerta.</li>
+    </ol>
+    <div class="callout"><strong>Contas recorrentes</strong> servem como lembrete operacional. Quando a obrigação real chegar, confira valor e documento antes do pagamento.</div>
+    <h3>Fechamento do período</h3>
+    <p>Em <strong>Fechamento</strong>, escolha cliente e intervalo de datas. O sistema reúne informações confirmadas para apoiar a conferência mensal.</p>
+    <div class="grid">
+      <div class="card"><h3>Recebimentos</h3><p>Entradas confirmadas no banco durante o período.</p></div>
+      <div class="card"><h3>Lotes de cartão</h3><p>Lotes conciliados com os créditos bancários.</p></div>
+      <div class="card"><h3>Despesas</h3><p>Contas pagas e conciliadas no intervalo.</p></div>
+      <div class="card"><h3>Pendências</h3><p>Itens que ainda impedem um fechamento confiável.</p></div>
+    </div>
+    <h3>Checklist de fechamento</h3>
+    <ul class="check">
+      <li>Não há vendas de cartão pendentes sem justificativa.</li>
+      <li>Todos os lotes recebidos foram conciliados com o banco.</li>
+      <li>Entradas Pix/TED foram vinculadas aos recebíveis.</li>
+      <li>Débitos bancários foram vinculados às contas a pagar.</li>
+      <li>Documentos e categorias DRE estão corretos.</li>
+      <li>As rotinas do período foram concluídas.</li>
+    </ul>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>8</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Gestão</div><h2>8. Relatórios e DRE</h2><div class="rule"></div>
+    <p class="lead">Os relatórios transformam os registros operacionais em visão gerencial. A qualidade depende de lançamentos, categorias e conciliações corretas.</p>
+    <h3>Receitas e despesas</h3>
+    <p>Selecione cliente, mês e ano. Compare totais e abra os lançamentos do período para investigar valores fora do esperado.</p>
+    <h3>Orçamento</h3>
+    <ol class="steps">
+      <li>Escolha cliente, mês e ano.</li>
+      <li>Informe a meta ou limite de cada categoria.</li>
+      <li>Salve e compare o realizado com o planejado.</li>
+      <li>Revise categorias sem orçamento e desvios relevantes.</li>
+    </ol>
+    <h3>DRE</h3>
+    <p>A DRE possui uma visão simples e uma visão de cliente em formato de dashboard.</p>
+    <table><tr><th>Área</th><th>Como interpretar</th></tr>
+      <tr><td>Receita total</td><td>Valores reconhecidos no período conforme os lançamentos e conciliações.</td></tr>
+      <tr><td>Despesas</td><td>Custos e despesas classificados por categoria.</td></tr>
+      <tr><td>Resultado</td><td>Receitas menos despesas; avalie também a tendência.</td></tr>
+      <tr><td>Comparativo</td><td>Variação contra o período anterior.</td></tr>
+      <tr><td>Fluxo financeiro</td><td>Evolução de entradas, saídas e saldo.</td></tr>
+      <tr><td>Maiores desvios</td><td>Categorias com distância relevante do orçamento ou período anterior.</td></tr>
+      <tr><td>Próximos vencimentos</td><td>Compromissos que podem pressionar o caixa.</td></tr>
+    </table>
+    <div class="callout success"><strong>Para apresentar ao cliente:</strong> use a visão de dashboard, explique o período selecionado, destaque comparativos e termine com ações objetivas.</div>
+    <div class="callout warn"><strong>Antes de enviar:</strong> confira se o período está fechado e se não existem conciliações relevantes pendentes.</div>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>9</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Administração</div><h2>9. Cadastros e segurança</h2><div class="rule"></div>
+    <h3>Novo cliente</h3>
+    <p>Em <strong>Cadastros › Clientes</strong>, informe nome, razão social, CNPJ, especialidade e responsável. Se o cliente usa maquininha, cadastre rede, antecipação e taxas por bandeira/faixa.</p>
+    <h3>Novo funcionário</h3>
+    <p>Em <strong>Cadastros › Funcionários</strong>, informe nome, e-mail, senha inicial e perfil. Depois, associe os clientes sob responsabilidade do usuário.</p>
+    <h3>Taxas de cartão</h3>
+    <ul class="check">
+      <li>Selecione o cliente e a maquininha corretos.</li>
+      <li>Cadastre bandeira, faixa de parcelamento e taxa.</li>
+      <li>Configure antecipação apenas quando o contrato do cliente exigir.</li>
+      <li>Revise taxas sempre que houver mudança contratual.</li>
+    </ul>
+    <h3>Logs</h3>
+    <p>O coordenador pode filtrar registros por módulo, usuário e período. Use os logs para investigar ações, não para compartilhar dados do cliente.</p>
+    <div class="grid">
+      <div class="card"><h3>Credenciais</h3><p>Não compartilhe senha e não deixe a sessão aberta em computador compartilhado.</p></div>
+      <div class="card"><h3>Privilégio mínimo</h3><p>Escolha o perfil mais restrito que permita o trabalho do usuário.</p></div>
+      <div class="card"><h3>Arquivos</h3><p>Importe apenas documentos esperados, confiáveis e referentes ao cliente ativo.</p></div>
+      <div class="card"><h3>Saída</h3><p>Use <strong>Sair</strong> no fim do expediente ou antes de trocar de operador.</p></div>
+    </div>
+    <div class="callout danger"><strong>Dados financeiros são sensíveis.</strong> Não envie planilhas, comprovantes, CPF, CNPJ ou relatórios por canais não autorizados.</div>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>10</span></div>
+  </section>
+
+  <section class="page">
+    <div class="kicker">Apoio rápido</div><h2>10. Dúvidas e checklist diário</h2><div class="rule"></div>
+    <h3>Problemas comuns</h3>
+    <table><tr><th>Problema</th><th>O que verificar</th></tr>
+      <tr><td>O sistema não abre</td><td>Confirme se o Docker Desktop está aberto e se <code>http://localhost:8888</code> responde.</td></tr>
+      <tr><td>Não vejo um cliente</td><td>Confira seu perfil e se o cliente foi atribuído ao seu usuário.</td></tr>
+      <tr><td>Um item não concilia</td><td>Compare cliente, data, valor, forma, últimos dígitos e sentido entrada/saída.</td></tr>
+      <tr><td>Valor não aparece na DRE</td><td>Confira período, status conciliado e categoria DRE.</td></tr>
+      <tr><td>Conta parece duplicada</td><td>Pesquise descrição, fornecedor, vencimento e valor antes de excluir.</td></tr>
+      <tr><td>Arquivo recusado</td><td>Confirme formato, tamanho e colunas exigidas pela própria tela.</td></tr>
+    </table>
+    <h3>Rotina diária recomendada</h3>
+    <ul class="check">
+      <li>Selecionar e confirmar o cliente ativo.</li>
+      <li>Revisar alertas do Dashboard.</li>
+      <li>Registrar ou importar os lançamentos do dia.</li>
+      <li>Importar e conciliar vendas de cartão.</li>
+      <li>Importar o extrato bancário e revisar entradas, lotes e saídas.</li>
+      <li>Registrar e agendar contas a pagar.</li>
+      <li>Concluir as rotinas operacionais.</li>
+      <li>Verificar pendências antes de encerrar.</li>
+    </ul>
+    <h3>Regra de ouro</h3>
+    <div class="callout success"><strong>Cliente certo, origem conferida, vínculo comprovado.</strong><br>Não confirme uma operação apenas porque o valor coincide. Preserve a rastreabilidade entre lançamento, extrato, lote e banco.</div>
+    <p class="small">Este manual descreve a interface disponível na data indicada na capa. Os menus exibidos podem variar conforme o perfil de acesso.</p>
+    <div class="footer"><span>Manual do Usuário • FLIC</span><span>11</span></div>
+  </section>
+</body>
+</html>

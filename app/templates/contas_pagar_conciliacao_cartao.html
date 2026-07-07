@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Conc. Cartão — Contas a Pagar{% endblock %}
+{% block page_title %}Conciliação Cartão — Contas a Pagar{% endblock %}
+
+{% block content %}
+<div class="space-y-5">
+
+  <!-- Seletor de cliente -->
+  <div class="flex items-center gap-3">
+    <form method="get" action="/contas-pagar/conciliacao-cartao" class="flex items-center gap-2">
+      <label class="text-sm text-gray-500">Cliente:</label>
+      <select name="cliente_id" onchange="this.form.submit()"
+              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if cliente_selecionado %}
+
+  <!-- Importar extrato cartão -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Importar extrato do cartão corporativo</h3>
+      <button onclick="document.getElementById('form-import').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+    <form id="form-import" method="post" action="/contas-pagar/conciliacao-cartao/processar"
+          enctype="multipart/form-data" class="hidden p-6">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}" />
+      <div class="flex items-end gap-4">
+        <div class="flex-1">
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Arquivo (CSV ou Excel)</label>
+          <input type="file" name="arquivo" required accept=".csv,.xlsx,.xls"
+                 class="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                        file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200" />
+        </div>
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+          Importar
+        </button>
+      </div>
+      <p class="mt-2 text-xs text-gray-400">
+        Colunas esperadas: <code>data</code>, <code>valor</code>, <code>descricao</code> (e opcionalmente <code>ultimos_digitos</code>).
+        Registros anteriores não conciliados serão substituídos.
+      </p>
+    </form>
+  </div>
+
+  <!-- Stats -->
+  {% if painel %}
+  <div class="grid grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 text-center">
+      <p class="text-2xl font-bold text-gray-800">{{ painel | length }}</p>
+      <p class="text-xs text-gray-400 mt-0.5 uppercase tracking-wide">Transações pendentes</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 text-center">
+      <p class="text-2xl font-bold text-green-600">{{ painel | selectattr('sugestao') | list | length }}</p>
+      <p class="text-xs text-gray-400 mt-0.5 uppercase tracking-wide">Com sugestão</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 px-5 py-4 text-center">
+      <p class="text-2xl font-bold text-gray-500">{{ contas_pendentes | length }}</p>
+      <p class="text-xs text-gray-400 mt-0.5 uppercase tracking-wide">Contas pendentes</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Painel de conciliação -->
+  {% if painel %}
+  <div class="space-y-3">
+    {% for item in painel %}
+    {% set mov = item.mov %}
+    <div class="bg-white rounded-xl border {% if item.busca_aberta %}border-blue-300{% else %}border-gray-200{% endif %} shadow-sm overflow-hidden">
+
+      <!-- Linha principal -->
+      <div class="px-5 py-4 flex items-center gap-4">
+        <div class="w-24 shrink-0">
+          <p class="text-xs text-gray-400">Data</p>
+          <p class="font-medium text-gray-800 text-sm">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</p>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs text-gray-400">Descrição</p>
+          <p class="font-medium text-gray-700 text-sm truncate">{{ mov.descricao or '—' }}</p>
+        </div>
+        {% if mov.digitos_cartao %}
+        <div class="w-20 shrink-0 text-center">
+          <p class="text-xs text-gray-400">Cartão</p>
+          <p class="text-sm font-mono text-gray-600">****{{ mov.digitos_cartao }}</p>
+        </div>
+        {% endif %}
+        <div class="w-28 shrink-0 text-right">
+          <p class="text-xs text-gray-400">Valor</p>
+          <p class="font-bold text-gray-800">R$ {{ '%.2f'|format(mov.valor|float) }}</p>
+        </div>
+
+        <!-- Ações -->
+        <div class="flex items-center gap-2 shrink-0">
+          {% if item.sugestao %}
+          <form method="post" action="/contas-pagar/conciliacao-cartao/mov/{{ mov.id }}/conciliar">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}" />
+            <input type="hidden" name="conta_pagar_id" value="{{ item.sugestao.id }}" />
+            <button type="submit"
+                    class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    title="{{ item.sugestao.descricao }} — R$ {{ '%.2f'|format(item.sugestao.valor|float) }}">
+              ✓ Conciliar
+            </button>
+          </form>
+          {% endif %}
+          <a href="/contas-pagar/conciliacao-cartao?cliente_id={{ cliente_selecionado }}&buscar_mov={{ mov.id }}"
+             class="bg-[#5e93cc]/8 hover:bg-[#5e93cc]/15 text-[#222049] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+            🔍 Procurar
+          </a>
+          <form method="post" action="/contas-pagar/conciliacao-cartao/mov/{{ mov.id }}/ignorar">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}" />
+            <button type="submit"
+                    class="text-xs text-gray-400 hover:text-red-500 px-2 py-1.5 transition-colors"
+                    title="Ignorar este lançamento">✕</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Sugestão -->
+      {% if item.sugestao and not item.busca_aberta %}
+      <div class="px-5 py-2.5 bg-green-50 border-t border-green-100 flex items-center justify-between">
+        <div class="flex items-center gap-3 text-sm">
+          <span class="text-green-600 font-medium">Sugestão:</span>
+          <span class="text-gray-700">{{ item.sugestao.descricao }}</span>
+          {% if item.sugestao.fornecedor %}
+          <span class="text-gray-400">· {{ item.sugestao.fornecedor }}</span>
+          {% endif %}
+          <span class="text-gray-500">· R$ {{ '%.2f'|format(item.sugestao.valor|float) }}</span>
+          <span class="text-gray-400">· venc. {{ item.sugestao.vencimento.strftime('%d/%m/%Y') }}</span>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Busca manual -->
+      {% if item.busca_aberta %}
+      <div class="border-t border-[#5e93cc]/15 bg-[#5e93cc]/5 px-5 py-4">
+        <form method="get" action="/contas-pagar/conciliacao-cartao" class="flex items-center gap-2 mb-3">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}" />
+          <input type="hidden" name="buscar_mov" value="{{ mov.id }}" />
+          <input type="text" name="termo" value="{{ item.busca_termo }}"
+                 placeholder="Buscar por descrição ou fornecedor..."
+                 class="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-[#5e93cc] outline-none" />
+          <button type="submit" class="bg-[#222049] text-white text-sm font-semibold px-4 py-1.5 rounded-lg hover:bg-[#1a1836]">
+            Buscar
+          </button>
+          <a href="/contas-pagar/conciliacao-cartao?cliente_id={{ cliente_selecionado }}"
+             class="text-sm text-gray-400 hover:text-gray-600 px-2">Fechar</a>
+        </form>
+
+        {% if item.resultados_busca %}
+        <div class="space-y-1.5">
+          {% for conta in item.resultados_busca %}
+          <div class="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-gray-200">
+            <div class="flex items-center gap-3 text-sm">
+              <span class="font-medium text-gray-800">{{ conta.descricao }}</span>
+              {% if conta.fornecedor %}
+              <span class="text-gray-400">· {{ conta.fornecedor }}</span>
+              {% endif %}
+              <span class="text-gray-500">· R$ {{ '%.2f'|format(conta.valor|float) }}</span>
+              <span class="text-gray-400">· venc. {{ conta.vencimento.strftime('%d/%m/%Y') }}</span>
+            </div>
+            <form method="post" action="/contas-pagar/conciliacao-cartao/mov/{{ mov.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}" />
+              <input type="hidden" name="conta_pagar_id" value="{{ conta.id }}" />
+              <button type="submit"
+                      class="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                Conciliar
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400">Nenhuma conta encontrada para este critério.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+
+  {% elif cliente_selecionado %}
+  <div class="bg-white rounded-xl border border-gray-200 px-6 py-10 text-center text-gray-400">
+    <p class="text-4xl mb-3">🔄</p>
+    <p class="font-medium">Nenhuma transação de cartão importada.</p>
+    <p class="text-sm mt-1">Use o formulário acima para importar o extrato do cartão corporativo.</p>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 px-6 py-10 text-center text-gray-400">
+    <p>Selecione um cliente para iniciar a conciliação.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

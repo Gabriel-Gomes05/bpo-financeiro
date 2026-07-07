@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Taxas de Cartão — FLIC{% endblock %}
+{% block page_title %}Taxas de Cartão por Cliente{% endblock %}
+
+{% block content %}
+
+{% set nomes_faixa = {
+  'avista':          'À vista',
+  'avista_credito':  'À vista — Crédito',
+  'avista_debito':   'À vista — Débito',
+  'parcelado_2_6':   'Parcelado 2x a 6x',
+  'parcelado_6_12':  'Parcelado 6x a 12x',
+} %}
+
+{% set cores_faixa = {
+  'avista':          ('rgba(5,150,105,0.1)',   '#065f46'),
+  'avista_credito':  ('rgba(5,150,105,0.1)',   '#065f46'),
+  'avista_debito':   ('rgba(124,58,237,0.1)',  '#6d28d9'),
+  'parcelado_2_6':   ('rgba(94,147,204,0.15)', '#1d4ed8'),
+  'parcelado_6_12':  ('rgba(217,119,6,0.12)',  '#b45309'),
+} %}
+
+<div class="space-y-6">
+
+  <!-- Seletor de cliente -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <form method="get" action="/admin/taxas-cartao" class="flex flex-wrap items-end gap-4">
+      <div class="flex-1 min-w-48">
+        <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Cliente</label>
+        <select name="cliente_id" onchange="this.form.submit()"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+          <option value="">Selecione um cliente...</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}" {% if cliente_selecionado and c.id == cliente_selecionado.id %}selected{% endif %}>
+            {{ c.nome }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+  </section>
+
+  {% if cliente_selecionado %}
+
+  <!-- Toggle antecipação -->
+  <section class="rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm flex items-center justify-between gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <span class="text-sm font-semibold text-slate-700">{{ cliente_selecionado.nome }}</span>
+      <span class="text-xs text-slate-400">·</span>
+      <span class="text-xs text-slate-500">Antecipação de recebíveis:</span>
+      {% if cliente_selecionado.antecipa %}
+      <span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">Sim</span>
+      {% else %}
+      <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">Não</span>
+      {% endif %}
+    </div>
+    <form method="post" action="/admin/taxas-cartao/toggle-antecipa">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}">
+      <button type="submit"
+              class="rounded-xl border px-4 py-1.5 text-xs font-semibold transition
+                     {% if cliente_selecionado.antecipa %}border-slate-300 text-slate-600 hover:bg-slate-50{% else %}border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100{% endif %}">
+        {% if cliente_selecionado.antecipa %}Desativar antecipação{% else %}Ativar antecipação{% endif %}
+      </button>
+    </form>
+  </section>
+
+  <!-- Seletor de maquininha -->
+  {% if maquininhas %}
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="flex flex-wrap gap-2 items-center">
+      <span class="text-xs font-semibold uppercase tracking-widest text-slate-500 mr-2">Maquininha:</span>
+      <a href="/admin/taxas-cartao?cliente_id={{ cliente_selecionado.id }}"
+         class="px-3 py-1.5 rounded-xl text-sm font-medium transition
+                {% if not maquininha_selecionada %}text-white{% else %}text-slate-600 hover:bg-slate-100{% endif %}"
+         style="{% if not maquininha_selecionada %}background:#222049;{% endif %}">
+        Todas
+      </a>
+      {% for m in maquininhas %}
+      <a href="/admin/taxas-cartao?cliente_id={{ cliente_selecionado.id }}&maquininha_id={{ m.id }}"
+         class="px-3 py-1.5 rounded-xl text-sm font-medium transition
+                {% if maquininha_selecionada and maquininha_selecionada.id == m.id %}text-white{% else %}text-slate-600 hover:bg-slate-100 border border-slate-200{% endif %}"
+         style="{% if maquininha_selecionada and maquininha_selecionada.id == m.id %}background:#5e93cc;{% endif %}">
+        {{ m.rede }}{% if m.apelido %} — {{ m.apelido }}{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Formulário para adicionar / atualizar taxa -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h3 class="font-semibold text-slate-800 mb-4">Adicionar / atualizar taxa — {{ cliente_selecionado.nome }}{% if maquininha_selecionada %} · {{ maquininha_selecionada.rede }}{% if maquininha_selecionada.apelido %} — {{ maquininha_selecionada.apelido }}{% endif %}{% endif %}</h3>
+    <form method="post" action="/admin/taxas-cartao" class="flex flex-wrap items-end gap-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}">
+      {% if maquininha_selecionada %}
+      <input type="hidden" name="maquininha_id" value="{{ maquininha_selecionada.id }}">
+      {% elif maquininhas %}
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Maquininha</label>
+        <select name="maquininha_id"
+                class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+          <option value="">— Sem vínculo específico —</option>
+          {% for m in maquininhas %}
+          <option value="{{ m.id }}">{{ m.rede }}{% if m.apelido %} — {{ m.apelido }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Bandeira</label>
+        <select name="bandeira" required
+                class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+          {% for b in bandeiras %}
+          <option value="{{ b }}">{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Faixa de parcelamento</label>
+        <select name="faixa_parcelamento" required
+                class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+          {% for valor, nome in faixas %}
+          <option value="{{ valor }}">{{ nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Taxa (%)</label>
+        <input type="number" name="taxa_percentual" step="0.01" min="0" max="100" required
+               placeholder="Ex: 2.50"
+               class="w-36 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+      </div>
+
+      <button type="submit"
+              class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              style="background:#222049;">
+        Salvar taxa
+      </button>
+    </form>
+    <p class="mt-2 text-xs text-slate-400">Se já existir uma taxa para essa bandeira + faixa, ela será atualizada.</p>
+  </section>
+
+  <!-- Taxas cadastradas -->
+  <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div class="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
+      <h3 class="font-semibold text-slate-800">Taxas cadastradas</h3>
+      <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+        {{ taxas | length }} taxa(s)
+      </span>
+    </div>
+
+    {% if taxas %}
+    <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for t in taxas %}
+      {% set cor = cores_faixa.get(t.faixa_parcelamento, ('rgba(209,213,219,0.3)', '#6b7280')) %}
+      <article class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-[#5e93cc]/50 hover:shadow-md">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h4 class="font-bold text-[#222049]">{{ t.bandeira }}</h4>
+            {% if t.maquininha %}<p class="truncate text-xs text-slate-500">{{ t.maquininha.rede }}{% if t.maquininha.apelido %} · {{ t.maquininha.apelido }}{% endif %}</p>{% endif %}
+          </div>
+          <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style="background:{{ cor[0] }}; color:{{ cor[1] }};">{{ nomes_faixa.get(t.faixa_parcelamento, t.faixa_parcelamento) }}</span>
+        </div>
+        <div class="mt-4 grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-3 text-center">
+          <div><p class="text-[10px] uppercase text-slate-400">Taxa</p><p class="font-mono text-sm font-bold text-slate-700">{{ '%.2f'|format(t.taxa_percentual|float) }}%</p></div>
+          <div><p class="text-[10px] uppercase text-slate-400">Líq. 1 mil</p><p class="text-xs font-semibold text-slate-700">R$ {{ '%.2f'|format(1000 * (1 - t.taxa_percentual|float / 100)) }}</p></div>
+          <div><p class="text-[10px] uppercase text-slate-400">Líq. 5 mil</p><p class="text-xs font-semibold text-slate-700">R$ {{ '%.2f'|format(5000 * (1 - t.taxa_percentual|float / 100)) }}</p></div>
+        </div>
+        {% if pode_excluir %}
+        <form method="post" action="/admin/taxas-cartao/{{ t.id }}/excluir" class="mt-3" onsubmit="return confirm('Remover esta taxa?');">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}">
+          {% if t.maquininha_id %}<input type="hidden" name="maquininha_id" value="{{ t.maquininha_id }}">{% endif %}
+          <button type="submit" class="w-full rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">Remover taxa</button>
+        </form>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-5 py-10 text-center">
+      <p class="text-sm text-slate-400">Nenhuma taxa cadastrada para este cliente ainda.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Explicação -->
+  <section class="rounded-2xl border border-sky-100 bg-sky-50 px-5 py-4 text-sm text-sky-800">
+    <p class="font-semibold mb-2">Como as faixas são usadas na conciliação?</p>
+    <ul class="space-y-1 list-disc list-inside text-sky-700">
+      <li><strong>À vista — Crédito</strong> — pagamento à vista no cartão de crédito.</li>
+      <li><strong>À vista — Débito</strong> — pagamento no cartão de débito.</li>
+      <li><strong>Parcelado 2x a 6x</strong> — crédito parcelado em 2 a 6 vezes.</li>
+      <li><strong>Parcelado 6x a 12x</strong> — crédito parcelado em 7 a 12 vezes.</li>
+    </ul>
+    <p class="mt-2 text-sky-600 text-xs">Se o arquivo da maquininha não trouxer o valor líquido, o sistema calcula automaticamente pela taxa da faixa correspondente ao número de parcelas do lançamento.</p>
+  </section>
+
+  {# ─── Taxas de Antecipação (só aparece se o cliente tem antecipa=True) ─── #}
+  {% if cliente_selecionado.antecipa %}
+
+  <section class="rounded-2xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+    <div class="border-b border-violet-100 px-5 py-4 flex items-center justify-between">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-violet-400">Antecipação ativa</p>
+        <h3 class="font-semibold text-slate-800 mt-0.5">Taxas de Antecipação — {{ cliente_selecionado.nome }}</h3>
+      </div>
+      <span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+        {{ taxas_antecipacao | length }} taxa(s)
+      </span>
+    </div>
+
+    <!-- Formulário para adicionar nova taxa de antecipação -->
+    <div class="px-5 py-4 border-b border-violet-50 bg-violet-50/40">
+      <p class="text-xs font-semibold text-violet-600 uppercase tracking-wide mb-3">Adicionar taxa de antecipação</p>
+      <form method="post" action="/admin/taxas-antecipacao" class="flex flex-wrap items-end gap-4">
+        <input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}">
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Bandeira</label>
+          <select name="bandeira" required
+                  class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+            {% for b in bandeiras %}
+            <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Descrição</label>
+          <input type="text" name="descricao" required placeholder="ex: 1x, 2x a 6x, Padrão Jun/26"
+                 class="w-44 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Taxa (%)</label>
+          <input type="number" name="taxa_percentual" step="0.01" min="0" max="100" required
+                 placeholder="Ex: 1.50"
+                 class="w-32 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+        </div>
+
+        <button type="submit"
+                class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                style="background:#7c3aed;">
+          + Adicionar
+        </button>
+      </form>
+    </div>
+
+    <!-- Tabela de taxas de antecipação cadastradas -->
+    {% if taxas_antecipacao %}
+    <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for t in taxas_antecipacao %}
+      <article class="rounded-xl border p-4 {% if not t.ativo %}border-slate-200 bg-slate-50 opacity-60{% elif t.selecionada %}border-violet-300 bg-violet-50{% else %}border-slate-200 bg-white{% endif %}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0"><h4 class="font-bold text-[#222049]">{{ t.bandeira }}</h4><p class="truncate text-sm text-slate-500">{{ t.descricao }}</p></div>
+          {% if not t.ativo %}<span class="rounded-full bg-slate-200 px-2 py-1 text-[11px] text-slate-500">Desativada</span>{% elif t.selecionada %}<span class="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">✓ Em uso</span>{% endif %}
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-2 rounded-lg bg-white/70 p-3 text-center">
+          <div><p class="text-[10px] uppercase text-slate-400">Taxa</p><p class="font-mono font-bold text-slate-700">{{ '%.2f'|format(t.taxa_percentual|float) }}%</p></div>
+          <div><p class="text-[10px] uppercase text-slate-400">Líq. 1 mil</p><p class="text-sm font-semibold text-slate-700">R$ {{ '%.2f'|format(1000 * (1 - t.taxa_percentual|float / 100)) }}</p></div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          {% if t.ativo and not t.selecionada %}<form method="post" action="/admin/taxas-antecipacao/{{ t.id }}/selecionar" class="flex-1"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}"><button type="submit" class="w-full rounded-lg border border-violet-200 px-3 py-2 text-xs font-semibold text-violet-700">Usar esta</button></form>{% endif %}
+          <form method="post" action="/admin/taxas-antecipacao/{{ t.id }}/toggle-ativo" class="flex-1"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}"><button type="submit" class="w-full rounded-lg border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-700">{% if t.ativo %}Desativar{% else %}Reativar{% endif %}</button></form>
+          {% if pode_excluir %}<form method="post" action="/admin/taxas-antecipacao/{{ t.id }}/excluir" onsubmit="return confirm('Excluir permanentemente esta taxa?')"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado.id }}"><button type="submit" class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Excluir</button></form>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-5 py-8 text-center">
+      <p class="text-sm text-slate-400">Nenhuma taxa de antecipação cadastrada ainda.</p>
+      <p class="text-xs text-slate-400 mt-1">Use o formulário acima para adicionar as opções disponíveis.</p>
+    </div>
+    {% endif %}
+
+    <div class="px-5 py-3 bg-violet-50/40 border-t border-violet-100 text-xs text-violet-600">
+      A taxa marcada como <strong>"Ativa no período"</strong> é usada automaticamente no cálculo dos lançamentos de cartão para este cliente.
+      Clique em <strong>"Usar esta"</strong> para trocar a taxa vigente.
+    </div>
+  </section>
+
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

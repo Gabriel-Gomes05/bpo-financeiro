@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Editar Lançamento — FLIC{% endblock %}
+{% block page_title %}Editar Lançamento{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+
+  <div class="flex items-center gap-3 text-sm text-gray-500">
+    <a href="/lancamentos?cliente_id={{ at.cliente_id }}" class="hover:text-[#5e93cc]">← Voltar para Lançamentos</a>
+    <span>›</span>
+    <span class="text-gray-700 font-medium">Editar #{{ at.id }}</span>
+  </div>
+
+  {% if at.status_conciliacao.value == 'conciliado' %}
+  <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-4 text-sm text-emerald-800">
+    Este atendimento já foi <strong>conciliado</strong> e não pode ser editado.
+    <a href="/lancamentos?cliente_id={{ at.cliente_id }}" class="underline ml-2">Voltar</a>
+  </div>
+  {% else %}
+
+  <form method="post" action="/lancamentos/{{ at.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data do atendimento *</label>
+        <input type="date" name="data_atendimento" required
+               value="{{ at.data_atendimento.isoformat() }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Paciente</label>
+        <input type="text" name="nome_paciente" value="{{ at.nome_paciente or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">CPF</label>
+        <input type="text" name="cpf_paciente" maxlength="14" value="{{ at.cpf_paciente or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Centro de Custo</label>
+        <select name="centro_custo_id"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">— Selecione —</option>
+          {% for cc in centros_custo %}
+          <option value="{{ cc.id }}" {% if at.centro_custo_id == cc.id %}selected{% endif %}>
+            {%- if cc.codigo %}{{ cc.codigo }} — {% endif %}{{ cc.nome }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade</label>
+        <input type="text" name="especialidade" value="{{ at.especialidade or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Serviço / Procedimento</label>
+        <input type="text" name="descricao_servico" value="{{ at.descricao_servico or at.tipo_servico or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Valor (R$) *</label>
+        <input type="number" name="valor_servico" step="0.01" min="0" required
+               value="{{ '%.2f'|format(at.valor_servico|float) }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Forma de Pagamento</label>
+        <select name="forma_pagamento" id="edit-forma"
+                onchange="toggleCartaoEdit()"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          <option value="cartao_credito" {% if at.forma_pagamento and at.forma_pagamento.value == 'cartao_credito' %}selected{% endif %}>Cartão</option>
+          <option value="pix"            {% if at.forma_pagamento and at.forma_pagamento.value == 'pix' %}selected{% endif %}>Pix</option>
+          <option value="transferencia"  {% if at.forma_pagamento and at.forma_pagamento.value == 'transferencia' %}selected{% endif %}>Transferência</option>
+          <option value="dinheiro"       {% if at.forma_pagamento and at.forma_pagamento.value == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Condição</label>
+        <select name="condicao_pagamento"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="avista"    {% if at.condicao_pagamento and at.condicao_pagamento.value == 'avista' %}selected{% endif %}>À vista</option>
+          <option value="parcelado" {% if at.condicao_pagamento and at.condicao_pagamento.value == 'parcelado' %}selected{% endif %}>Parcelado</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="campos-cartao-edit" class="grid grid-cols-1 md:grid-cols-3 gap-4
+         {% if not at.forma_pagamento or at.forma_pagamento.value != 'cartao_credito' %}hidden{% endif %}">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">4 últimos dígitos</label>
+        <input type="text" name="ultimos_digitos_cartao" maxlength="4"
+               value="{{ at.ultimos_digitos_cartao or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Bandeira</label>
+        <select name="bandeira_cartao"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          {% for b in ['Visa','Mastercard','Elo','Amex','Hipercard'] %}
+          <option {% if at.bandeira_cartao == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nº de parcelas</label>
+        <input type="number" name="parcela_total" min="1" max="48"
+               value="{{ at.parcela_total or 1 }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        <input type="hidden" name="parcela_numero" value="{{ at.parcela_numero or 1 }}" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">% Centro de Custo</label>
+        <input type="number" name="percentual_medico" step="0.01" min="0" max="100"
+               value="{{ '%.2f'|format(at.percentual_medico|float) if at.percentual_medico else '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Observação</label>
+        <input type="text" name="observacao" value="{{ at.observacao or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+      <a href="/lancamentos?cliente_id={{ at.cliente_id }}"
+         class="rounded-lg border border-gray-300 px-5 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition">Cancelar</a>
+      <button type="submit"
+              class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors">
+        Salvar alterações
+      </button>
+    </div>
+
+  </form>
+
+  {% endif %}
+</div>
+
+<script>
+  function toggleCartaoEdit() {
+    const forma = document.getElementById('edit-forma').value;
+    document.getElementById('campos-cartao-edit').classList.toggle('hidden', forma !== 'cartao_credito');
+  }
+</script>
+{% endblock %}

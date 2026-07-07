@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Centros de Custo — FLIC{% endblock %}
+{% block page_title %}Centros de Custo{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6">
+
+  <div class="flex items-center gap-3 text-sm text-gray-500">
+    <a href="/admin/clientes" class="hover:text-[#5e93cc]">← Voltar para Clientes</a>
+    <span>›</span>
+    <span class="text-gray-700 font-medium">{{ cliente.nome }}</span>
+  </div>
+
+  <!-- Formulário de novo centro de custo -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+    <h3 class="font-semibold text-gray-700 mb-4">Novo centro de custo</h3>
+    <form method="post" action="/admin/centros-custo" class="space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente.id }}" />
+      <div class="grid grid-cols-1 md:grid-cols-[140px_1fr] gap-3">
+        <div class="w-36">
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Código *</label>
+          <input type="text" name="codigo" required placeholder="Ex: CC001"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        </div>
+        <div class="flex-1">
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome *</label>
+          <input type="text" name="nome" required placeholder="Ex: Dr. Silva, Setor Financeiro..."
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        </div>
+      </div>
+      <label class="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer">
+        <input type="checkbox" name="is_medico" value="true" onchange="alternarEspecialidadeMedico(this)"
+               class="h-4 w-4 rounded border-gray-300 text-[#5e93cc]">
+        <span>
+          <span class="block text-sm font-semibold text-gray-700">Este centro de custo é um médico</span>
+          <span class="block text-xs text-gray-400">Ative para cadastrar e preencher automaticamente a especialidade.</span>
+        </span>
+      </label>
+      <div id="campo-especialidade-medico" class="hidden">
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade do médico *</label>
+        <input type="text" name="especialidade" disabled placeholder="Ex: Cardiologia, Ortopedia..."
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="flex justify-end">
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors whitespace-nowrap">Adicionar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Lista de centros de custo -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-700">Centros de custo cadastrados</h3>
+      <p class="text-xs text-gray-400 mt-0.5">{{ centros|length }} registro(s)</p>
+    </div>
+    {% if centros %}
+    <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for cc in centros %}
+      <article class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-[#5e93cc]/50 hover:shadow-md">
+        <div class="flex min-w-0 items-start justify-between gap-3">
+          <div class="min-w-0">
+          {% if cc.codigo %}
+          <span class="inline-block rounded bg-[#222049] px-2 py-0.5 font-mono text-xs font-semibold text-white">{{ cc.codigo }}</span>
+          {% endif %}
+          <h4 class="mt-2 truncate font-bold text-[#222049]" title="{{ cc.nome }}">{{ cc.nome }}</h4>
+          {% if cc.is_medico %}
+          <span class="mt-2 inline-block max-w-full truncate rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700">Médico{% if cc.especialidade %} · {{ cc.especialidade }}{% endif %}</span>
+          {% else %}
+          <span class="mt-2 inline-block rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">Centro administrativo</span>
+          {% endif %}
+          </div>
+        </div>
+        <div class="mt-4 flex gap-2 border-t border-slate-100 pt-3">
+          <button type="button" onclick="document.getElementById('editar-centro-{{ cc.id }}').classList.toggle('hidden')" class="flex-1 rounded-lg bg-[#222049] px-3 py-2 text-xs font-semibold text-white">Editar cadastro</button>
+          <form method="post" action="/admin/centros-custo/{{ cc.id }}/excluir" onsubmit="return confirm('Remover {{ cc.nome }}?')">
+            <button type="submit" class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Remover</button>
+          </form>
+        </div>
+        <form id="editar-centro-{{ cc.id }}" method="post" action="/admin/centros-custo/{{ cc.id }}/editar"
+              class="mt-3 hidden rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <label class="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <input type="checkbox" name="is_medico" value="true" {% if cc.is_medico %}checked{% endif %}
+                   onchange="alternarEspecialidadeEdicao(this)"> Centro de custo médico
+          </label>
+          <div data-especialidade-edicao class="mt-2 {% if not cc.is_medico %}hidden{% endif %}">
+            <input type="text" name="especialidade" value="{{ cc.especialidade or '' }}" {% if not cc.is_medico %}disabled{% endif %}
+                   placeholder="Especialidade do médico"
+                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+          </div>
+          <div class="mt-2 flex justify-end">
+            <button type="submit" class="rounded-lg bg-[#222049] px-4 py-2 text-xs font-semibold text-white">Salvar alteração</button>
+          </div>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="px-6 py-8 text-center text-sm text-gray-400">Nenhum centro de custo cadastrado.</p>
+    {% endif %}
+  </div>
+
+</div>
+<script>
+function alternarEspecialidadeMedico(checkbox) {
+  const campo = document.getElementById('campo-especialidade-medico');
+  const input = campo.querySelector('[name="especialidade"]');
+  campo.classList.toggle('hidden', !checkbox.checked);
+  input.disabled = !checkbox.checked;
+  input.required = checkbox.checked;
+  if (!checkbox.checked) input.value = '';
+}
+function alternarEspecialidadeEdicao(checkbox) {
+  const campo = checkbox.closest('form').querySelector('[data-especialidade-edicao]');
+  const input = campo.querySelector('[name="especialidade"]');
+  campo.classList.toggle('hidden', !checkbox.checked);
+  input.disabled = !checkbox.checked;
+  input.required = checkbox.checked;
+  if (!checkbox.checked) input.value = '';
+}
+</script>
+{% endblock %}

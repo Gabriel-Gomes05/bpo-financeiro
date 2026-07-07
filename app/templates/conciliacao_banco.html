@@ -1,0 +1,1411 @@
+{% extends "base.html" %}
+{% block title %}Conciliação Bancária — FLIC{% endblock %}
+{% block page_title %}Conciliação Bancária{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {# ── Flash ──────────────────────────────────────────────────────── #}
+  {% if flash_success %}
+  <div class="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+    <span>✓ {{ flash_success }}</span>
+    {% if cliente_selecionado %}
+    <a href="/conciliacao?cliente_id={{ cliente_selecionado }}"
+       class="text-xs font-semibold text-emerald-700 underline hover:text-emerald-900 whitespace-nowrap">← Voltar para Conciliação Cartão</a>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">⚠ {{ flash_error }}</div>
+  {% endif %}
+
+  {# ── Barra: cliente + importar ──────────────────────────────────── #}
+  <div class="flex flex-wrap items-end gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <form method="get" action="/conciliacao/banco" class="flex-1 min-w-44">
+      <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Cliente</label>
+      <select name="cliente_id" onchange="this.form.submit()"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if cliente_selecionado %}
+    <form method="post" action="/conciliacao/banco/importar-extrato" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Extrato (OFX / XLSX / CSV)</label>
+        <input type="file" name="arquivo" required accept=".ofx,.ofc,.xlsx,.xls,.csv"
+               class="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-blue-700 hover:file:bg-blue-100"/>
+      </div>
+      <button type="submit" class="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 text-sm transition-colors">
+        Importar extrato
+      </button>
+    </form>
+    <button type="button" onclick="abrirModalManual('movimentacao')"
+            class="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100 transition-colors">
+      + Movimento de extrato
+    </button>
+    <button type="button" onclick="abrirModalManual('receita')"
+            class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors">
+      + Conta a receber
+    </button>
+    <button type="button" onclick="abrirModalManual('despesa')"
+            class="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 transition-colors">
+      + Nova despesa
+    </button>
+    <button type="button" onclick="abrirModalManual('parcial')"
+            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 transition-colors">
+      + Pagamento parcial
+    </button>
+    {% endif %}
+  </div>
+
+  {% if not cliente_selecionado %}
+  <div class="rounded-2xl border border-slate-200 bg-white p-16 text-center text-slate-400">
+    <div class="text-4xl mb-3">🏦</div>
+    <p class="font-medium text-slate-600">Selecione um cliente para ver o painel de conciliação</p>
+  </div>
+
+  {% else %}
+
+  {# ── Preparar lista unificada de itens (pix_ted + lotes) ──────── #}
+  {# Lotes pendentes de cartão para exibir no painel #}
+  {% set lotes_pendentes = lotes_cartao | selectattr('status.value', 'equalto', 'pendente') | list %}
+  {% set total_pix = painel.totais.movimentos_banco if painel else 0 %}
+  {% set total_lotes = lotes_pendentes | length %}
+  {% set total_painel = total_pix + total_lotes %}
+
+  {% if mostrar_arquivados %}
+  {% set total_arquivados = movimentacoes_arquivadas|length + lancamentos_arquivados|length + contas_arquivadas|length %}
+  <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+      <div>
+        <h2 class="font-semibold text-slate-800">Lançamentos arquivados</h2>
+        <p class="text-xs text-slate-400 mt-0.5">{{ total_arquivados }} item(ns) retirado(s) da conciliação bancária</p>
+      </div>
+      <a href="/conciliacao/banco?cliente_id={{ cliente_selecionado }}"
+         class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+        ← Voltar para conciliações pendentes
+      </a>
+    </div>
+
+    {% if total_arquivados %}
+    <div class="overflow-x-auto p-4">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+            <th class="px-3 py-3">Origem</th>
+            <th class="px-3 py-3">Data</th>
+            <th class="px-3 py-3">Descrição</th>
+            <th class="px-3 py-3 text-right">Valor</th>
+            <th class="px-3 py-3 text-right">Ação</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for mov in movimentacoes_arquivadas %}
+          <tr>
+            <td class="px-3 py-3"><span class="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">Banco</span></td>
+            <td class="px-3 py-3 text-slate-500">{{ mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '—' }}</td>
+            <td class="px-3 py-3 text-slate-700">{{ mov.descricao or mov.origem_arquivo or 'Movimentação bancária' }}</td>
+            <td class="px-3 py-3 text-right font-semibold text-slate-800">R$ {{ '%.2f'|format(mov.valor|float) }}</td>
+            <td class="px-3 py-3 text-right">
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/restaurar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Restaurar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% for at in lancamentos_arquivados %}
+          <tr>
+            <td class="px-3 py-3"><span class="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">Sistema · recebimento</span></td>
+            <td class="px-3 py-3 text-slate-500">{{ at.data_prevista_recebimento.strftime('%d/%m/%Y') if at.data_prevista_recebimento else '—' }}</td>
+            <td class="px-3 py-3 text-slate-700">{{ at.nome_paciente or at.descricao_servico or 'Lançamento do sistema' }}</td>
+            <td class="px-3 py-3 text-right font-semibold text-slate-800">R$ {{ '%.2f'|format(at.valor_servico|float) }}</td>
+            <td class="px-3 py-3 text-right">
+              <form method="post" action="/conciliacao/banco/lancamento/{{ at.id }}/restaurar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Restaurar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% for cp in contas_arquivadas %}
+          <tr>
+            <td class="px-3 py-3"><span class="rounded-full bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700">Sistema · pagamento</span></td>
+            <td class="px-3 py-3 text-slate-500">{{ cp.vencimento.strftime('%d/%m/%Y') if cp.vencimento else '—' }}</td>
+            <td class="px-3 py-3 text-slate-700">{{ cp.descricao }}{% if cp.fornecedor %} · {{ cp.fornecedor }}{% endif %}</td>
+            <td class="px-3 py-3 text-right font-semibold text-slate-800">R$ {{ '%.2f'|format(cp.valor|float) }}</td>
+            <td class="px-3 py-3 text-right">
+              <form method="post" action="/conciliacao/banco/conta/{{ cp.id }}/restaurar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Restaurar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="py-16 text-center text-slate-400">
+      <div class="text-4xl mb-3">📦</div>
+      <p class="font-medium text-slate-600">Nenhum lançamento arquivado</p>
+      <p class="text-sm mt-1">Os itens arquivados manualmente aparecerão aqui para consulta.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  {% else %}
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+    {# Abas #}
+    <div class="flex border-b border-slate-200 px-4 pt-1">
+      <button id="aba-conciliacoes" onclick="trocarAba('conciliacoes')"
+              class="aba-btn aba-ativa px-5 py-3 text-sm font-medium border-b-2 transition-colors mr-1">
+        Conciliações pendentes
+        <span class="ml-1.5 rounded-full bg-blue-100 text-blue-700 text-xs px-2 py-0.5 font-semibold">{{ total_painel }}</span>
+      </button>
+      <button id="aba-movimentacoes" onclick="trocarAba('movimentacoes')"
+              class="aba-btn aba-inativa px-5 py-3 text-sm font-medium border-b-2 transition-colors">
+        Extrato e saldos
+      </button>
+    </div>
+
+    {# ── ABA conciliações ───────────────────────────────────────── #}
+    <div id="painel-conciliacoes" class="p-4 space-y-4">
+
+      {# Barra de busca + conciliar todos #}
+      <div class="flex items-center gap-3 flex-wrap">
+        <form method="get" action="/conciliacao/banco" class="flex items-center gap-2 flex-1 min-w-64">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <div class="relative flex-1">
+            <input type="text" name="termo" value="" placeholder="Pesquise o lançamento bancário"
+                   class="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-sm outline-none focus:border-blue-400">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+          </div>
+          <button type="submit" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">Buscar</button>
+        </form>
+        {% if painel and painel.totais.sugestoes_prontas > 0 %}
+        <form method="post" action="/conciliacao/banco/conciliar-todos-prontos">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <button type="submit" class="rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 transition-colors">
+            ✅ Conciliar {{ painel.totais.sugestoes_prontas }} prontos
+          </button>
+        </form>
+        {% endif %}
+        <a href="/conciliacao/banco?cliente_id={{ cliente_selecionado }}&arquivados=1"
+           class="ml-auto rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+          Ver lançamentos arquivados
+        </a>
+      </div>
+
+      {# Totalizadores #}
+      {% set rec_pix = painel.banco_pendente | selectattr('movimentacao.sentido', 'equalto', 'recebimento') | list | length if painel else 0 %}
+      {% set total_rec = rec_pix + total_lotes %}
+      {% set total_pag = painel.banco_pendente | selectattr('movimentacao.sentido', 'equalto', 'pagamento') | list | length if painel else 0 %}
+      <div class="grid grid-cols-3 rounded-xl border border-slate-200 overflow-hidden">
+        <div onclick="filtrarLancamentos('todos')"   class="text-center py-3 border-r border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+          <p class="text-xs text-slate-500">Todos</p>
+          <p class="text-2xl font-bold text-slate-900">{{ total_painel }}</p>
+        </div>
+        <div onclick="filtrarLancamentos('recebimentos')" class="text-center py-3 border-r border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+          <p class="text-xs text-slate-500">Recebimentos</p>
+          <p class="text-2xl font-bold text-blue-600">{{ total_rec }}</p>
+        </div>
+        <div onclick="filtrarLancamentos('pagamentos')" class="text-center py-3 cursor-pointer hover:bg-slate-50 transition-colors">
+          <p class="text-xs text-slate-500">Pagamentos</p>
+          <p class="text-2xl font-bold text-red-500">{{ total_pag }}</p>
+        </div>
+      </div>
+
+      {# Botões de filtro #}
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div class="flex gap-1 flex-wrap">
+          <button onclick="filtrarLancamentos('todos')"         id="filtro-todos"         class="filtro-btn filtro-ativo   rounded-lg px-3 py-1.5 text-sm border transition-colors">Todos os lançamentos ▾</button>
+          <button onclick="filtrarLancamentos('recebimentos')"  id="filtro-recebimentos"  class="filtro-btn filtro-inativo rounded-lg px-3 py-1.5 text-sm border transition-colors">Recebimentos</button>
+          <button onclick="filtrarLancamentos('pagamentos')"    id="filtro-pagamentos"    class="filtro-btn filtro-inativo rounded-lg px-3 py-1.5 text-sm border transition-colors">Pagamentos</button>
+        </div>
+      </div>
+
+      {# Cabeçalhos #}
+      <div class="grid gap-4 cols-painel">
+        <div class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <span class="w-3 h-3 rounded-sm bg-red-500 inline-block flex-shrink-0"></span>Lançamentos do banco
+        </div>
+        <div></div>
+        <div class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <span class="w-3 h-3 rounded-full bg-blue-500 inline-block flex-shrink-0"></span>Lançamentos do sistema
+        </div>
+      </div>
+
+      {# ════════════════════════════════════════════════════════════════
+         LISTA UNIFICADA: Pix/TED + Lotes de Cartão
+      ════════════════════════════════════════════════════════════════ #}
+
+      {% set tem_algum = (painel and painel.banco_pendente) or lotes_pendentes %}
+      {% if tem_algum %}
+      <div id="lista-lancamentos" class="space-y-3">
+
+        {# ── 1. Itens Pix/TED ─────────────────────────────────────── #}
+        {% if painel and painel.banco_pendente %}
+        {% for item in painel.banco_pendente %}
+        {% set mov = item.movimentacao %}
+        {% set sug = item.sugestao %}
+        {% set data_br  = mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '—' %}
+        {% set dia_sem  = ['Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado','Domingo'][mov.data_movimento.weekday()] if mov.data_movimento else '' %}
+
+        <div class="grid gap-4 items-start lancamento-item cols-painel" data-sentido="{{ mov.sentido or 'recebimento' }}">
+
+          {# Card banco esq #}
+          <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-slate-500 text-xs">{{ data_br }} {{ dia_sem }}</span>
+              <span class="font-bold text-slate-900 text-base">R$ {{ '%.2f'|format(mov.valor|float) }}</span>
+            </div>
+            <p class="font-medium text-slate-800 mb-1 text-sm leading-snug">{{ mov.descricao or 'Sem descrição' }}</p>
+            {% if mov.cpf_digitos_meio %}
+            <p class="text-xs text-slate-500 mb-1">CPF: ***{{ mov.cpf_digitos_meio }}**</p>
+            {% endif %}
+            <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+              <span class="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">🔗 Pix / TED</span>
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/arquivar"
+                    onsubmit="return confirm('Arquivar este lançamento do banco?')">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="text-xs text-slate-500 border border-slate-200 rounded-lg px-3 py-1 hover:bg-slate-50 transition-colors">Arquivar</button>
+              </form>
+            </div>
+          </div>
+
+          {# Botão match #}
+          <div class="flex flex-col items-center justify-center gap-1.5 py-2">
+            {% if sug %}
+              {% if sug.status == 'sugestao_pronta' or sug.status == 'sugestao_verde' %}
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
+                <input type="hidden" name="origem" value="sugestao">
+                <button type="submit" class="btn-match-verde">
+                  <span class="text-base leading-none">⇅</span>
+                  <span class="text-[10px] font-semibold">Encontramos</span>
+                  <span class="text-[11px] font-bold">Conciliar</span>
+                </button>
+              </form>
+              {% else %}
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
+                <input type="hidden" name="origem" value="revisar">
+                <button type="submit" class="btn-match-amarelo">
+                  <span class="text-base leading-none">≈</span>
+                  <span class="text-[10px] font-semibold">Quase lá</span>
+                  <span class="text-[11px] font-bold">Conciliar</span>
+                </button>
+              </form>
+              {% if sug.diferenca_valor > 0 %}
+              <span class="text-[10px] text-orange-600 font-medium text-center">Dif. R$ {{ '%.2f'|format(sug.diferenca_valor|float) }}</span>
+              {% endif %}
+              {% endif %}
+            {% else %}
+            <button onclick="toggleBusca('pixted-{{ mov.id }}')" class="btn-match-cinza">
+              <span class="text-base leading-none">🔍</span>
+              <span class="text-[11px] font-semibold">Buscar</span>
+            </button>
+            {% endif %}
+          </div>
+
+          {# Card sistema dir #}
+          {% if sug %}
+          {% set at = sug.atendimento %}
+          {% set at_data = at.data_prevista_recebimento.strftime('%d/%m/%Y') if at.data_prevista_recebimento else '—' %}
+          {% set at_dia  = ['Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado','Domingo'][at.data_prevista_recebimento.weekday()] if at.data_prevista_recebimento else '' %}
+          <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-base {% if sug.diferenca_valor > 0 %}text-orange-600{% else %}text-slate-900{% endif %}">
+                  R$ {{ '%.2f'|format(at.valor_servico|float) }}
+                </span>
+                {% if sug.diferenca_valor > 0 %}
+                <span class="text-xs bg-orange-100 text-orange-700 rounded-lg px-2 py-0.5 font-medium">Diferença R$ {{ '%.2f'|format(sug.diferenca_valor|float) }}</span>
+                {% endif %}
+              </div>
+              <span class="text-slate-500 text-xs whitespace-nowrap">{{ at_data }} {{ at_dia }}</span>
+            </div>
+            {% if at.nome_paciente %}<p class="font-medium text-slate-800 mb-1">{{ at.nome_paciente }}</p>{% endif %}
+            <div class="text-xs text-slate-500 space-y-0.5 mb-3">
+              {% if at.medico %}<div><span class="font-medium text-slate-600">Médico:</span> {{ at.medico }}</div>{% endif %}
+              {% if at.especialidade %}<div><span class="font-medium text-slate-600">Categoria:</span> {{ at.especialidade }}</div>{% endif %}
+              <div><span class="font-medium text-slate-600">Juros/multa:</span> R$ 0,00 &nbsp;<span class="font-medium text-slate-600">Desconto:</span> R$ 0,00</div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
+              {% if sug.diferenca_valor > 0 %}
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <input type="hidden" name="atendimento_id" value="{{ at.id }}">
+                <input type="hidden" name="origem" value="ajustar">
+                <button type="submit" class="text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-lg px-2.5 py-1 hover:bg-blue-100 transition-colors">Ajustar valores ▾</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/conciliacao/banco/lancamento/{{ at.id }}/arquivar" class="inline"
+                    onsubmit="return confirm('Arquivar este lançamento do sistema?')">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="text-xs border border-slate-200 text-slate-600 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Arquivar</button>
+              </form>
+            </div>
+          </div>
+          {% else %}
+          {# Sem sugestão — painel busca ou placeholder #}
+          <div id="busca-pixted-{{ mov.id }}" class="{% if item.busca_aberta %}block{% else %}hidden{% endif %}">
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="font-medium text-blue-800">Buscar lançamento</span>
+                <button onclick="toggleBusca('pixted-{{ mov.id }}')" class="text-blue-400 hover:text-blue-600 text-lg leading-none">×</button>
+              </div>
+              <form method="get" action="/conciliacao/banco" class="flex gap-2">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <input type="hidden" name="buscar_mov" value="{{ mov.id }}">
+                <input type="text" name="termo" value="{{ item.busca_termo }}" placeholder="Paciente, CPF ou valor..."
+                       class="flex-1 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-blue-400">
+                <button type="submit" class="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700">Buscar</button>
+              </form>
+              {% if item.busca_aberta and item.resultados_busca %}
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar" class="space-y-2">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <input type="hidden" name="origem" value="manual">
+                <div class="space-y-2 max-h-48 overflow-y-auto">
+                  {% for a in item.resultados_busca %}
+                  <label class="flex items-center gap-3 bg-white rounded-lg border border-blue-100 px-3 py-2 cursor-pointer hover:border-blue-300">
+                    <input type="radio" name="atendimento_id" value="{{ a.id }}" required class="flex-shrink-0">
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-slate-800 text-xs">{{ a.nome_paciente or '—' }}</p>
+                      <p class="text-slate-500 text-xs">{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }} · R$ {{ '%.2f'|format(a.valor_servico|float) }}</p>
+                    </div>
+                  </label>
+                  {% endfor %}
+                </div>
+                <button type="submit" class="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold py-2 hover:bg-emerald-600">Vincular selecionado</button>
+              </form>
+              {% elif item.busca_aberta %}<p class="text-xs text-red-600">Nenhum lançamento encontrado.</p>{% endif %}
+              <div class="flex gap-2 pt-1 border-t border-blue-200">
+                <button type="button" data-mov-id="{{ mov.id }}"
+                        data-data-credito="{{ mov.data_movimento.strftime('%Y-%m-%d') if mov.data_movimento else '' }}"
+                        data-valor="{{ mov.valor }}"
+                        onclick="abrirModalCriar(this)"
+                        class="flex-1 text-center text-xs rounded-lg bg-white border border-blue-200 text-blue-700 py-1.5 font-semibold hover:bg-blue-50 transition-colors">
+                  + Novo lançamento
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="nosug-pixted-{{ mov.id }}" class="{% if item.busca_aberta %}hidden{% else %}flex{% endif %} flex-col gap-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl items-center justify-center py-5">
+            <p class="text-xs text-slate-400">Nenhum lançamento encontrado</p>
+            <div class="flex gap-2">
+              <button onclick="toggleBusca('pixted-{{ mov.id }}')"
+                      class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Buscar lançamento</button>
+              <button type="button" data-mov-id="{{ mov.id }}"
+                      data-data-credito="{{ mov.data_movimento.strftime('%Y-%m-%d') if mov.data_movimento else '' }}"
+                      data-valor="{{ mov.valor }}"
+                      onclick="abrirModalCriar(this)"
+                      class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">+ Novo lançamento</button>
+            </div>
+          </div>
+          {% endif %}
+
+        </div>{# /grid pix #}
+        {% endfor %}
+        {% endif %}{# /painel.banco_pendente #}
+
+        {# ── PIX/TED já conciliados ─────────────────────────────────── #}
+        {% if pix_conciliados %}
+        <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 overflow-hidden">
+          <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-emerald-700 flex items-center justify-between hover:bg-emerald-50">
+            <span>✓ {{ pix_conciliados | length }} recebimento{{ 's' if pix_conciliados | length > 1 }} conciliado{{ 's' if pix_conciliados | length > 1 }} {{ pix_conciliados_periodo }}</span>
+            <span class="text-emerald-400 text-xs">▸ expandir para desvincular</span>
+          </summary>
+          <div class="px-4 py-3 border-t border-emerald-100 bg-emerald-50/60">
+            <form method="get" action="/conciliacao/banco" class="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              {% if request.query_params.get('buscar_mov') %}<input type="hidden" name="buscar_mov" value="{{ request.query_params.get('buscar_mov') }}">{% endif %}
+              {% if request.query_params.get('termo') %}<input type="hidden" name="termo" value="{{ request.query_params.get('termo') }}">{% endif %}
+              <div>
+                <label class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700 mb-1">Mes</label>
+                <select name="mes_conciliado"
+                        class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none">
+                  <option value="">Todos</option>
+                  {% for opcao in pix_conciliados_mes_opcoes %}
+                  <option value="{{ opcao.valor }}" {% if pix_conciliados_mes == opcao.valor %}selected{% endif %}>{{ opcao.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button type="submit"
+                      class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors">
+                Filtrar
+              </button>
+              {% if pix_conciliados_mes %}
+              <a href="/conciliacao/banco?cliente_id={{ cliente_selecionado }}"
+                 class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors">
+                Limpar
+              </a>
+              {% endif %}
+            </form>
+          </div>
+          <div class="divide-y divide-emerald-100">
+            {% for mov in pix_conciliados %}
+            {% set at = mov.atendimento %}
+            <div class="flex items-center gap-3 px-4 py-3 text-sm flex-wrap">
+              <div class="w-24 text-slate-500 text-xs whitespace-nowrap">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</div>
+              <div class="font-semibold text-emerald-700 whitespace-nowrap">R$ {{ '%.2f'|format(mov.valor|float) }}</div>
+              <div class="text-slate-500 text-xs truncate max-w-[180px]">{{ mov.descricao or '—' }}</div>
+              <div class="text-slate-400 text-xs">⇄</div>
+              <div class="font-medium text-slate-700">{{ at.nome_paciente if at else '—' }}</div>
+              {% if at %}<div class="text-slate-400 text-xs">{{ at.forma_pagamento.value if at.forma_pagamento else '' }}</div>{% endif %}
+              <div class="flex-1"></div>
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/desvincular"
+                    onsubmit="return confirm('Desvincular este recebimento do atendimento?')">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit"
+                        class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium whitespace-nowrap">
+                  ↩ Desvincular
+                </button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+
+        {# ── 2. Lotes de Cartão Pendentes ─────────────────────────── #}
+        {% for lote in lotes_pendentes %}
+        {% set lote_data_br  = lote.data.strftime('%d/%m/%Y') if lote.data else '—' %}
+        {% set lote_dia_sem  = ['Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado','Domingo'][lote.data.weekday()] if lote.data else '' %}
+
+        {# Tenta encontrar crédito bancário com mesmo valor #}
+        {% set cred_exato = creditos_banco | selectattr('valor', 'equalto', lote.valor_liquido) | first %}
+        {% set cred_proximo = namespace(found=none) %}
+        {% if not cred_exato %}
+          {% for c in creditos_banco %}
+            {% if not cred_proximo.found and (c.valor|float - lote.valor_liquido|float)|abs < 2.0 %}
+              {% set cred_proximo.found = c %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+
+        <div class="grid gap-4 items-start lancamento-item cols-painel {% if lote_destaque_id and lote.id == lote_destaque_id %}ring-2 ring-emerald-400 rounded-xl{% endif %}" data-sentido="recebimento" data-tipo="lote">
+
+          {# Card banco esq — crédito vinculado ou buscador #}
+          {% if cred_exato %}
+          {% set cb = cred_exato %}
+          {% set cb_data = cb.data_movimento.strftime('%d/%m/%Y') if cb.data_movimento else '—' %}
+          {% set cb_dia  = ['Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado','Domingo'][cb.data_movimento.weekday()] if cb.data_movimento else '' %}
+          <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-slate-500 text-xs">{{ cb_data }} {{ cb_dia }}</span>
+              <span class="font-bold text-slate-900 text-base">R$ {{ '%.2f'|format(cb.valor|float) }}</span>
+            </div>
+            <p class="font-medium text-slate-800 mb-1 text-sm leading-snug">{{ cb.descricao or 'Crédito bancário' }}</p>
+            <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+              <span class="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">💳 Cartão</span>
+            </div>
+          </div>
+
+          {% elif cred_proximo.found %}
+          {% set cb = cred_proximo.found %}
+          {% set cb_data = cb.data_movimento.strftime('%d/%m/%Y') if cb.data_movimento else '—' %}
+          {% set cb_dia  = ['Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado','Domingo'][cb.data_movimento.weekday()] if cb.data_movimento else '' %}
+          <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-slate-500 text-xs">{{ cb_data }} {{ cb_dia }}</span>
+              <span class="font-bold text-orange-600 text-base">R$ {{ '%.2f'|format(cb.valor|float) }}</span>
+            </div>
+            <p class="font-medium text-slate-800 mb-1 text-sm leading-snug">{{ cb.descricao or 'Crédito bancário' }}</p>
+            <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+              <span class="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">💳 Cartão</span>
+            </div>
+          </div>
+
+          {% else %}
+          {# Sem crédito bancário disponível #}
+          <div id="busca-lote-{{ lote.id }}-wrap" class="hidden">
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="font-medium text-blue-800">Selecionar crédito bancário</span>
+                <button onclick="toggleBusca('lote-{{ lote.id }}')" class="text-blue-400 hover:text-blue-600 text-lg leading-none">×</button>
+              </div>
+              <form method="post" action="/conciliacao/banco/lote/{{ lote.id }}/conciliar" class="space-y-2">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <select name="mov_id" required class="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs outline-none focus:border-blue-400">
+                  <option value="">Selecionar crédito bancário...</option>
+                  {% for c in creditos_banco %}
+                  <option value="{{ c.id }}">
+                    {{ c.data_movimento.strftime('%d/%m/%Y') }}{% if c.descricao %} · {{ c.descricao[:30] }}{% endif %} · R$ {{ '%.2f'|format(c.valor|float) }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold py-2 hover:bg-emerald-600">Vincular</button>
+              </form>
+            </div>
+          </div>
+          <div id="nosug-lote-{{ lote.id }}" class="flex flex-col gap-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl items-center justify-center py-5">
+            <p class="text-xs text-slate-400">Nenhum crédito encontrado no extrato</p>
+            {% if creditos_banco %}
+            <button onclick="toggleBusca('lote-{{ lote.id }}')"
+                    class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Selecionar crédito</button>
+            {% else %}
+            <p class="text-xs text-slate-400">Importe o extrato bancário primeiro</p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {# Botão match central #}
+          <div class="flex flex-col items-center justify-center gap-1.5 py-2">
+            {% if cred_exato %}
+            <form method="post" action="/conciliacao/banco/lote/{{ lote.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="mov_id" value="{{ cred_exato.id }}">
+              <button type="submit" class="btn-match-verde">
+                <span class="text-base leading-none">⇅</span>
+                <span class="text-[10px] font-semibold">Encontramos</span>
+                <span class="text-[11px] font-bold">Conciliar</span>
+              </button>
+            </form>
+            {% elif cred_proximo.found %}
+            <form method="post" action="/conciliacao/banco/lote/{{ lote.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="mov_id" value="{{ cred_proximo.found.id }}">
+              <button type="submit" class="btn-match-amarelo">
+                <span class="text-base leading-none">≈</span>
+                <span class="text-[10px] font-semibold">Quase lá</span>
+                <span class="text-[11px] font-bold">Conciliar</span>
+              </button>
+            </form>
+            <span class="text-[10px] text-orange-600 font-medium text-center">
+              Dif. R$ {{ '%.2f'|format((cred_proximo.found.valor|float - lote.valor_liquido|float)|abs) }}
+            </span>
+            {% else %}
+            <button onclick="toggleBusca('lote-{{ lote.id }}')" class="btn-match-cinza">
+              <span class="text-base leading-none">🔍</span>
+              <span class="text-[11px] font-semibold">Buscar</span>
+            </button>
+            {% endif %}
+          </div>
+
+          {# Card lote dir #}
+          <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-900 text-base">R$ {{ '%.2f'|format(lote.valor_liquido|float) }}</span>
+                {% if cred_proximo.found and not cred_exato %}
+                <span class="text-xs bg-orange-100 text-orange-700 rounded-lg px-2 py-0.5 font-medium">
+                  Diferença R$ {{ '%.2f'|format((cred_proximo.found.valor|float - lote.valor_liquido|float)|abs) }}
+                </span>
+                {% endif %}
+              </div>
+              <span class="text-slate-500 text-xs whitespace-nowrap">{{ lote_data_br }} {{ lote_dia_sem }}</span>
+            </div>
+
+            <div class="flex items-center gap-2 mb-2">
+              <span class="inline-block bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">{{ lote.bandeira or '—' }}</span>
+              <span class="text-xs text-slate-500">{{ lote.qtd_transacoes }} transação(ões)</span>
+            </div>
+
+            <div class="text-xs text-slate-500 space-y-0.5 mb-3">
+              <div><span class="font-medium text-slate-600">Valor bruto:</span> R$ {{ '%.2f'|format(lote.valor_bruto|float) }}</div>
+              <div><span class="font-medium text-slate-600">Taxas:</span> R$ {{ '%.2f'|format(lote.taxa_total|float) }}</div>
+              <div><span class="font-medium text-slate-600">Líquido:</span> <span class="text-emerald-700 font-semibold">R$ {{ '%.2f'|format(lote.valor_liquido|float) }}</span></div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
+              <form method="post" action="/conciliacao/lote/{{ lote.id }}/reabrir"
+                    onsubmit="return confirm('Reabrir o lote devolve as vendas para pendente e cancela o vínculo bancário. Continuar?')">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit"
+                        title="Reabrir lote na conciliação cartão para editar as vendas"
+                        class="text-xs border border-orange-200 text-orange-600 bg-orange-50 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition-colors font-medium">
+                  ✏ Editar / Reabrir
+                </button>
+              </form>
+              <form method="post" action="/conciliacao/banco/lote/{{ lote.id }}/desvincular" class="inline">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" class="text-xs border border-slate-200 text-slate-600 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Desvincular</button>
+              </form>
+            </div>
+          </div>
+
+        </div>{# /grid lote #}
+        {% endfor %}
+
+      </div>{# /lista-lancamentos #}
+
+      {% else %}
+      <div class="py-16 text-center text-slate-400">
+        <div class="text-5xl mb-3">✅</div>
+        <p class="font-medium text-slate-600">Nenhuma conciliação pendente</p>
+        <p class="text-sm mt-1">Importe um extrato bancário para começar</p>
+      </div>
+      {% endif %}
+
+    </div>{# /painel-conciliacoes #}
+
+    {# ── ABA movimentações ──────────────────────────────────────── #}
+    <div id="painel-movimentacoes" class="hidden p-6 space-y-5 text-slate-500 text-sm">
+      <div>
+        <h3 class="text-base font-semibold text-slate-800">Saldo atual por banco</h3>
+        <p class="mt-1 text-xs text-slate-400">Saldo informado pelo último OFX. O selo verde aparece quando todas as entradas e saídas importadas estão conciliadas.</p>
+      </div>
+      {% if saldos_bancarios %}
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {% for resumo in saldos_bancarios %}
+        <article class="rounded-2xl border p-4 {% if resumo.conferido %}border-emerald-200 bg-emerald-50/40{% else %}border-amber-200 bg-amber-50/50{% endif %}">
+          <div class="flex items-start justify-between gap-3">
+            <div><p class="font-semibold text-slate-800">{{ resumo.conta.banco or resumo.conta.nome }}</p><p class="text-xs text-slate-500">Conta {{ resumo.conta.conta or '—' }}</p></div>
+            {% if resumo.conferido %}<span class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">✓ Conferido</span>{% else %}<span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-500 text-lg font-black text-white" title="Existem movimentações sem conciliação">!</span>{% endif %}
+          </div>
+          <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Saldo atual</p>
+          <p class="mt-1 text-2xl font-bold text-slate-900">{% if resumo.conta.saldo_atual is not none %}R$ {{ '%.2f'|format(resumo.conta.saldo_atual|float) }}{% else %}—{% endif %}</p>
+          <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-lg bg-white/80 p-2"><span class="block text-slate-400">Entradas</span><strong class="text-emerald-700">R$ {{ '%.2f'|format(resumo.entradas|float) }}</strong></div>
+            <div class="rounded-lg bg-white/80 p-2"><span class="block text-slate-400">Saídas</span><strong class="text-red-600">R$ {{ '%.2f'|format(resumo.saidas|float) }}</strong></div>
+          </div>
+          <p class="mt-3 text-xs {% if resumo.pendentes %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ resumo.conciliados }}/{{ resumo.total_movimentos }} conciliadas{% if resumo.pendentes %} · {{ resumo.pendentes }} para verificar{% endif %}</p>
+          {% if resumo.conta.saldo_data_referencia %}<p class="mt-1 text-[11px] text-slate-400">Posição do banco: {{ resumo.conta.saldo_data_referencia.strftime('%d/%m/%Y %H:%M') }}</p>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}<div class="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-400">Importe um OFX para identificar a conta e exibir o saldo do banco.</div>{% endif %}
+
+      <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-3 py-3 text-left">Data</th><th class="px-3 py-3 text-left">Banco / conta</th><th class="px-3 py-3 text-left">Descrição</th><th class="px-3 py-3 text-left">Tipo</th><th class="px-3 py-3 text-right">Valor</th><th class="px-3 py-3 text-left">Conciliação</th></tr></thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            {% for mov in extrato_movimentacoes %}
+            <tr><td class="px-3 py-3 whitespace-nowrap">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</td><td class="px-3 py-3">{{ mov.conta_bancaria.banco or mov.conta_bancaria.nome }}<span class="block text-xs text-slate-400">{{ mov.conta_bancaria.conta or '' }}</span></td><td class="px-3 py-3">{{ mov.descricao or '—' }}{% if mov.origem_manual %}<span class="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">Manual</span>{% endif %}</td><td class="px-3 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold {% if mov.sentido == 'recebimento' %}bg-emerald-50 text-emerald-700{% else %}bg-red-50 text-red-600{% endif %}">{{ 'Entrada' if mov.sentido == 'recebimento' else 'Saída' }}</span></td><td class="px-3 py-3 text-right font-semibold">R$ {{ '%.2f'|format(mov.valor|float) }}</td><td class="px-3 py-3">{% if mov.status.value == 'conciliada' %}<span class="text-emerald-700">✓ Conciliada</span>{% else %}<span class="font-semibold text-amber-700">! Verificar</span>{% endif %}</td></tr>
+            {% else %}<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Nenhuma movimentação OFX importada.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>{# /card principal #}
+
+  {# ══════════════════════════════════════════════════════════════════
+     SAÍDAS BANCÁRIAS — layout 3 colunas (conta a pagar = coluna direita)
+  ══════════════════════════════════════════════════════════════════ #}
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+    {# Cabeçalho #}
+    <div class="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-slate-100">
+      <div class="flex-1">
+        <h3 class="font-semibold text-slate-800">Saídas Bancárias</h3>
+        <p class="text-xs text-slate-400 mt-0.5">
+          {{ saidas_banco|length }} débito(s) no extrato · {{ contas_agendadas|length }} conta(s) agendada(s)
+        </p>
+      </div>
+      {% if saidas_banco and contas_agendadas %}
+      <form method="post" action="/conciliacao/banco/saida/auto-match">
+        <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+        <button type="submit" class="rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 transition-colors">
+          ✅ Conciliar todos por valor exato
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    {# Cabeçalhos colunas #}
+    <div class="grid gap-4 cols-painel px-5 pt-3 pb-1">
+      <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        <span class="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block"></span>Extrato do banco
+      </div>
+      <div></div>
+      <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        <span class="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span>Conta a pagar
+      </div>
+    </div>
+
+    <div class="p-4 space-y-3">
+
+    {# ── Loop principal: contas agendadas (sempre aparecem na direita) ── #}
+    {% for cp in contas_agendadas %}
+    {% set cp_data = cp.vencimento.strftime('%d/%m/%Y') if cp.vencimento else '—' %}
+
+    {# Busca débito bancário correspondente: exato ou próximo (dif < R$2) #}
+    {% set mov_exato  = saidas_banco | selectattr('valor', 'equalto', cp.saldo_pendente) | first %}
+    {% set mov_prox   = namespace(found=none) %}
+    {% if not mov_exato %}
+      {% for m in saidas_banco %}
+        {% if not mov_prox.found and (m.valor|float - cp.saldo_pendente|float)|abs < 2.0 %}
+          {% set mov_prox.found = m %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {% set mov_sug = mov_exato or mov_prox.found %}
+
+    <div class="grid gap-4 items-start cols-painel">
+
+      {# ── Coluna esquerda: débito do banco ou aguardando ── #}
+      {% if mov_sug %}
+      {% set m = mov_sug %}
+      <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-slate-400 text-xs">{{ m.data_movimento.strftime('%d/%m/%Y') }} {{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][m.data_movimento.weekday()] }}</span>
+          <span class="font-bold text-red-600 text-base">− R$ {{ '%.2f'|format(m.valor|float) }}</span>
+        </div>
+        <p class="text-slate-700 text-sm font-medium truncate">{{ m.descricao or 'Débito bancário' }}</p>
+        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+          <span class="inline-flex items-center gap-1 text-xs text-red-400 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1">↑ Saída</span>
+          <form method="post" action="/conciliacao/banco/movimentacao/{{ m.id }}/arquivar"
+                onsubmit="return confirm('Arquivar este lançamento do banco?')">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <button type="submit" class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50">Arquivar</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      {# Sem débito no extrato ainda #}
+      <div class="flex flex-col gap-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl items-center justify-center py-6">
+        <p class="text-xs text-slate-400">Aguardando débito no extrato</p>
+        <p class="text-xs text-slate-400">Importe o extrato bancário</p>
+      </div>
+      {% endif %}
+
+      {# ── Botão match central ── #}
+      <div class="flex flex-col items-center justify-center gap-1.5 py-2">
+        {% if mov_exato %}
+        <form method="post" action="/conciliacao/banco/saida/{{ mov_exato.id }}/conciliar">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <input type="hidden" name="conta_id" value="{{ cp.id }}">
+          <button type="submit" class="btn-match-verde">
+            <span class="text-base leading-none">⇅</span>
+            <span class="text-[10px] font-semibold">Encontramos</span>
+            <span class="text-[11px] font-bold">Conciliar</span>
+          </button>
+        </form>
+        {% elif mov_prox.found %}
+        <form method="post" action="/conciliacao/banco/saida/{{ mov_prox.found.id }}/conciliar">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <input type="hidden" name="conta_id" value="{{ cp.id }}">
+          <button type="submit" class="btn-match-amarelo">
+            <span class="text-base leading-none">≈</span>
+            <span class="text-[10px] font-semibold">Quase lá</span>
+            <span class="text-[11px] font-bold">Conciliar</span>
+          </button>
+        </form>
+        <span class="text-[10px] text-orange-600 font-medium text-center">
+          Dif. R$ {{ '%.2f'|format((mov_prox.found.valor|float - cp.saldo_pendente|float)|abs) }}
+        </span>
+        {% else %}
+        <button onclick="toggleBuscaSaida('cp-{{ cp.id }}')" class="btn-match-cinza">
+          <span class="text-base leading-none">🔍</span>
+          <span class="text-[11px] font-semibold">Buscar</span>
+        </button>
+        {% endif %}
+      </div>
+
+      {# ── Coluna direita: conta a pagar (sempre visível) ── #}
+      <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+        <div class="flex justify-between items-start mb-2">
+          <span class="font-bold text-base {% if mov_prox.found and not mov_exato %}text-orange-600{% else %}text-slate-900{% endif %}">
+            R$ {{ '%.2f'|format(cp.saldo_pendente|float) }}
+          </span>
+          <span class="text-slate-400 text-xs">venc. {{ cp_data }}</span>
+        </div>
+        <p class="font-medium text-slate-800 mb-1">{{ cp.descricao }}</p>
+        {% if cp.valor_pago_total > 0 %}
+        <p class="mb-2 text-xs font-medium text-emerald-600">
+          Pago parcialmente: R$ {{ '%.2f'|format(cp.valor_pago_total|float) }} de R$ {{ '%.2f'|format(cp.valor|float) }}
+        </p>
+        {% endif %}
+        <div class="text-xs text-slate-500 space-y-0.5 mb-2">
+          {% if cp.fornecedor %}<div><span class="font-medium text-slate-600">Fornecedor:</span> {{ cp.fornecedor }}</div>{% endif %}
+          <div>
+            <span class="font-medium text-slate-600">Tipo:</span>
+            <span class="rounded-full px-1.5 py-0.5 {% if cp.tipo.value == 'fixa' %}bg-blue-100 text-blue-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+              {{ cp.tipo.value | capitalize }}
+            </span>
+          </div>
+        </div>
+        {% if mov_prox.found and not mov_exato %}
+        <div class="mb-2 rounded-lg bg-orange-50 border border-orange-200 px-2.5 py-1.5 text-xs text-orange-700">
+          Diferença de R$ {{ '%.2f'|format((mov_prox.found.valor|float - cp.saldo_pendente|float)|abs) }} — confira antes de conciliar
+        </div>
+        {% endif %}
+        {% if mov_sug %}
+        <div class="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+          <form method="post" action="/conciliacao/banco/saida/{{ mov_sug.id }}/conciliar">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <input type="hidden" name="conta_id" value="{{ cp.id }}">
+            <button type="submit" class="text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-2.5 py-1 hover:bg-emerald-100 transition-colors font-semibold">Confirmar</button>
+          </form>
+          <button onclick="toggleBuscaSaida('cp-{{ cp.id }}')"
+                  class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Trocar</button>
+        </div>
+        {% endif %}
+        <div class="flex justify-end pt-2 mt-2 border-t border-slate-100">
+          <form method="post" action="/conciliacao/banco/conta/{{ cp.id }}/arquivar"
+                onsubmit="return confirm('Arquivar esta conta do sistema na conciliação bancária?')">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <button type="submit" class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50">Arquivar</button>
+          </form>
+        </div>
+      </div>
+
+    </div>{# /grid conta #}
+
+    {# Painel busca manual para esta conta #}
+    {% if not mov_sug or true %}{# sempre renderiza oculto para o "Trocar" funcionar #}
+    <div id="busca-saida-cp-{{ cp.id }}-wrap" class="hidden -mt-2 mb-1">
+      <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="font-medium text-orange-800">Selecionar débito bancário</span>
+          <button onclick="toggleBuscaSaida('cp-{{ cp.id }}')" class="text-orange-400 hover:text-orange-600 text-lg leading-none">×</button>
+        </div>
+        {% if saidas_banco %}
+        <form method="post" action="/conciliacao/banco/saida/{{ (mov_sug or saidas_banco[0]).id }}/conciliar" id="form-saida-cp-{{ cp.id }}" class="space-y-2">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <input type="hidden" name="conta_id" value="{{ cp.id }}">
+          <div class="space-y-1.5 max-h-52 overflow-y-auto">
+            {% for m in saidas_banco %}
+            <label class="flex items-center gap-3 bg-white rounded-lg border border-orange-100 px-3 py-2 cursor-pointer hover:border-orange-300"
+                   onclick="document.getElementById('form-saida-cp-{{ cp.id }}').action='/conciliacao/banco/saida/{{ m.id }}/conciliar'">
+              <input type="radio" name="_mov_sel" value="{{ m.id }}" class="flex-shrink-0"
+                     required {% if m.id == (mov_sug or saidas_banco[0]).id %}checked{% endif %}>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-slate-800 text-xs">{{ m.data_movimento.strftime('%d/%m/%Y') }} — R$ {{ '%.2f'|format(m.valor|float) }}</p>
+                <p class="text-slate-500 text-xs truncate">{{ m.descricao or 'Débito' }}</p>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+          <button type="submit" class="w-full rounded-lg bg-orange-600 text-white text-xs font-semibold py-2 hover:bg-orange-700">Vincular selecionado</button>
+        </form>
+        {% else %}
+        <p class="text-xs text-orange-700">Nenhum débito importado ainda. Importe o extrato bancário.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    {# Sem contas agendadas: débitos sem conta #}
+    {% endfor %}
+
+    {# ── Débitos sem conta correspondente ── #}
+    {% set contas_ids = contas_agendadas | map(attribute='id') | list %}
+    {% for mov in saidas_banco %}
+    {% set tem_conta_proxima = namespace(ok=false) %}
+    {% for cp in contas_agendadas %}
+      {% if (cp.saldo_pendente|float - mov.valor|float)|abs < 2.0 %}{% set tem_conta_proxima.ok = true %}{% endif %}
+    {% endfor %}
+    {% if not tem_conta_proxima.ok %}
+    <div class="grid gap-4 items-start cols-painel">
+      <div class="bg-white rounded-xl border border-red-100 p-4 text-sm shadow-sm">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-slate-400 text-xs">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</span>
+          <span class="font-bold text-red-600 text-base">− R$ {{ '%.2f'|format(mov.valor|float) }}</span>
+        </div>
+        <p class="text-slate-700 text-sm font-medium truncate">{{ mov.descricao or 'Débito bancário' }}</p>
+        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+          <span class="text-xs text-red-400 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1">↑ Saída sem conta</span>
+          <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/arquivar"
+                onsubmit="return confirm('Arquivar este lançamento do banco?')">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <button type="submit" class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50">Arquivar</button>
+          </form>
+        </div>
+      </div>
+      <div class="flex items-center justify-center py-2">
+        <button onclick="toggleBuscaSaida('mov-{{ mov.id }}')" class="btn-match-cinza">
+          <span class="text-base leading-none">🔍</span>
+          <span class="text-[11px] font-semibold">Buscar</span>
+        </button>
+      </div>
+      <div id="nosug-saida-mov-{{ mov.id }}" class="flex flex-col gap-2 bg-slate-50 border border-dashed border-red-200 rounded-xl items-center justify-center py-6">
+        <p class="text-xs text-slate-400">Débito sem conta agendada</p>
+        <button onclick="toggleBuscaSaida('mov-{{ mov.id }}')"
+                class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Vincular conta</button>
+      </div>
+      <div id="busca-saida-mov-{{ mov.id }}-wrap" class="hidden col-start-3">
+        <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm space-y-3">
+          <span class="font-medium text-orange-800">Selecionar conta a pagar</span>
+          {% if contas_agendadas %}
+          <form method="post" action="/conciliacao/banco/saida/{{ mov.id }}/conciliar" class="space-y-2">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <div class="space-y-1.5 max-h-40 overflow-y-auto">
+              {% for cp in contas_agendadas %}
+              <label class="flex items-center gap-3 bg-white rounded-lg border border-orange-100 px-3 py-2 cursor-pointer hover:border-orange-300">
+                <input type="radio" name="conta_id" value="{{ cp.id }}" required>
+                <div><p class="font-medium text-slate-800 text-xs">{{ cp.descricao }}</p>
+                <p class="text-slate-500 text-xs">{{ cp.vencimento.strftime('%d/%m/%Y') }} · saldo R$ {{ '%.2f'|format(cp.saldo_pendente|float) }}</p></div>
+              </label>
+              {% endfor %}
+            </div>
+            <button type="submit" class="w-full rounded-lg bg-orange-600 text-white text-xs font-semibold py-2 hover:bg-orange-700">Vincular</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if not contas_agendadas and not saidas_banco %}
+    <div class="py-12 text-center text-slate-400">
+      <div class="text-4xl mb-2">💸</div>
+      <p class="font-medium text-slate-600">Nenhuma saída ou conta agendada</p>
+      <p class="text-sm mt-1">Agende contas a pagar e importe o extrato bancário para conciliar</p>
+    </div>
+    {% endif %}
+
+    {# ── Saídas já conciliadas ────────────────────────────────────── #}
+    {% if saidas_conciliadas %}
+    <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 overflow-hidden mt-2">
+      <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-emerald-700 flex items-center justify-between hover:bg-emerald-50">
+        <span>✓ {{ saidas_conciliadas | length }} saída{{ 's' if saidas_conciliadas | length > 1 }} conciliada{{ 's' if saidas_conciliadas | length > 1 }}</span>
+        <span class="text-emerald-400 text-xs">▸ expandir para desvincular</span>
+      </summary>
+      <div class="divide-y divide-emerald-100">
+        {% for mov in saidas_conciliadas %}
+        {% set cp = mov.conta_pagar %}
+        <div class="flex items-center gap-3 px-4 py-3 text-sm flex-wrap">
+          <div class="w-24 text-slate-500 text-xs whitespace-nowrap">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</div>
+          <div class="font-semibold text-red-600 whitespace-nowrap">− R$ {{ '%.2f'|format(mov.valor|float) }}</div>
+          <div class="text-slate-500 text-xs truncate max-w-[180px]">{{ mov.descricao or '—' }}</div>
+          <div class="text-slate-400 text-xs">⇄</div>
+          <div class="font-medium text-slate-700">{{ cp.descricao if cp else '—' }}</div>
+          {% if cp %}<div class="text-slate-400 text-xs">{{ cp.fornecedor or '' }}</div>{% endif %}
+          <div class="flex-1"></div>
+          <form method="post" action="/conciliacao/banco/saida/{{ mov.id }}/desvincular"
+                onsubmit="return confirm('Desvincular esta saída da conta a pagar? A conta voltará para \'Agendado\'.')">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <button type="submit"
+                    class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium whitespace-nowrap">
+              ↩ Desvincular
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    </div>
+
+  </div>{# /saídas #}
+
+  {% endif %}{# /mostrar_arquivados #}
+  {% endif %}{# /cliente_selecionado #}
+</div>
+
+<style>
+  .cols-painel { grid-template-columns: 1fr 100px 1fr; }
+  .aba-ativa   { border-color:#3b82f6; color:#2563eb; }
+  .aba-inativa { border-color:transparent; color:#6b7280; }
+  .aba-inativa:hover { color:#374151; }
+  .filtro-ativo   { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .filtro-inativo { background:#fff; color:#4b5563; border-color:#e2e8f0; }
+  .filtro-inativo:hover { background:#f8fafc; }
+  .badge-green  { display:inline-block;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;background:rgba(5,150,105,.1);color:#065f46; }
+  .badge-yellow { display:inline-block;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;background:rgba(245,158,11,.1);color:#b45309; }
+  .btn-match-verde  { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#10b981;color:#fff;padding:10px 8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:background .15s; }
+  .btn-match-verde:hover  { background:#059669; }
+  .btn-match-amarelo{ display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#fbbf24;color:#78350f;padding:10px 8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:background .15s; }
+  .btn-match-amarelo:hover{ background:#f59e0b; }
+  .btn-match-cinza  { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#f1f5f9;color:#475569;padding:10px 8px;font-size:12px;font-weight:500;border:1px solid #e2e8f0;cursor:pointer;transition:background .15s; }
+  .btn-match-cinza:hover  { background:#e2e8f0; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<div id="modal-manual-movimentacao" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div><h3 class="font-semibold text-slate-800">Novo movimento de extrato</h3><p class="mt-0.5 text-xs text-slate-400">Será conciliado como uma linha bancária, com identificação permanente de origem manual.</p></div>
+      <button type="button" onclick="fecharModalManual('movimentacao')" class="text-xl text-slate-400 hover:text-slate-600">×</button>
+    </div>
+    <form method="post" action="/conciliacao/banco/manual/movimentacao" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div>
+        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Conta bancária</label>
+        <select name="conta_bancaria_id" onchange="alternarNovaContaManual(this)" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+          <option value="">Cadastrar outra conta...</option>
+          {% for resumo in saldos_bancarios %}<option value="{{ resumo.conta.id }}">{{ resumo.conta.banco or resumo.conta.nome }} · {{ resumo.conta.conta or 'sem número' }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="nova-conta-manual" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Banco *</label><input type="text" name="banco" required placeholder="Ex.: Itaú" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Conta *</label><input type="text" name="conta_numero" required placeholder="Agência / conta" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Tipo *</label><select name="sentido" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"><option value="recebimento">Entrada</option><option value="pagamento">Saída</option></select></div>
+        <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Data *</label><input type="date" name="data_movimento" required value="{{ hoje }}" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Valor *</label><input type="number" name="valor" required min="0.01" step="0.01" placeholder="0,00" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+      </div>
+      <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Descrição *</label><input type="text" name="descricao" required placeholder="Histórico que apareceria no OFX" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+      <div class="flex justify-end gap-3"><button type="button" onclick="fecharModalManual('movimentacao')" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">Cancelar</button><button type="submit" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">Criar movimento manual</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-manual-receita" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Nova conta a receber</h3>
+        <p class="text-xs text-slate-400 mt-0.5">O lançamento ficará pendente para conciliação bancária.</p>
+      </div>
+      <button type="button" onclick="fecharModalManual('receita')" class="text-slate-400 hover:text-slate-600 text-xl">×</button>
+    </div>
+    <form method="post" action="/conciliacao/banco/manual/receita" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <input type="hidden" name="rateios_json" value="[]" data-rateio-json>
+      <div class="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4" data-rateio-bloco>
+        <div class="flex items-center justify-between gap-3">
+          <div><p class="text-xs font-semibold uppercase text-emerald-700">Dividir centro de custo</p><p class="text-xs text-slate-500">Opcional. Ao dividir, o total deve fechar 100%.</p></div>
+          <button type="button" data-rateio-adicionar class="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700">+ Centro</button>
+        </div>
+        <div class="mt-3 space-y-2" data-rateio-linhas></div>
+        <p class="mt-2 text-xs font-semibold text-slate-500" data-rateio-total>Total: 0%</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição *</label>
+        <input type="text" name="descricao" required placeholder="Ex.: Consulta particular"
+               class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Pagador</label>
+          <input type="text" name="nome_pagador" placeholder="Nome do cliente ou paciente"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor *</label>
+          <input type="number" name="valor" required min="0.01" step="0.01" placeholder="0,00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Previsão de recebimento *</label>
+          <input type="date" name="data_recebimento" required value="{{ hoje }}"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Forma *</label>
+          <select name="forma_pagamento" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
+            <option value="pix">Pix</option>
+            <option value="transferencia">Transferência</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+        <textarea name="observacao" rows="2" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400"></textarea>
+      </div>
+      <div class="flex justify-end gap-3 pt-1">
+        <button type="button" onclick="fecharModalManual('receita')" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Criar conta a receber</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-manual-despesa" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Nova despesa</h3>
+        <p class="text-xs text-slate-400 mt-0.5">A conta ficará agendada e disponível para conciliar com uma saída bancária.</p>
+      </div>
+      <button type="button" onclick="fecharModalManual('despesa')" class="text-slate-400 hover:text-slate-600 text-xl">×</button>
+    </div>
+    <form method="post" action="/conciliacao/banco/manual/despesa" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <input type="hidden" name="rateios_json" value="[]" data-rateio-json>
+      <div class="rounded-xl border border-red-100 bg-red-50/50 p-4" data-rateio-bloco>
+        <div class="flex items-center justify-between gap-3">
+          <div><p class="text-xs font-semibold uppercase text-red-700">Dividir centro de custo</p><p class="text-xs text-slate-500">Opcional. Ao dividir, o total deve fechar 100%.</p></div>
+          <button type="button" data-rateio-adicionar class="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700">+ Centro</button>
+        </div>
+        <div class="mt-3 space-y-2" data-rateio-linhas></div>
+        <p class="mt-2 text-xs font-semibold text-slate-500" data-rateio-total>Total: 0%</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição *</label>
+        <input type="text" name="descricao" required placeholder="Ex.: Pagamento de fornecedor"
+               class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400">
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Fornecedor</label>
+          <input type="text" name="fornecedor"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor *</label>
+          <input type="number" name="valor" required min="0.01" step="0.01" placeholder="0,00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Vencimento *</label>
+          <input type="date" name="vencimento" required value="{{ hoje }}"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+        <textarea name="observacao" rows="2" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400"></textarea>
+      </div>
+      <div class="flex justify-end gap-3 pt-1">
+        <button type="button" onclick="fecharModalManual('despesa')" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Criar despesa</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-manual-parcial" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Pagamento parcial de despesa</h3>
+        <p class="text-xs text-slate-400 mt-0.5">O saldo restante continuará disponível para conciliação.</p>
+      </div>
+      <button type="button" onclick="fecharModalManual('parcial')" class="text-slate-400 hover:text-slate-600 text-xl">×</button>
+    </div>
+    <form method="post" action="/conciliacao/banco/manual/pagamento-parcial" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      {% if contas_agendadas %}
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Despesa *</label>
+        <select id="parcial-conta" name="conta_id" required onchange="atualizarSaldoParcial()"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-400">
+          <option value="">Selecione...</option>
+          {% for cp in contas_agendadas %}
+          <option value="{{ cp.id }}" data-saldo="{{ cp.saldo_pendente }}">
+            {{ cp.descricao }} · saldo R$ {{ '%.2f'|format(cp.saldo_pendente|float) }}
+          </option>
+          {% endfor %}
+        </select>
+        <p id="parcial-saldo" class="mt-1 text-xs text-amber-700"></p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor pago *</label>
+          <input id="parcial-valor" type="number" name="valor" required min="0.01" step="0.01" placeholder="0,00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Data do pagamento *</label>
+          <input type="date" name="data_pagamento" required value="{{ hoje }}"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-400">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+        <textarea name="observacao" rows="2" placeholder="Ex.: primeira parcela do pagamento"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-400"></textarea>
+      </div>
+      <div class="flex justify-end gap-3 pt-1">
+        <button type="button" onclick="fecharModalManual('parcial')" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">Registrar pagamento</button>
+      </div>
+      {% else %}
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        Não há despesas agendadas com saldo pendente. Crie uma despesa primeiro.
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div id="modal-criar" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Criar lançamento e conciliar</h3>
+        <p class="text-xs text-slate-400 mt-0.5">Valor e data preenchidos pelo extrato bancário.</p>
+      </div>
+      <button onclick="fecharModalCriar()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <form id="form-criar" method="post" action="" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div class="grid grid-cols-2 gap-4 rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-sm">
+        <div><p class="text-xs font-semibold text-blue-500 uppercase mb-1">Valor</p><p id="modal-valor" class="font-bold text-slate-900">—</p></div>
+        <div><p class="text-xs font-semibold text-blue-500 uppercase mb-1">Data</p><p id="modal-data-credito" class="text-slate-700">—</p></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Data do atendimento *</label>
+          <input type="date" id="modal-data-atendimento" name="data_atendimento" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400">
+        </div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Paciente</label><input type="text" name="nome_paciente" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">CPF</label><input type="text" name="cpf_paciente" placeholder="000.000.000-00" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Médico</label><input type="text" name="medico" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Especialidade</label><input type="text" name="especialidade" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400"></div>
+        <div class="col-span-2"><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição do serviço</label><input type="text" name="descricao_servico" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400"></div>
+      </div>
+      <div class="flex justify-end gap-3 pt-1">
+        <button type="button" onclick="fecharModalCriar()" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition-colors">Criar e conciliar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+var centrosCustoBanco = [{% for cc in centros_custo_banco %}{id: {{ cc.id }}, nome: {{ cc.nome | tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}];
+
+function iniciarRateioBanco(bloco) {
+  var linhas = bloco.querySelector('[data-rateio-linhas]');
+  var totalEl = bloco.querySelector('[data-rateio-total]');
+  var form = bloco.closest('form');
+  var hidden = form.querySelector('[data-rateio-json]');
+  function sincronizar() {
+    var rateios = [], total = 0;
+    var valorTotal = parseFloat((form.querySelector('input[name="valor"]') || {}).value || '0');
+    linhas.querySelectorAll('[data-rateio-linha]').forEach(function(linha) {
+      var centro = linha.querySelector('[data-rateio-centro]').value;
+      var percentual = parseFloat(linha.querySelector('[data-rateio-percentual]').value || '0');
+      if (centro && percentual > 0) rateios.push({centro_custo_id: parseInt(centro), percentual: percentual});
+      total += percentual || 0;
+      linha.querySelector('[data-rateio-valor]').textContent = valorTotal > 0 && percentual > 0
+        ? (valorTotal * percentual / 100).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})
+        : 'R$ 0,00';
+    });
+    hidden.value = JSON.stringify(rateios);
+    totalEl.textContent = 'Total: ' + total.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + '%';
+    totalEl.className = 'mt-2 text-xs font-semibold ' + (Math.abs(total - 100) < 0.001 ? 'text-emerald-700' : 'text-slate-500');
+  }
+  bloco.querySelector('[data-rateio-adicionar]').addEventListener('click', function() {
+    if (!centrosCustoBanco.length) { alert('Este cliente ainda não possui centros de custo ativos.'); return; }
+    var linha = document.createElement('div');
+    linha.dataset.rateioLinha = '1';
+    linha.className = 'grid grid-cols-[1fr_100px_100px_36px] gap-2 items-center';
+    var opcoes = centrosCustoBanco.map(function(cc) {
+      var option = document.createElement('option');
+      option.value = cc.id; option.textContent = cc.nome;
+      return option.outerHTML;
+    }).join('');
+    linha.innerHTML = '<select data-rateio-centro required class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Selecione o centro...</option>' + opcoes + '</select><div class="relative"><input data-rateio-percentual type="number" required min="0.01" max="100" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 pr-7 text-sm" placeholder="0"><span class="absolute right-3 top-2 text-sm text-slate-400">%</span></div><span data-rateio-valor class="text-right text-xs font-semibold text-slate-600">R$ 0,00</span><button type="button" class="rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-red-600" aria-label="Remover">×</button>';
+    linha.querySelector('button').addEventListener('click', function() { linha.remove(); sincronizar(); });
+    linha.querySelectorAll('select,input').forEach(function(campo) {
+      campo.addEventListener('input', sincronizar); campo.addEventListener('change', sincronizar);
+    });
+    linhas.appendChild(linha);
+    sincronizar();
+  });
+  var valorConta = form.querySelector('input[name="valor"]');
+  if (valorConta) valorConta.addEventListener('input', sincronizar);
+  form.addEventListener('submit', function(event) {
+    var itens = JSON.parse(hidden.value || '[]');
+    if (!itens.length) return;
+    var total = itens.reduce(function(soma, item) { return soma + Number(item.percentual || 0); }, 0);
+    var unicos = new Set(itens.map(function(item) { return item.centro_custo_id; }));
+    if (Math.abs(total - 100) > 0.001 || unicos.size !== itens.length) {
+      event.preventDefault();
+      alert('O rateio deve usar centros diferentes e fechar exatamente 100%.');
+    }
+  });
+}
+document.querySelectorAll('[data-rateio-bloco]').forEach(iniciarRateioBanco);
+
+function abrirModalManual(tipo) {
+  var modal = document.getElementById('modal-manual-' + tipo);
+  if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+}
+function fecharModalManual(tipo) {
+  var modal = document.getElementById('modal-manual-' + tipo);
+  if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+}
+['movimentacao', 'receita', 'despesa', 'parcial'].forEach(function(tipo) {
+  var modal = document.getElementById('modal-manual-' + tipo);
+  if (modal) modal.addEventListener('click', function(e) {
+    if (e.target === this) fecharModalManual(tipo);
+  });
+});
+
+function alternarNovaContaManual(select) {
+  var bloco = document.getElementById('nova-conta-manual');
+  if (!bloco) return;
+  var nova = !select.value;
+  bloco.classList.toggle('hidden', !nova);
+  bloco.querySelectorAll('input').forEach(function(input) {
+    input.required = nova;
+    input.disabled = !nova;
+  });
+}
+
+function atualizarSaldoParcial() {
+  var select = document.getElementById('parcial-conta');
+  var valor = document.getElementById('parcial-valor');
+  var texto = document.getElementById('parcial-saldo');
+  if (!select || !valor || !texto) return;
+  var option = select.options[select.selectedIndex];
+  var saldo = option ? parseFloat(option.dataset.saldo || '0') : 0;
+  valor.max = saldo > 0 ? saldo.toFixed(2) : '';
+  texto.textContent = saldo > 0
+    ? 'Saldo disponível: ' + saldo.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})
+    : '';
+}
+
+function trocarAba(aba) {
+  ['conciliacoes','movimentacoes'].forEach(function(a) {
+    document.getElementById('painel-'+a).classList.toggle('hidden', a!==aba);
+    var btn = document.getElementById('aba-'+a);
+    btn.classList.toggle('aba-ativa', a===aba);
+    btn.classList.toggle('aba-inativa', a!==aba);
+  });
+}
+
+function filtrarLancamentos(tipo) {
+  document.querySelectorAll('.lancamento-item').forEach(function(el) {
+    var sentido = el.dataset.sentido;
+    var mostrar = tipo==='todos' || sentido===tipo.replace(/s$/,'');
+    el.style.display = mostrar ? 'grid' : 'none';
+  });
+  document.querySelectorAll('.filtro-btn').forEach(function(btn) {
+    btn.classList.toggle('filtro-ativo',   btn.id==='filtro-'+tipo);
+    btn.classList.toggle('filtro-inativo', btn.id!=='filtro-'+tipo);
+  });
+}
+
+function toggleBuscaSaida(id) {
+  var busca = document.getElementById('busca-saida-' + id + '-wrap');
+  var nosug = document.getElementById('nosug-saida-' + id);
+  if (busca) busca.classList.toggle('hidden');
+  if (nosug) nosug.classList.toggle('hidden');
+}
+
+
+function toggleBusca(id) {
+  // pixted-X → busca-pixted-X / nosug-pixted-X
+  // lote-X   → busca-lote-X-wrap / nosug-lote-X
+  var buscaId, nosugId;
+  if (id.startsWith('pixted-')) {
+    buscaId = 'busca-'+id; nosugId = 'nosug-'+id;
+  } else {
+    buscaId = 'busca-'+id+'-wrap'; nosugId = 'nosug-'+id;
+  }
+  var busca = document.getElementById(buscaId);
+  var nosug = document.getElementById(nosugId);
+  if (busca) busca.classList.toggle('hidden');
+  if (nosug) nosug.classList.toggle('hidden');
+}
+
+function abrirModalCriar(btn) {
+  var movId=btn.dataset.movId, dataCredito=btn.dataset.dataCredito, valor=btn.dataset.valor;
+  var modal=document.getElementById('modal-criar'), form=document.getElementById('form-criar');
+  if(!modal||!form) return;
+  form.action='/conciliacao/banco/movimentacao/'+movId+'/criar-e-conciliar';
+  document.getElementById('modal-valor').textContent=valor?'R$ '+parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}):'—';
+  document.getElementById('modal-data-credito').textContent=dataCredito?dataCredito.split('-').reverse().join('/'):'—';
+  document.getElementById('modal-data-atendimento').value=dataCredito||'';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+}
+function fecharModalCriar() {
+  var modal=document.getElementById('modal-criar');
+  if(modal){modal.classList.add('hidden');modal.classList.remove('flex');}
+}
+var _m=document.getElementById('modal-criar');
+if(_m) _m.addEventListener('click',function(e){if(e.target===this)fecharModalCriar();});
+</script>
+{% endblock %}

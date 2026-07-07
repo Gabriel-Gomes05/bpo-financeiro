@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Clientes - FLIC{% endblock %}
+{% block page_title %}Cadastro de Clientes{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if request.query_params.get('sucesso') == 'cliente_excluido' %}
+  <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Cliente excluído das telas operacionais. O histórico financeiro foi preservado.</div>
+  {% elif request.query_params.get('erro') %}
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível abrir ou alterar esse cliente.</div>
+  {% endif %}
+
+  {% if pode_criar_cliente %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Novo cliente BPO</h3>
+      <button onclick="document.getElementById('form-cliente').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+
+    <form id="form-cliente" method="post" action="/admin/clientes/cliente"
+          class="hidden p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nome (sigla) *</label>
+        <input type="text" name="nome" required placeholder="Ex: PRESTI"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Razão social *</label>
+        <input type="text" name="razao_social" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">CNPJ *</label>
+        <input type="text" name="cnpj" required placeholder="00.000.000/0001-00"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Especialidade</label>
+        <input type="text" name="especialidade" placeholder="Ortopedia, Clínica Geral..."
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tem maquininha? *</label>
+        <select id="tem-maquininha" name="tem_maquininha"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+      </div>
+      <div id="campos-maquininha" class="hidden md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 rounded-lg border border-[#5e93cc]/20 bg-[#5e93cc]/5 p-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Rede da maquininha *</label>
+          <select name="rede_maquininha"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="">Selecione...</option>
+            <option value="Ton">Ton</option>
+            <option value="InfinityPay">InfinityPay</option>
+            <option value="Stone">Stone</option>
+            <option value="Cielo">Cielo</option>
+            <option value="Rede">Rede</option>
+            <option value="GetNet">GetNet</option>
+            <option value="PagSeguro">PagSeguro</option>
+            <option value="Mercado Pago">Mercado Pago</option>
+            <option value="SumUp">SumUp</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Antecipa?</label>
+          <select name="antecipa"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="nao">Não</option>
+            <option value="sim">Sim</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-xs font-semibold text-gray-500 uppercase">Taxas por bandeira</label>
+            <button type="button" onclick="adicionarTaxaNovoCliente()"
+                    class="text-xs text-[#5e93cc] hover:underline">+ Adicionar taxa</button>
+          </div>
+          <div id="taxas-novo-cliente" class="space-y-2"></div>
+        </div>
+      </div>
+      <div>
+        {% if pode_coordenar %}
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Funcionário responsável</label>
+        <select name="funcionario_id"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Sem responsável</option>
+          {% for f in funcionarios %}
+          <option value="{{ f.id }}">{{ f.nome }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+      </div>
+      <div class="flex justify-end items-end">
+        <button type="submit"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+          Criar cliente
+        </button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-gray-700">Clientes BPO</h3>
+        <p class="text-xs text-slate-400">{{ clientes|length }} cliente(s) ativo(s)</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+      {% for c in clientes %}
+      {% set maq_ativas = c.maquininhas | selectattr('ativa') | list %}
+      <article class="min-w-0 rounded-xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-[#5e93cc]/50 hover:shadow-md">
+        <div class="flex min-w-0 items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h4 class="truncate text-lg font-bold text-[#222049]">{{ c.nome }}</h4>
+            <p class="truncate text-sm text-slate-500" title="{{ c.razao_social or '' }}">{{ c.razao_social or 'Razão social não informada' }}</p>
+          </div>
+          <span class="shrink-0 rounded-full bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700">Ativo</span>
+        </div>
+
+        <dl class="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 text-sm">
+          <div class="min-w-0">
+            <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">CNPJ</dt>
+            <dd class="truncate text-slate-700">{{ c.cnpj or '—' }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Especialidade</dt>
+            <dd class="truncate text-slate-700">{{ c.especialidade or '—' }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Responsável</dt>
+            <dd class="truncate text-slate-700">{{ c.funcionario.nome if c.funcionario else 'Sem responsável' }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Maquininhas</dt>
+            <dd class="truncate text-slate-700">{% if maq_ativas %}{{ maq_ativas|length }} cadastrada(s){% else %}Nenhuma{% endif %}</dd>
+          </div>
+        </dl>
+
+        {% if maq_ativas %}
+        <div class="mt-4 flex min-w-0 flex-wrap gap-1.5">
+          {% for m in maq_ativas[:3] %}
+          <span class="max-w-full truncate rounded-full bg-[#5e93cc]/10 px-2 py-1 text-xs text-[#222049]">{{ m.rede }}{% if m.apelido %} · {{ m.apelido }}{% endif %}</span>
+          {% endfor %}
+          {% if maq_ativas|length > 3 %}<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">+{{ maq_ativas|length - 3 }}</span>{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="mt-5 flex items-center gap-2 border-t border-slate-100 pt-4">
+          <a href="/admin/clientes/cliente/{{ c.id }}/editar"
+             class="flex-1 rounded-lg bg-[#222049] px-3 py-2 text-center text-sm font-semibold text-white hover:bg-[#1a1836]">
+            Entrar no cadastro
+          </a>
+          <a href="/admin/centros-custo?cliente_id={{ c.id }}" title="Centros de custo"
+             class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">Centros</a>
+        </div>
+      </article>
+      {% else %}
+      <div class="col-span-full rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">Nenhum cliente ativo cadastrado.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const temMaquininha = document.getElementById("tem-maquininha");
+  const camposMaquininha = document.getElementById("campos-maquininha");
+  const taxasNovoCliente = document.getElementById("taxas-novo-cliente");
+  const opcoesBandeira = `{% for b in bandeiras %}<option value="{{ b }}">{{ b }}</option>{% endfor %}`;
+
+  function adicionarTaxaNovoCliente() {
+    if (!taxasNovoCliente) return;
+    const linha = document.createElement("div");
+    linha.className = "grid grid-cols-[1fr_120px_32px] gap-2";
+    linha.innerHTML = `
+      <select name="bandeira" class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+        <option value="">Bandeira...</option>
+        ${opcoesBandeira}
+      </select>
+      <input type="number" name="taxa_percentual" step="0.01" min="0" max="100" placeholder="Taxa %"
+             class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      <button type="button" onclick="this.parentElement.remove()"
+              class="rounded-lg border border-gray-300 bg-white text-gray-400 hover:text-red-600">x</button>
+    `;
+    taxasNovoCliente.appendChild(linha);
+  }
+
+  function alternarCamposMaquininha() {
+    const exibir = temMaquininha.value === "sim";
+    camposMaquininha.classList.toggle("hidden", !exibir);
+    if (exibir && taxasNovoCliente && taxasNovoCliente.children.length === 0) {
+      adicionarTaxaNovoCliente();
+    }
+  }
+
+  if (temMaquininha) {
+    temMaquininha.addEventListener("change", alternarCamposMaquininha);
+    alternarCamposMaquininha();
+  }
+</script>
+{% endblock %}

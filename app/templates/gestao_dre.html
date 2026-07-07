@@ -1,0 +1,986 @@
+{% extends "base.html" %}
+{% block title %}DRE - FLIC{% endblock %}
+{% block page_title %}DRE - Demonstrativo de Resultado{% endblock %}
+
+{% block content %}
+<style>
+  @keyframes dreRise {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes dreGrow {
+    from { width: 0; opacity: .45; }
+    to { opacity: 1; }
+  }
+  .dre-animate {
+    animation: dreRise .45s ease-out both;
+  }
+  .dre-bar {
+    animation: dreGrow .8s ease-out both;
+  }
+  .dre-glass {
+    background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08));
+    backdrop-filter: blur(10px);
+  }
+  .dre-grid-line {
+    background-image: linear-gradient(to right, rgba(148,163,184,.16) 1px, transparent 1px);
+    background-size: 24px 100%;
+  }
+  .dre-card {
+    border-radius: 12px;
+    border: 1px solid rgba(226,232,240,.9);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .dre-focus-card {
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .dre-focus-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(15,23,42,.10);
+  }
+  .dre-focus-card.is-active {
+    border-color: rgba(34,32,73,.65);
+    box-shadow: 0 18px 38px rgba(34,32,73,.16);
+  }
+  .dre-panel-button {
+    transition: background .18s ease, color .18s ease, border-color .18s ease;
+  }
+  .dre-panel-button.is-active {
+    background: #222049;
+    border-color: #222049;
+    color: #fff;
+  }
+  .dre-interactive-row {
+    cursor: pointer;
+    transition: background .15s ease, transform .15s ease;
+  }
+  .dre-interactive-row:hover {
+    background: #f8fafc;
+    transform: translateX(2px);
+  }
+  .dre-pulse-dot {
+    box-shadow: 0 0 0 6px rgba(94,147,204,.12);
+  }
+</style>
+
+{% set meses = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'] %}
+
+<div class="space-y-6" data-dre-dashboard>
+  <form method="get" action="/gestao/dre"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
+    <input type="hidden" name="visao" value="{{ visao }}">
+    <input type="hidden" name="periodo" value="{{ periodo }}">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente</label>
+      <select name="cliente_id" required onchange="this.form.submit()"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Mes</label>
+      <select name="mes" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for m in range(1,13) %}
+        <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ meses[m] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Ano</label>
+      <select name="ano" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for a in range(2023, 2028) %}
+        <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      Gerar DRE
+    </button>
+    <div class="flex flex-wrap gap-2 md:ml-auto">
+      {% set filtros = [
+        ('hoje', 'Hoje'),
+        ('7d', '7 dias'),
+        ('30d', '30 dias'),
+        ('90d', '90 dias'),
+        ('ano', 'Ano atual'),
+        ('mes', 'Personalizado')
+      ] %}
+      {% for key, label in filtros %}
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ key }}&visao={{ visao }}"
+         class="rounded-lg border px-3 py-2 text-xs font-semibold transition {% if periodo == key %}border-[#222049] bg-[#222049] text-white{% else %}border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </form>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+    <div class="grid grid-cols-2 gap-2 md:max-w-md md:flex-1">
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}&visao=simples"
+         class="rounded-lg px-4 py-3 text-sm font-semibold text-center transition {% if visao == 'simples' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">
+        DRE simples
+      </a>
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}&visao=cliente"
+         class="rounded-lg px-4 py-3 text-sm font-semibold text-center transition {% if visao == 'cliente' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">
+        DRE cliente
+      </a>
+    </div>
+    {% if cliente_selecionado and grupos_dre %}
+    <a href="/gestao/dre/apresentacao?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}"
+       class="rounded-lg bg-gradient-to-r from-[#222049] to-[#5e93cc] px-5 py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
+      Modo apresentação →
+    </a>
+    {% endif %}
+  </div>
+
+  {% if cliente_selecionado and grupos_dre %}
+    {% if visao == 'cliente' and dre_cliente %}
+    <section class="dre-animate rounded-xl overflow-hidden border border-slate-200 bg-[linear-gradient(135deg,#1e1b4b_0%,#0f172a_58%,#083344_100%)] text-white">
+      <div class="px-6 py-6 md:px-8 md:py-7">
+        <div class="grid gap-6 xl:grid-cols-[1.35fr_.8fr] xl:items-start">
+          <div class="space-y-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-cyan-200">Visao executiva do cliente</p>
+            <h2 class="text-2xl font-semibold">Dashboard financeiro</h2>
+            <p class="text-sm text-slate-200 max-w-2xl">
+              Leitura consolidada de {{ dre_cliente.inicio.strftime('%d/%m/%Y') }} a {{ dre_cliente.fim.strftime('%d/%m/%Y') }}, com receitas, despesas, margem, vencimentos e comparativo contra o mes anterior.
+            </p>
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {% for insight in insights %}
+              <div class="dre-glass rounded-lg border border-white/10 p-4">
+                <p class="text-xs font-semibold uppercase tracking-wide
+                  {% if insight.tom == 'emerald' %}text-emerald-200{% elif insight.tom == 'rose' %}text-rose-200{% elif insight.tom == 'sky' %}text-sky-200{% elif insight.tom == 'amber' %}text-amber-200{% else %}text-slate-200{% endif %}">
+                  {{ insight.titulo }}
+                </p>
+                <p class="mt-2 text-sm leading-6 text-slate-100">{{ insight.texto }}</p>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="dre-glass rounded-xl border border-white/10 p-5 text-sm text-slate-200">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-cyan-200">Periodo analisado</div>
+                <div class="mt-1 font-semibold text-white">{{ dre_cliente.inicio.strftime('%d/%m/%Y') }} a {{ dre_cliente.fim.strftime('%d/%m/%Y') }}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs uppercase tracking-wide text-cyan-200">Filtro ativo</div>
+                <div class="mt-1 font-semibold text-white">
+                  {% if periodo == 'hoje' %}Hoje{% elif periodo == '7d' %}7 dias{% elif periodo == '30d' %}30 dias{% elif periodo == '90d' %}90 dias{% elif periodo == 'ano' %}Ano{% else %}Personalizado{% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="mt-5">
+              <div class="flex items-center justify-between text-xs text-slate-300">
+                <span>Margem real</span>
+                <span>{{ dre_cliente.margem_real_pct }}%</span>
+              </div>
+              <div class="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                <div class="dre-bar h-full rounded-full bg-cyan-300" style="width: {{ 0 if dre_cliente.margem_real_pct < 0 else (100 if dre_cliente.margem_real_pct > 100 else dre_cliente.margem_real_pct) }}%"></div>
+              </div>
+            </div>
+            <div class="mt-5 grid grid-cols-2 gap-3">
+              <div class="rounded-lg bg-black/10 p-3">
+                <div class="text-[11px] uppercase tracking-wide text-slate-300">Orcado</div>
+                <div class="mt-1 font-semibold text-white">R$ {{ brl(resultado_orcado) }}</div>
+              </div>
+              <div class="rounded-lg bg-black/10 p-3">
+                <div class="text-[11px] uppercase tracking-wide text-slate-300">Real</div>
+                <div class="mt-1 font-semibold {% if resultado_real >= 0 %}text-emerald-200{% else %}text-rose-200{% endif %}">R$ {{ brl(resultado_real) }}</div>
+              </div>
+              <div class="rounded-lg bg-black/10 p-3 col-span-2">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <div class="text-[11px] uppercase tracking-wide text-slate-300">Saldo atual</div>
+                    <div class="mt-1 font-semibold text-white">
+                      {% if saldo_atual %}R$ {{ brl(saldo_atual.valor) }}{% else %}Sem fechamento informado{% endif %}
+                    </div>
+                  </div>
+                  {% if saldo_atual %}
+                  <div class="text-right text-[11px] text-slate-300">em {{ saldo_atual.data.strftime('%d/%m/%Y') }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-5" data-dre-kpis>
+      <button type="button"
+              class="dre-focus-card is-active dre-animate rounded-xl border border-emerald-100 bg-white p-5 text-left shadow-sm"
+              style="animation-delay:.05s"
+              data-panel-trigger="receitas"
+              data-panel-title="Receita total"
+              data-panel-value="R$ {{ brl(total_real_rec) }}"
+              data-panel-tone="Receita"
+              data-panel-text="Receitas conciliadas no periodo. Compare o ritmo atual com o mes anterior e investigue quedas antes do fechamento."
+              data-panel-action="Abrir lancamentos de receita"
+              data-panel-url="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+        <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Receita real</p>
+        <p class="mt-3 text-2xl font-semibold text-slate-900">R$ {{ brl(total_real_rec) }}</p>
+        <p class="mt-2 text-sm {% if comparativo.delta_receitas >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+          {% if comparativo.delta_receitas >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_receitas) }} vs {{ meses[comparativo.mes] }}/{{ comparativo.ano }}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Soma de recebimentos conciliados no periodo.</p>
+      </button>
+
+      <button type="button"
+              class="dre-focus-card dre-animate rounded-xl border border-rose-100 bg-white p-5 text-left shadow-sm"
+              style="animation-delay:.1s"
+              data-panel-trigger="despesas"
+              data-panel-title="Despesas totais"
+              data-panel-value="R$ {{ brl(total_real_desp) }}"
+              data-panel-tone="Despesa"
+              data-panel-text="Despesas pagas no periodo. Use este painel para encontrar categorias que cresceram e contas que precisam de renegociacao."
+              data-panel-action="Ver despesas"
+              data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+        <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">Despesa real</p>
+        <p class="mt-3 text-2xl font-semibold text-slate-900">R$ {{ brl(total_real_desp) }}</p>
+        <p class="mt-2 text-sm {% if comparativo.delta_despesas <= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+          {% if comparativo.delta_despesas >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_despesas) }} vs {{ meses[comparativo.mes] }}/{{ comparativo.ano }}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Soma de contas pagas com baixa no periodo.</p>
+      </button>
+
+      <button type="button"
+              class="dre-focus-card dre-animate rounded-xl border border-sky-100 bg-white p-5 text-left shadow-sm"
+              style="animation-delay:.15s"
+              data-panel-trigger="resultado"
+              data-panel-title="Resultado liquido"
+              data-panel-value="R$ {{ brl(resultado_real) }}"
+              data-panel-tone="{% if resultado_real >= 0 %}Positivo{% else %}Alerta{% endif %}"
+              data-panel-text="Resultado final do periodo. Quando cai, a primeira leitura deve cruzar queda de receita, crescimento de despesa e vencimentos abertos."
+              data-panel-action="Analisar quadro detalhado"
+              data-panel-scroll="#dre-quadro-detalhado">
+        <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Resultado real</p>
+        <p class="mt-3 text-2xl font-semibold {% if resultado_real >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">
+          R$ {{ brl(resultado_real) }}
+        </p>
+        <p class="mt-2 text-sm {% if comparativo.delta_resultado >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+          {% if comparativo.delta_resultado >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_resultado) }} vs {{ meses[comparativo.mes] }}/{{ comparativo.ano }}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Quanto sobrou depois de receitas menos despesas.</p>
+      </button>
+
+      <button type="button"
+              class="dre-focus-card dre-animate rounded-xl border border-amber-100 bg-white p-5 text-left shadow-sm"
+              style="animation-delay:.2s"
+              data-panel-trigger="margem"
+              data-panel-title="Margem percentual"
+              data-panel-value="{{ dre_cliente.margem_real_pct }}%"
+              data-panel-tone="Margem"
+              data-panel-text="Percentual da receita que virou resultado. Uma margem baixa com receita alta costuma indicar custo operacional fora do planejado."
+              data-panel-action="Ver despesas por categoria"
+              data-panel-scroll="#dre-despesas-categoria">
+        <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Margem real</p>
+        <p class="mt-3 text-2xl font-semibold text-slate-900">{{ dre_cliente.margem_real_pct }}%</p>
+        <p class="mt-2 text-sm {% if comparativo.delta_margem_pct >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+          {% if comparativo.delta_margem_pct >= 0 %}+{% endif %}{{ comparativo.delta_margem_pct }} p.p. vs {{ meses[comparativo.mes] }}/{{ comparativo.ano }}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Percentual do faturamento que virou resultado.</p>
+      </button>
+
+      <button type="button"
+              class="dre-focus-card dre-animate rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm"
+              style="animation-delay:.24s"
+              data-panel-trigger="saldo"
+              data-panel-title="Saldo atual"
+              data-panel-value="{% if saldo_atual %}R$ {{ brl(saldo_atual.valor) }}{% else %}Sem saldo{% endif %}"
+              data-panel-tone="Caixa"
+              data-panel-text="Saldo vindo do ultimo fechamento diario. Use junto dos proximos vencimentos para antecipar pressao de caixa."
+              data-panel-action="Ver proximos vencimentos"
+              data-panel-scroll="#dre-vencimentos">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">Saldo atual</p>
+        <p class="mt-3 text-2xl font-semibold {% if saldo_atual and saldo_atual.valor < 0 %}text-rose-700{% else %}text-slate-900{% endif %}">
+          {% if saldo_atual %}R$ {{ brl(saldo_atual.valor) }}{% else %}-{% endif %}
+        </p>
+        <p class="mt-2 text-sm text-slate-500">
+          {% if saldo_atual %}Fechamento de {{ saldo_atual.data.strftime('%d/%m/%Y') }}{% else %}Sem saldo informado no periodo.{% endif %}
+        </p>
+        <p class="mt-2 text-xs text-slate-500">Baseado no ultimo fechamento diario disponivel.</p>
+      </button>
+    </section>
+
+    <section class="dre-animate grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Modo de analise</p>
+        <div class="mt-3 grid grid-cols-2 gap-2">
+          <button type="button" class="dre-panel-button is-active rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-panel-trigger="receitas">Receitas</button>
+          <button type="button" class="dre-panel-button rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-panel-trigger="despesas">Despesas</button>
+          <button type="button" class="dre-panel-button rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-panel-trigger="resultado">Resultado</button>
+          <button type="button" class="dre-panel-button rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-panel-trigger="saldo">Caixa</button>
+        </div>
+      </div>
+      <div class="rounded-xl border border-[#222049]/15 bg-white p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="dre-pulse-dot h-2.5 w-2.5 rounded-full bg-[#5e93cc]"></span>
+              <p class="text-xs font-bold uppercase tracking-wide text-[#5e93cc]" id="dre-panel-tone">Receita</p>
+            </div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-900" id="dre-panel-title">Receita total</h3>
+            <p class="mt-1 text-3xl font-semibold text-slate-950" id="dre-panel-value">R$ {{ brl(total_real_rec) }}</p>
+          </div>
+          <a href="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}"
+             id="dre-panel-action"
+             class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            Abrir lancamentos de receita
+          </a>
+        </div>
+        <p class="mt-4 max-w-3xl text-sm leading-6 text-slate-600" id="dre-panel-text">
+          Receitas conciliadas no periodo. Compare o ritmo atual com o mes anterior e investigue quedas antes do fechamento.
+        </p>
+      </div>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-[1.25fr_.95fr]">
+      <div class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm" style="animation-delay:.25s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Comparativo rapido</h3>
+            <p class="text-sm text-slate-500">Atual contra mes anterior e contra o orcado.</p>
+          </div>
+        </div>
+        <div class="mt-6 space-y-5">
+          {% set cards = [
+            ('Receitas', total_real_rec, total_orcado_rec, comparativo.receitas_real, 'bg-emerald-500'),
+            ('Despesas', total_real_desp, total_orcado_desp, comparativo.despesas_real, 'bg-rose-500'),
+            ('Resultado', resultado_real, resultado_orcado, comparativo.resultado_real, 'bg-sky-500')
+          ] %}
+          {% for titulo, atual, orcado, anterior, cor in cards %}
+          {% set maior = [atual, orcado, anterior, 1]|max %}
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="font-medium text-slate-700">{{ titulo }}</span>
+              <span class="text-slate-400">Atual | Orcado | Anterior</span>
+            </div>
+            <div class="space-y-2">
+              <div>
+                <div class="mb-1 flex items-center justify-between text-xs text-slate-500">
+                  <span>Atual</span>
+                  <span>R$ {{ brl(atual) }}</span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div class="dre-bar h-full {{ cor }}" style="width: {{ ((atual / maior) * 100) if maior else 0 }}%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-xs text-slate-500">
+                  <span>Orcado</span>
+                  <span>R$ {{ brl(orcado) }}</span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div class="dre-bar h-full bg-slate-400" style="width: {{ ((orcado / maior) * 100) if maior else 0 }}%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="mb-1 flex items-center justify-between text-xs text-slate-500">
+                  <span>{{ meses[comparativo.mes] }}/{{ comparativo.ano }}</span>
+                  <span>R$ {{ brl(anterior) }}</span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div class="dre-bar h-full bg-amber-400" style="width: {{ ((anterior / maior) * 100) if maior else 0 }}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="dre-vencimentos" class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm" style="animation-delay:.3s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Proximos vencimentos</h3>
+            <p class="text-sm text-slate-500">Contas abertas que impactam o caixa nos proximos 30 dias.</p>
+          </div>
+        </div>
+        {% set venc_cards = [
+          ('Vencidas', vencimentos.vencidas if vencimentos else none, 'text-rose-700', 'bg-rose-50'),
+          ('Vence hoje', vencimentos.hoje if vencimentos else none, 'text-amber-700', 'bg-amber-50'),
+          ('Proximos 7 dias', vencimentos.sete_dias if vencimentos else none, 'text-sky-700', 'bg-sky-50'),
+          ('Proximos 30 dias', vencimentos.trinta_dias if vencimentos else none, 'text-slate-700', 'bg-slate-50')
+        ] %}
+        <div class="mt-5 grid gap-3 sm:grid-cols-2">
+          {% for titulo, bloco, tom, fundo in venc_cards %}
+          <button type="button"
+                  class="dre-focus-card rounded-lg border border-slate-200 {{ fundo }} p-4 text-left"
+                  data-panel-trigger="vencimento-{{ loop.index }}"
+                  data-panel-title="{{ titulo }}"
+                  data-panel-value="R$ {{ brl(bloco.valor if bloco else 0) }}"
+                  data-panel-tone="Vencimentos"
+                  data-panel-text="{{ bloco.qtd if bloco else 0 }} conta(s) neste bloco. Acompanhe estes compromissos junto do saldo atual para prever pressao de caixa."
+                  data-panel-action="Ver contas a pagar"
+                  data-panel-url="/contas-pagar?cliente_id={{ cliente_selecionado }}">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-xs font-bold uppercase tracking-wide {{ tom }}">{{ titulo }}</p>
+              <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold {{ tom }}">{{ bloco.qtd if bloco else 0 }}</span>
+            </div>
+            <p class="mt-3 text-xl font-semibold text-slate-900">R$ {{ brl(bloco.valor if bloco else 0) }}</p>
+          </button>
+          {% endfor %}
+        </div>
+        <div class="mt-5 space-y-3">
+          {% if vencimentos and (vencimentos.vencidas.itens or vencimentos.hoje.itens or vencimentos.sete_dias.itens) %}
+            {% for conta in (vencimentos.vencidas.itens + vencimentos.hoje.itens + vencimentos.sete_dias.itens)[:5] %}
+            <button type="button"
+                    class="dre-interactive-row flex w-full items-center justify-between gap-4 rounded-lg border border-slate-100 px-3 py-2 text-left text-sm"
+                    data-panel-trigger="conta-{{ conta.id }}"
+                    data-panel-title="{{ conta.descricao }}"
+                    data-panel-value="R$ {{ brl(conta.valor) }}"
+                    data-panel-tone="Conta a pagar"
+                    data-panel-text="Vencimento em {{ conta.vencimento.strftime('%d/%m/%Y') }}{% if conta.fornecedor %}, fornecedor {{ conta.fornecedor }}{% endif %}. Status atual: {{ conta.status.value.replace('_', ' ') }}."
+                    data-panel-action="Abrir contas a pagar"
+                    data-panel-url="/contas-pagar?cliente_id={{ cliente_selecionado }}">
+              <div class="min-w-0">
+                <p class="truncate font-medium text-slate-700">{{ conta.descricao }}</p>
+                <p class="text-xs text-slate-400">{{ conta.vencimento.strftime('%d/%m/%Y') }}{% if conta.fornecedor %} - {{ conta.fornecedor }}{% endif %}</p>
+              </div>
+              <p class="shrink-0 font-semibold text-slate-900">R$ {{ brl(conta.valor) }}</p>
+            </button>
+            {% endfor %}
+          {% else %}
+          <p class="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-400">Sem vencimentos abertos relevantes nos proximos 30 dias.</p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
+      <div class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-hidden" style="animation-delay:.33s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Fluxo financeiro</h3>
+            <p class="text-sm text-slate-500">Grafico principal com receitas, despesas e resultado dos ultimos 6 meses.</p>
+          </div>
+        </div>
+        {% set maior_serie = [1] + (serie_mensal | map(attribute='receita') | list) + (serie_mensal | map(attribute='despesa') | list) %}
+        {% set base_serie = maior_serie|max %}
+        <div class="mt-6 dre-grid-line rounded-xl border border-slate-100 bg-slate-50 p-4">
+          <div class="grid grid-cols-6 gap-3 items-end min-h-[220px]">
+            {% for item in serie_mensal %}
+            <button type="button"
+                    class="dre-focus-card flex flex-col items-center gap-3 rounded-lg p-2 text-center"
+                    data-panel-trigger="serie-{{ item.label }}"
+                    data-open-chart-detail="1"
+                    data-panel-title="Fluxo {{ item.label }}"
+                    data-panel-value="R$ {{ brl(item.resultado) }}"
+                    data-panel-tone="Fluxo mensal"
+                    data-panel-text="Receita de R$ {{ brl(item.receita) }}, despesa de R$ {{ brl(item.despesa) }} e margem de {{ item.margem_pct }}% em {{ item.label }}."
+                    data-panel-action="Ver DRE do mes"
+                    data-panel-url="/gestao/dre?cliente_id={{ cliente_selecionado }}&mes={{ item.mes }}&ano={{ item.ano }}&periodo=mes&visao=cliente"
+                    data-detail-periodo="{{ item.label }}"
+                    data-detail-receita="R$ {{ brl(item.receita) }}"
+                    data-detail-receita-num="{{ item.receita }}"
+                    data-detail-despesa="R$ {{ brl(item.despesa) }}"
+                    data-detail-despesa-num="{{ item.despesa }}"
+                    data-detail-resultado="R$ {{ brl(item.resultado) }}"
+                    data-detail-resultado-num="{{ item.resultado }}"
+                    data-detail-margem="{{ item.margem_pct }}%"
+                    data-detail-url="/gestao/dre?cliente_id={{ cliente_selecionado }}&mes={{ item.mes }}&ano={{ item.ano }}&periodo=mes&visao=cliente#dre-quadro-detalhado">
+              <div class="flex items-end gap-1 h-40">
+                <div class="dre-bar w-3 rounded-t bg-emerald-500" style="height: {{ ((item.receita / base_serie) * 150) if base_serie else 0 }}px" title="Receita"></div>
+                <div class="dre-bar w-3 rounded-t bg-rose-400" style="height: {{ ((item.despesa / base_serie) * 150) if base_serie else 0 }}px" title="Despesa"></div>
+                <div class="dre-bar w-3 rounded-t {% if item.resultado >= 0 %}bg-sky-500{% else %}bg-amber-500{% endif %}" style="height: {{ (((item.resultado|abs) / base_serie) * 150) if base_serie else 0 }}px" title="Resultado"></div>
+              </div>
+              <div class="text-center">
+                <div class="text-xs font-semibold text-slate-700">{{ item.label }}</div>
+                <div class="mt-1 text-[11px] text-slate-400">{{ item.margem_pct }}%</div>
+              </div>
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Receita</span>
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-rose-400"></span>Despesa</span>
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-sky-500"></span>Resultado positivo</span>
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>Resultado negativo</span>
+        </div>
+      </div>
+
+      <div class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm" style="animation-delay:.36s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Leitura gerencial</h3>
+            <p class="text-sm text-slate-500">Resumo rapido para a conversa com o cliente.</p>
+          </div>
+        </div>
+        <div class="mt-6 space-y-4">
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-slate-700">Ritmo de faturamento</p>
+              <span class="text-xs font-semibold {% if comparativo.delta_receitas >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% if comparativo.delta_receitas >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_receitas) }}
+              </span>
+            </div>
+            <p class="mt-2 text-sm text-slate-500">Compara a entrada real do mes com o desempenho do mes anterior.</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-slate-700">Disciplina de despesas</p>
+              <span class="text-xs font-semibold {% if total_real_desp <= total_orcado_desp %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {{ dre_cliente.peso_despesa_pct }}% da receita
+              </span>
+            </div>
+            <p class="mt-2 text-sm text-slate-500">Mostra quanto da receita foi consumido pelas despesas pagas no periodo.</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-slate-700">Entrega de margem</p>
+              <span class="text-xs font-semibold {% if dre_cliente.margem_real_pct >= dre_cliente.margem_orcada_pct %}text-emerald-600{% else %}text-amber-600{% endif %}">
+                {{ dre_cliente.margem_real_pct }}% real
+              </span>
+            </div>
+            <p class="mt-2 text-sm text-slate-500">Compara a margem efetiva com a margem planejada para o mes.</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-slate-700">Gap vs orcamento</p>
+              <span class="text-xs font-semibold {% if resultado_dif >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% if resultado_dif >= 0 %}+{% endif %}R$ {{ brl(resultado_dif) }}
+              </span>
+            </div>
+            <p class="mt-2 text-sm text-slate-500">Quanto o resultado realizado ficou acima ou abaixo do esperado.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-2">
+      <div id="dre-despesas-categoria" class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm" style="animation-delay:.35s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Maiores despesas do periodo</h3>
+            <p class="text-sm text-slate-500">Onde o caixa mais consumiu no mes.</p>
+          </div>
+          <div class="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            Peso total {{ dre_cliente.peso_despesa_pct }}% da receita
+          </div>
+        </div>
+        <div class="mt-5 space-y-4">
+          {% for item in dre_cliente.maiores_despesas %}
+          {% set pct = ((item.real / total_real_desp) * 100) if total_real_desp else 0 %}
+          <button type="button"
+                  class="dre-interactive-row w-full space-y-2 rounded-lg border border-transparent p-2 text-left"
+                  data-panel-trigger="despesa-{{ item.key }}"
+                  data-panel-title="{{ item.nome }}"
+                  data-panel-value="R$ {{ brl(item.real) }}"
+                  data-panel-tone="Despesa por categoria"
+                  data-panel-text="{{ item.nome }} representa {{ '%.1f'|format(pct|float) }}% das despesas do periodo. Grupo: {{ item.grupo_nome }}."
+                  data-panel-action="Ver despesas"
+                  data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <div>
+                <p class="font-medium text-slate-800">{{ item.nome }}</p>
+                <p class="text-xs text-slate-400">{{ item.grupo_nome }}</p>
+              </div>
+              <div class="text-right">
+                <p class="font-semibold text-slate-800">R$ {{ brl(item.real) }}</p>
+                <p class="text-xs text-slate-400">{{ '%.1f'|format(pct|float) }}% das despesas</p>
+              </div>
+            </div>
+            <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div class="dre-bar h-full bg-rose-500" style="width: {{ pct }}%"></div>
+            </div>
+          </button>
+          {% else %}
+          <p class="text-sm text-slate-400">Sem despesas classificadas no periodo.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="dre-animate rounded-xl border border-slate-200 bg-white p-6 shadow-sm" style="animation-delay:.4s">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">Maiores desvios</h3>
+            <p class="text-sm text-slate-500">Categorias mais distantes do orcado.</p>
+          </div>
+        </div>
+        <div class="mt-5 space-y-4">
+          {% for item in dre_cliente.maiores_desvios %}
+          {% set base = [item.real|abs, item.orcado|abs, 1]|max %}
+          {% set pct = ((item.dif|abs / base) * 100) if base else 0 %}
+          <button type="button"
+                  class="dre-interactive-row w-full rounded-lg border border-slate-200 p-4 text-left"
+                  data-panel-trigger="desvio-{{ item.key }}"
+                  data-panel-title="{{ item.nome }}"
+                  data-panel-value="{% if item.dif > 0 %}+{% endif %}R$ {{ brl(item.dif) }}"
+                  data-panel-tone="Desvio orcamentario"
+                  data-panel-text="Orcado: R$ {{ brl(item.orcado) }}. Real: R$ {{ brl(item.real) }}. Este desvio mostra onde o planejamento mais se afastou da execucao."
+                  data-panel-action="Revisar orcamento"
+                  data-panel-url="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="font-medium text-slate-800">{{ item.nome }}</p>
+                <p class="text-xs text-slate-400">{{ item.grupo_nome }}</p>
+              </div>
+              <div class="text-right">
+                <p class="text-xs text-slate-400">Desvio</p>
+                <p class="font-semibold {% if item.dif <= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                  {% if item.dif > 0 %}+{% endif %}R$ {{ brl(item.dif) }}
+                </p>
+              </div>
+            </div>
+            <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div class="dre-bar h-full {% if item.dif <= 0 %}bg-emerald-500{% else %}bg-amber-500{% endif %}" style="width: {{ pct if pct <= 100 else 100 }}%"></div>
+            </div>
+            <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+              <span>Orcado: R$ {{ brl(item.orcado) }}</span>
+              <span>Real: R$ {{ brl(item.real) }}</span>
+            </div>
+          </button>
+          {% else %}
+          <p class="text-sm text-slate-400">Sem desvios relevantes para exibir.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section id="dre-quadro-detalhado" class="dre-animate rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden" style="animation-delay:.45s">
+      <div class="border-b border-slate-200 px-6 py-4">
+        <h3 class="text-base font-semibold text-slate-900">Quadro detalhado</h3>
+        <p class="text-sm text-slate-500">Visao completa por grupo e categoria para apoiar a conversa com o cliente.</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-white">
+            <tr>
+              <th class="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide">Categoria</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide">Orcado</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide">Real</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide">Diferenca</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for grupo in grupos_dre %}
+            <tr class="{% if grupo.tipo == 'receita' %}bg-emerald-50{% else %}bg-rose-50{% endif %}">
+              <td class="px-5 py-3 font-semibold {% if grupo.tipo == 'receita' %}text-emerald-800{% else %}text-rose-800{% endif %}" colspan="4">{{ grupo.nome }}</td>
+            </tr>
+            {% for cat in grupo.categorias %}
+            <tr class="border-b border-slate-100 hover:bg-slate-50">
+              <td class="px-5 py-3 text-slate-700 pl-10">
+                {% if cat.codigo %}
+                <span class="mr-2 rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-600">{{ cat.codigo }}</span>
+                {% endif %}
+                {{ cat.nome }}
+              </td>
+              <td class="px-5 py-3 text-right text-slate-700">R$ {{ brl(cat.orcado) }}</td>
+              <td class="px-5 py-3 text-right text-slate-700">R$ {{ brl(cat.real) }}</td>
+              <td class="px-5 py-3 text-right {% if cat.dif <= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% if cat.dif > 0 %}+{% endif %}R$ {{ brl(cat.dif) }}
+              </td>
+            </tr>
+            {% endfor %}
+            <tr class="{% if grupo.tipo == 'receita' %}bg-emerald-100{% else %}bg-rose-100{% endif %}">
+              <td class="px-5 py-3 pl-10 text-xs font-bold uppercase {% if grupo.tipo == 'receita' %}text-emerald-800{% else %}text-rose-800{% endif %}">Total {{ grupo.nome }}</td>
+              <td class="px-5 py-3 text-right font-bold {% if grupo.tipo == 'receita' %}text-emerald-800{% else %}text-rose-800{% endif %}">R$ {{ brl(grupo.grupo_orcado) }}</td>
+              <td class="px-5 py-3 text-right font-bold {% if grupo.tipo == 'receita' %}text-emerald-800{% else %}text-rose-800{% endif %}">R$ {{ brl(grupo.grupo_real) }}</td>
+              <td class="px-5 py-3 text-right font-bold {% if grupo.grupo_dif >= 0 %}text-rose-600{% else %}text-emerald-600{% endif %}">
+                {% if grupo.grupo_dif > 0 %}+{% endif %}R$ {{ brl(grupo.grupo_dif) }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {% else %}
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="border-b border-gray-200 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 class="text-base font-semibold text-slate-900">DRE simples</h2>
+          <p class="text-sm text-slate-500">Tabela direta para conferencia rapida de orcado x realizado.</p>
+        </div>
+        <div class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Resultado real: <span class="font-semibold {% if resultado_real >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">R$ {{ brl(resultado_real) }}</span>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr style="background:#222049;">
+              <th class="px-5 py-4 text-left text-xs font-semibold uppercase tracking-widest text-white">Categoria</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-widest text-white w-40">Orcado</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-widest text-white w-40">Real</th>
+              <th class="px-5 py-4 text-right text-xs font-semibold uppercase tracking-widest text-white w-40">Diferenca</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for grupo in grupos_dre %}
+            <tr style="background:{% if grupo.tipo == 'receita' %}#f0fdf4{% else %}#fff7f7{% endif %};">
+              <td class="px-5 py-2.5" colspan="4">
+                <p class="text-[11px] font-bold uppercase tracking-widest"
+                   style="color:{% if grupo.tipo == 'receita' %}#15803d{% else %}#b91c1c{% endif %};">
+                  {{ grupo.nome }}
+                </p>
+              </td>
+            </tr>
+            {% for cat in grupo.categorias %}
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+              <td class="px-5 py-2.5 text-gray-600 pl-10">
+                {% if cat.codigo %}
+                <span class="mr-2 rounded bg-gray-100 px-2 py-0.5 font-mono text-xs font-semibold text-gray-600">{{ cat.codigo }}</span>
+                {% endif %}
+                {{ cat.nome }}
+              </td>
+              <td class="px-5 py-2.5 text-right font-mono text-gray-700">
+                {% if cat.orcado %}R$ {{ brl(cat.orcado) }}{% else %}<span class="text-gray-300">-</span>{% endif %}
+              </td>
+              <td class="px-5 py-2.5 text-right font-mono text-gray-700">
+                {% if cat.real %}R$ {{ brl(cat.real) }}{% else %}<span class="text-gray-300">-</span>{% endif %}
+              </td>
+              <td class="px-5 py-2.5 text-right font-mono">
+                {% if cat.orcado or cat.real %}
+                  <span class="{% if cat.dif <= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                    {% if cat.dif > 0 %}+{% endif %}R$ {{ brl(cat.dif) }}
+                  </span>
+                {% else %}<span class="text-gray-300">-</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            <tr style="background:{% if grupo.tipo == 'receita' %}#dcfce7{% else %}#fee2e2{% endif %}; border-bottom:2px solid {% if grupo.tipo == 'receita' %}#bbf7d0{% else %}#fecaca{% endif %};">
+              <td class="px-5 py-2.5 pl-10 text-xs font-bold uppercase"
+                  style="color:{% if grupo.tipo == 'receita' %}#15803d{% else %}#b91c1c{% endif %};">
+                Total {{ grupo.nome }}
+              </td>
+              <td class="px-5 py-2.5 text-right font-bold font-mono"
+                  style="color:{% if grupo.tipo == 'receita' %}#15803d{% else %}#b91c1c{% endif %};">
+                R$ {{ brl(grupo.grupo_orcado) }}
+              </td>
+              <td class="px-5 py-2.5 text-right font-bold font-mono"
+                  style="color:{% if grupo.tipo == 'receita' %}#15803d{% else %}#b91c1c{% endif %};">
+                R$ {{ brl(grupo.grupo_real) }}
+              </td>
+              <td class="px-5 py-2.5 text-right font-bold font-mono {% if grupo.grupo_dif >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% if grupo.grupo_dif >= 0 %}+{% endif %}R$ {{ brl(grupo.grupo_dif) }}
+              </td>
+            </tr>
+            {% endfor %}
+            <tr><td colspan="4" class="py-1"></td></tr>
+            <tr style="background:#f0fdf4; border-top:2px solid #bbf7d0;">
+              <td class="px-5 py-3 font-bold text-emerald-800 uppercase text-xs tracking-wide">Total Receitas</td>
+              <td class="px-5 py-3 text-right font-bold font-mono text-emerald-800">R$ {{ brl(total_orcado_rec) }}</td>
+              <td class="px-5 py-3 text-right font-bold font-mono text-emerald-800">R$ {{ brl(total_real_rec) }}</td>
+              <td class="px-5 py-3 text-right font-bold font-mono {% if total_real_rec - total_orcado_rec >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% set dif_rec = total_real_rec - total_orcado_rec %}
+                {% if dif_rec >= 0 %}+{% endif %}R$ {{ brl(dif_rec) }}
+              </td>
+            </tr>
+            <tr style="background:#fff7f7; border-top:2px solid #fecaca;">
+              <td class="px-5 py-3 font-bold text-rose-800 uppercase text-xs tracking-wide">Total Despesas</td>
+              <td class="px-5 py-3 text-right font-bold font-mono text-rose-800">R$ {{ brl(total_orcado_desp) }}</td>
+              <td class="px-5 py-3 text-right font-bold font-mono text-rose-800">R$ {{ brl(total_real_desp) }}</td>
+              <td class="px-5 py-3 text-right font-bold font-mono {% if total_real_desp <= total_orcado_desp %}text-emerald-600{% else %}text-rose-600{% endif %}">
+                {% set dif_desp = total_real_desp - total_orcado_desp %}
+                {% if dif_desp >= 0 %}+{% endif %}R$ {{ brl(dif_desp) }}
+              </td>
+            </tr>
+            <tr style="background:#222049; border-top:3px solid #1a1836;">
+              <td class="px-5 py-4 font-extrabold text-white uppercase text-sm tracking-wide">Resultado</td>
+              <td class="px-5 py-4 text-right font-extrabold font-mono text-white text-base">R$ {{ brl(resultado_orcado) }}</td>
+              <td class="px-5 py-4 text-right font-extrabold font-mono text-base {% if resultado_real >= 0 %}text-emerald-300{% else %}text-rose-300{% endif %}">
+                R$ {{ brl(resultado_real) }}
+              </td>
+              <td class="px-5 py-4 text-right font-extrabold font-mono text-base {% if resultado_dif >= 0 %}text-emerald-300{% else %}text-rose-300{% endif %}">
+                {% if resultado_dif >= 0 %}+{% endif %}R$ {{ brl(resultado_dif) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  {% elif cliente_selecionado %}
+  <div class="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+    <p class="text-sm text-gray-400">Nenhum dado encontrado. Cadastre o orcamento primeiro.</p>
+    <a href="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}"
+       class="inline-block mt-3 text-sm text-[#5e93cc] hover:underline">Ir para Orcamento</a>
+  </div>
+  {% endif %}
+
+  <div class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+       data-chart-detail-modal
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="dre-detail-title">
+    <div class="w-full max-w-3xl overflow-hidden rounded-xl border border-white/10 bg-white shadow-2xl">
+      <div class="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-wide text-[#5e93cc]">Detalhamento do fluxo</p>
+          <h3 id="dre-detail-title" class="mt-1 text-xl font-semibold text-slate-900">
+            Competencia <span data-detail-periodo>-</span>
+          </h3>
+        </div>
+        <button type="button"
+                class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-xl text-slate-500 hover:bg-slate-50"
+                data-close-chart-detail
+                aria-label="Fechar detalhamento">&times;</button>
+      </div>
+
+      <div class="p-5">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+            <p class="text-xs font-bold uppercase text-emerald-700">Receitas</p>
+            <p class="mt-2 text-xl font-semibold text-slate-900" data-detail-receita>-</p>
+          </div>
+          <div class="rounded-lg border border-rose-100 bg-rose-50 p-4">
+            <p class="text-xs font-bold uppercase text-rose-700">Despesas</p>
+            <p class="mt-2 text-xl font-semibold text-slate-900" data-detail-despesa>-</p>
+          </div>
+          <div class="rounded-lg border border-sky-100 bg-sky-50 p-4">
+            <p class="text-xs font-bold uppercase text-sky-700">Resultado</p>
+            <p class="mt-2 text-xl font-semibold text-slate-900" data-detail-resultado>-</p>
+          </div>
+          <div class="rounded-lg border border-amber-100 bg-amber-50 p-4">
+            <p class="text-xs font-bold uppercase text-amber-700">Margem</p>
+            <p class="mt-2 text-xl font-semibold text-slate-900" data-detail-margem>-</p>
+          </div>
+        </div>
+
+        <div class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div class="flex items-center justify-between gap-4 text-sm">
+            <span class="font-medium text-slate-700">Receita consumida por despesas</span>
+            <span class="font-semibold text-slate-900" data-detail-consumo>-</span>
+          </div>
+          <div class="mt-3 h-3 overflow-hidden rounded-full bg-slate-200">
+            <div class="h-full rounded-full bg-rose-500 transition-all duration-500" data-detail-consumo-bar style="width:0%"></div>
+          </div>
+          <p class="mt-3 text-sm leading-6 text-slate-500" data-detail-reading>
+            Clique em uma coluna do grafico para abrir a leitura completa da competencia.
+          </p>
+        </div>
+
+        <div class="mt-5 flex flex-wrap justify-end gap-3">
+          <button type="button"
+                  class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  data-close-chart-detail>Fechar</button>
+          <a href="#"
+             class="rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1a1836]"
+             data-detail-url>Entrar no DRE completo</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (() => {
+    const root = document.querySelector('[data-dre-dashboard]');
+    if (!root) return;
+
+    const panel = {
+      title: root.querySelector('#dre-panel-title'),
+      value: root.querySelector('#dre-panel-value'),
+      tone: root.querySelector('#dre-panel-tone'),
+      text: root.querySelector('#dre-panel-text'),
+      action: root.querySelector('#dre-panel-action'),
+    };
+    const detailModal = root.querySelector('[data-chart-detail-modal]');
+
+    function sourceFor(trigger) {
+      if (trigger.dataset.panelTitle) return trigger;
+      const key = trigger.dataset.panelTrigger;
+      return Array.from(root.querySelectorAll('[data-dre-kpis] [data-panel-trigger]'))
+        .find(item => item.dataset.panelTrigger === key) || trigger;
+    }
+
+    function updatePanel(trigger) {
+      if (!trigger || !panel.title) return;
+
+      const key = trigger.dataset.panelTrigger;
+      const source = sourceFor(trigger);
+      panel.title.textContent = source.dataset.panelTitle || 'Analise financeira';
+      panel.value.textContent = source.dataset.panelValue || '-';
+      panel.tone.textContent = source.dataset.panelTone || 'Painel';
+      panel.text.textContent = source.dataset.panelText || 'Selecione um indicador para analisar.';
+
+      const url = source.dataset.panelUrl;
+      const scrollTarget = source.dataset.panelScroll;
+      panel.action.textContent = source.dataset.panelAction || 'Ver detalhes';
+      if (url) {
+        panel.action.href = url;
+        panel.action.removeAttribute('data-scroll-target');
+      } else if (scrollTarget) {
+        panel.action.href = scrollTarget;
+        panel.action.dataset.scrollTarget = scrollTarget;
+      } else {
+        panel.action.href = '#dre-quadro-detalhado';
+        panel.action.dataset.scrollTarget = '#dre-quadro-detalhado';
+      }
+
+      root.querySelectorAll('[data-panel-trigger]').forEach(el => {
+        el.classList.toggle('is-active', el.dataset.panelTrigger === key);
+      });
+    }
+
+    function openChartDetail(trigger) {
+      if (!detailModal) return;
+      const receita = Number(trigger.dataset.detailReceitaNum || 0);
+      const despesa = Number(trigger.dataset.detailDespesaNum || 0);
+      const resultado = Number(trigger.dataset.detailResultadoNum || 0);
+      const consumo = receita > 0 ? Math.min((despesa / receita) * 100, 100) : 0;
+      const consumoReal = receita > 0 ? (despesa / receita) * 100 : 0;
+
+      detailModal.querySelector('[data-detail-periodo]').textContent = trigger.dataset.detailPeriodo || '-';
+      detailModal.querySelector('[data-detail-receita]').textContent = trigger.dataset.detailReceita || '-';
+      detailModal.querySelector('[data-detail-despesa]').textContent = trigger.dataset.detailDespesa || '-';
+      detailModal.querySelector('[data-detail-resultado]').textContent = trigger.dataset.detailResultado || '-';
+      detailModal.querySelector('[data-detail-margem]').textContent = trigger.dataset.detailMargem || '-';
+      detailModal.querySelector('[data-detail-consumo]').textContent = `${consumoReal.toFixed(1).replace('.', ',')}%`;
+      detailModal.querySelector('[data-detail-consumo-bar]').style.width = `${consumo}%`;
+      detailModal.querySelector('[data-detail-url]').href = trigger.dataset.detailUrl || '#dre-quadro-detalhado';
+      detailModal.querySelector('[data-detail-reading]').textContent = resultado >= 0
+        ? `A competencia fechou positiva. As despesas consumiram ${consumoReal.toFixed(1).replace('.', ',')}% da receita; entre no DRE completo para abrir categorias, orcado e desvios.`
+        : `A competencia fechou negativa. As despesas superaram a capacidade de geracao do periodo; entre no DRE completo para localizar categorias e desvios.`;
+
+      detailModal.classList.remove('hidden');
+      detailModal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+      detailModal.querySelector('[data-close-chart-detail]').focus();
+    }
+
+    function closeChartDetail() {
+      if (!detailModal) return;
+      detailModal.classList.add('hidden');
+      detailModal.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+
+    root.addEventListener('click', event => {
+      const trigger = event.target.closest('[data-panel-trigger]');
+      if (trigger) {
+        event.preventDefault();
+        updatePanel(trigger);
+        if (trigger.dataset.openChartDetail) openChartDetail(trigger);
+      }
+
+      if (event.target.closest('[data-close-chart-detail]')) closeChartDetail();
+      if (event.target === detailModal) closeChartDetail();
+
+      const scrollLink = event.target.closest('[data-scroll-target]');
+      if (scrollLink) {
+        event.preventDefault();
+        const target = root.querySelector(scrollLink.dataset.scrollTarget);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && detailModal && !detailModal.classList.contains('hidden')) {
+        closeChartDetail();
+      }
+    });
+
+    const first = root.querySelector('[data-panel-trigger].is-active') || root.querySelector('[data-panel-trigger]');
+    updatePanel(first);
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}FLIC{% endblock %}</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    :root {
+      --brand-ink: #222049;
+      --brand-blue: #5e93cc;
+      --surface-soft: #f6f9fc;
+      --line: #dbe5ef;
+      --shadow-soft: 0 14px 36px rgba(34,32,73,0.08);
+      --shadow-lift: 0 18px 46px rgba(34,32,73,0.13);
+      --ease-out: cubic-bezier(.2,.8,.2,1);
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(94,147,204,.45) transparent;
+    }
+
+    ::selection {
+      background: rgba(94,147,204,.22);
+      color: var(--brand-ink);
+    }
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(94,147,204,.34);
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background-clip: padding-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 52%, #f6f7fb 100%);
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @keyframes pageEnter {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes softPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(94,147,204,0); }
+      50% { box-shadow: 0 0 0 4px rgba(94,147,204,.08); }
+    }
+
+    a, button, input, select, textarea, summary {
+      transition:
+        color .18s var(--ease-out),
+        background-color .18s var(--ease-out),
+        border-color .18s var(--ease-out),
+        box-shadow .18s var(--ease-out),
+        transform .18s var(--ease-out),
+        opacity .18s var(--ease-out);
+    }
+
+    button:not(:disabled), summary { cursor: pointer; }
+
+    button:not(:disabled):active,
+    a:active {
+      transform: translateY(1px);
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--brand-blue) !important;
+      box-shadow: 0 0 0 4px rgba(94,147,204,.14) !important;
+    }
+
+    .app-shell { isolation: isolate; }
+
+    .app-sidebar {
+      position: relative;
+      box-shadow: 12px 0 34px rgba(14,20,44,.18);
+    }
+
+    .app-sidebar::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(94,147,204,.45), transparent);
+      pointer-events: none;
+    }
+
+    .app-sidebar nav a {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .app-sidebar nav a::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--brand-blue);
+      opacity: 0;
+      transform: scaleY(.35);
+      transition: opacity .18s var(--ease-out), transform .18s var(--ease-out);
+    }
+
+    .app-sidebar nav a:hover {
+      background-color: rgba(94,147,204,.14) !important;
+      transform: translateX(2px);
+    }
+
+    .app-sidebar nav a:hover::before,
+    .app-sidebar nav a.font-semibold::before {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+
+    .app-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255,255,255,.86) !important;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 10px 28px rgba(15,23,42,.06);
+    }
+
+    .app-content-shell {
+      animation: pageEnter .34s var(--ease-out) both;
+    }
+
+    .app-content-shell > * {
+      animation: pageEnter .32s var(--ease-out) both;
+    }
+
+    .app-content-shell > *:nth-child(2) { animation-delay: .03s; }
+    .app-content-shell > *:nth-child(3) { animation-delay: .06s; }
+    .app-content-shell > *:nth-child(4) { animation-delay: .09s; }
+
+    .bg-white.rounded-xl,
+    .bg-white.rounded-2xl,
+    section.bg-white,
+    article.bg-white {
+      border-color: rgba(203,213,225,.86) !important;
+      box-shadow: var(--shadow-soft) !important;
+    }
+
+    .bg-white.rounded-xl:hover,
+    .bg-white.rounded-2xl:hover,
+    section.bg-white:hover,
+    article.bg-white:hover {
+      box-shadow: var(--shadow-lift) !important;
+    }
+
+    .shadow-sm { box-shadow: var(--shadow-soft) !important; }
+    .shadow-xl { box-shadow: 0 24px 60px rgba(34,32,73,.17) !important; }
+
+    button[class*="bg-[#222049]"],
+    a[class*="bg-[#222049]"] {
+      box-shadow: 0 10px 22px rgba(34,32,73,.20);
+    }
+
+    button[class*="bg-[#222049]"]:hover,
+    a[class*="bg-[#222049]"]:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(34,32,73,.26);
+    }
+
+    .flash-card {
+      animation: pageEnter .28s var(--ease-out) both, softPulse 1.8s ease-in-out 1;
+    }
+
+    /* ── Tabelas globais ─────────────────────────────── */
+    table {
+      background: transparent;
+      border-collapse: collapse;
+      width: 100%;
+    }
+    thead tr {
+      background: #dde3ed !important;
+    }
+    thead th {
+      border-right: 1px solid #c4cdd9 !important;
+      border-bottom: 2px solid #b0bccb !important;
+    }
+    thead th:last-child {
+      border-right: none !important;
+    }
+    tbody tr {
+      background: #ffffff;
+      border-bottom: 1px solid #d5dce6;
+      transition: background-color .16s var(--ease-out), box-shadow .16s var(--ease-out);
+    }
+    tbody tr:hover {
+      background: #eef3fb !important;
+      box-shadow: inset 3px 0 0 rgba(94,147,204,.8);
+    }
+    tbody td {
+      border-right: 1px solid #d5dce6 !important;
+    }
+    tbody td:last-child {
+      border-right: none !important;
+    }
+    tfoot tr {
+      background: inherit;
+    }
+    tfoot td {
+      border-right: 1px solid #d5dce6 !important;
+      border-top: 2px solid #b0bccb;
+    }
+    tfoot td:last-child {
+      border-right: none !important;
+    }
+
+    .table-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+    }
+    .table-tools input,
+    .table-tools select {
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: rgba(255,255,255,.92);
+      color: #334155;
+      font-size: 12px;
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .table-tools input {
+      min-width: min(280px, 100%);
+      padding: 8px 11px;
+    }
+    .table-tools select {
+      padding: 8px 28px 8px 10px;
+    }
+    .table-tools input:focus,
+    .table-tools select:focus {
+      border-color: #5e93cc;
+      box-shadow: 0 0 0 4px rgba(94,147,204,0.15);
+    }
+    .table-pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 12px 0 0;
+      color: #64748b;
+      font-size: 12px;
+    }
+    .table-pager button {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #475569;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+    .table-pager button:hover:not(:disabled) {
+      background: #eef4fb;
+      border-color: #93b8df;
+      color: #315f90;
+      transform: translateY(-1px);
+    }
+    .table-pager button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+    .table-empty-filter {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-[#f4f4f4] text-gray-800 min-h-screen flex app-shell">
+
+  <!-- =========================================================
+       SIDEBAR
+  ========================================================== -->
+  <aside id="sidebar"
+         class="w-56 min-h-screen flex flex-col flex-shrink-0 app-sidebar"
+         style="background-color:#222049;">
+
+    <!-- Marca FLIC -->
+    <div class="px-3 py-3 border-b" style="border-color:rgba(94,147,204,0.2);">
+      <div class="bg-white rounded-xl px-3 py-2">
+        <img src="/static/1782164034225.png" alt="FLIC" class="h-10 w-auto">
+      </div>
+    </div>
+
+    <!-- Navegação principal -->
+    {# ── Resolve cliente ativo para todo o template ── #}
+    {% set _ca_id = request.cookies.get('cliente_ativo', '') %}
+    {% set _ns = namespace(nome='') %}
+    {% if _ca_id and clientes %}
+      {% for _c in clientes %}{% if _c.id|string == _ca_id %}{% set _ns.nome = _c.nome %}{% endif %}{% endfor %}
+    {% endif %}
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5 text-sm">
+
+      {# ── Seletor de cliente ── #}
+      {% if clientes and usuario.perfil != 'secretaria' %}
+      <div style="margin:10px 2px 4px;">
+          <div style="background:{% if _ns.nome %}rgba(94,147,204,0.18){% else %}rgba(94,147,204,0.08){% endif %}; border:1px solid {% if _ns.nome %}rgba(94,147,204,0.4){% else %}rgba(94,147,204,0.2){% endif %}; border-radius:12px; overflow:hidden; transition:.2s;">
+            <div style="padding:10px 12px 6px;">
+              <p style="font-size:9px; font-weight:700; color:rgba(94,147,204,0.7); text-transform:uppercase; letter-spacing:.08em; margin-bottom:{% if _ns.nome %}4px{% else %}0{% endif %};">
+                {% if _ns.nome %}Cliente ativo{% else %}Selecione o cliente{% endif %}
+              </p>
+              {% if _ns.nome %}
+              <p style="font-size:13px; font-weight:700; color:#fff; line-height:1.25; margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                {{ _ns.nome }}
+              </p>
+              {% endif %}
+            </div>
+            <div style="padding:0 8px 8px;">
+              <div style="display:grid; gap:5px; max-height:190px; overflow-y:auto; padding-right:2px;">
+                <form method="post" action="/cliente/selecionar">
+                  <button type="submit"
+                          style="width:100%; min-height:30px; text-align:left; background:{% if not _ca_id %}rgba(94,147,204,0.35){% else %}rgba(0,0,0,0.16){% endif %}; color:{% if not _ca_id %}#fff{% else %}rgba(255,255,255,0.68){% endif %}; border:1px solid {% if not _ca_id %}rgba(94,147,204,0.55){% else %}rgba(94,147,204,0.18){% endif %}; border-radius:8px; padding:7px 9px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;">
+                    Todos os clientes
+                  </button>
+                </form>
+                {% for c in clientes %}
+                <form method="post" action="/cliente/selecionar">
+                  <input type="hidden" name="cliente_id" value="{{ c.id }}">
+                  <button type="submit"
+                          title="{{ c.nome }}"
+                          style="width:100%; min-height:30px; text-align:left; background:{% if c.id|string == _ca_id %}rgba(94,147,204,0.42){% else %}rgba(0,0,0,0.2){% endif %}; color:#fff; border:1px solid {% if c.id|string == _ca_id %}rgba(94,147,204,0.65){% else %}rgba(94,147,204,0.24){% endif %}; border-radius:8px; padding:7px 9px; font-size:11px; font-weight:{% if c.id|string == _ca_id %}800{% else %}600{% endif %}; cursor:pointer; font-family:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {{ c.nome }}
+                  </button>
+                </form>
+                {% endfor %}
+              </div>
+            </div>
+            <div style="display:none;">
+              <select name="cliente_id" onchange="this.form.submit()"
+                      style="width:100%; appearance:none; background:rgba(0,0,0,0.2); color:white; border:1px solid rgba(94,147,204,0.3); border-radius:8px; padding:8px 28px 8px 10px; font-size:11px; outline:none; cursor:pointer; font-family:inherit;">
+                <option value="" style="background:#1a1836; color:rgba(255,255,255,0.6);">
+                  {% if _ns.nome %}↩ Trocar cliente{% else %}Escolher cliente...{% endif %}
+                </option>
+                {% for c in clientes %}
+                <option value="{{ c.id }}" style="background:#1a1836; color:white;"
+                        {% if c.id|string == _ca_id %}selected{% endif %}>
+                  {{ c.nome }}
+                </option>
+                {% endfor %}
+              </select>
+              <svg style="position:absolute;right:18px;top:50%;transform:translateY(-50%);pointer-events:none;color:rgba(94,147,204,0.6);"
+                   width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </div>
+          </div>
+      </div>
+      {% elif usuario.perfil == 'secretaria' and clientes %}
+      <div style="margin:10px 2px 4px; background:rgba(94,147,204,0.18); border:1px solid rgba(94,147,204,0.4); border-radius:12px; padding:10px 12px;">
+        <p style="font-size:9px; font-weight:700; color:rgba(94,147,204,0.7); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px;">Seu cliente</p>
+        <p style="font-size:13px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ clientes[0].nome }}</p>
+      </div>
+      {% endif %}
+
+      <a href="/"
+         class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                {% if request.url.path == '/' %}text-white font-semibold{% else %}hover:text-white{% endif %}"
+         style="{% if request.url.path == '/' %}background-color:rgba(94,147,204,0.2);color:white;{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        Dashboard
+      </a>
+
+      {# ══════════════════════════════════════════
+         CONTAS A RECEBER
+         Todos os perfis veem Lançamentos.
+         Conc. Cartão: apenas coord/editor/func.
+      ══════════════════════════════════════════ #}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Receber</p>
+
+        <a href="/conciliacao/lancamentos"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/conciliacao/lancamentos') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/conciliacao/lancamentos') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          Lançamentos
+        </a>
+
+        {% if usuario.perfil not in ['secretaria', 'medico'] %}
+        <a href="/conciliacao"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path == '/conciliacao' or (request.url.path.startswith('/conciliacao') and not request.url.path.startswith('/conciliacao/banco') and not request.url.path.startswith('/conciliacao/lancamentos')) %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path == '/conciliacao' or (request.url.path.startswith('/conciliacao') and not request.url.path.startswith('/conciliacao/banco') and not request.url.path.startswith('/conciliacao/lancamentos')) %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+          </svg>
+          Conc. Cartão
+        </a>
+        {% endif %}
+      </div>
+
+      {# ══════════════════════════════════════════
+         CONCILIAÇÃO BANCÁRIA
+         Apenas coord/editor/func.
+      ══════════════════════════════════════════ #}
+      {% if usuario.perfil not in ['secretaria', 'medico'] %}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Conciliação</p>
+
+        <a href="/conciliacao/banco"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/conciliacao/banco') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/conciliacao/banco') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/>
+          </svg>
+          Banco
+        </a>
+      </div>
+      {% endif %}
+
+      {# ══════════════════════════════════════════
+         CONTAS A PAGAR
+         Lançamentos: coord/editor/func/medico.
+         Aprovação: coord/editor/func.
+         Seção inteira: oculta para secretaria.
+      ══════════════════════════════════════════ #}
+      {% if usuario.perfil != 'secretaria' %}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Pagar</p>
+
+        <a href="/contas-pagar"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path == '/contas-pagar' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path == '/contas-pagar' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+          </svg>
+          Lançamentos
+        </a>
+
+        {% if usuario.perfil not in ['medico'] %}
+        <a href="/fechamento"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path == '/fechamento' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path == '/fechamento' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+          Aprovação
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# ══════════════════════════════════════════
+         OPERACIONAL (Fechamento + Rotinas)
+         Apenas coord/editor/func.
+      ══════════════════════════════════════════ #}
+      {% if usuario.perfil not in ['secretaria', 'medico'] %}
+      <div class="pt-4 mt-2 space-y-0.5" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <a href="/fechamento/mensal"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/fechamento/mensal') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/fechamento/mensal') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+          Fechamento
+        </a>
+        <a href="/rotinas"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/rotinas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/rotinas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          Rotinas
+        </a>
+      </div>
+      {% endif %}
+
+      {# ══════════════════════════════════════════
+         GESTÃO
+         Receitas/Despesas/DRE: coord/editor/func/medico.
+         Orçamento: apenas coord/editor/func.
+         Seção oculta para secretaria.
+      ══════════════════════════════════════════ #}
+      {% if usuario.perfil != 'secretaria' %}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Gestão</p>
+
+        <a href="/gestao/receitas"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/gestao/receitas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/gestao/receitas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Receitas
+        </a>
+        <a href="/gestao/despesas"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/gestao/despesas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/gestao/despesas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/>
+          </svg>
+          Despesas
+        </a>
+
+        {% if usuario.perfil not in ['medico'] %}
+        <a href="/gestao/orcamento"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/gestao/orcamento') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/gestao/orcamento') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+          Orçamento
+        </a>
+        {% endif %}
+
+        <a href="/gestao/dre"
+           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/gestao/dre') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/gestao/dre') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
+          </svg>
+          DRE
+        </a>
+      </div>
+      {% endif %}
+
+      {% if usuario.perfil in ['coordenador', 'editor', 'funcionario'] %}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Cadastros</p>
+        <a href="/admin/clientes"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/admin/clientes') or request.url.path == '/admin/equipe' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/admin/clientes') or request.url.path == '/admin/equipe' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          Clientes
+        </a>
+        <a href="/admin/anotacoes-clientes"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/admin/anotacoes-clientes') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/admin/anotacoes-clientes') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z"/>
+          </svg>
+          Anotações de Clientes
+        </a>
+        {% if usuario.perfil == 'coordenador' %}
+        <a href="/admin/funcionarios"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/admin/funcionarios') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/admin/funcionarios') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-3-3h-1M9 20H4v-2a3 3 0 013-3h1m1-4a4 4 0 118 0 4 4 0 01-8 0z"/>
+          </svg>
+          Funcionários
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if usuario.perfil == 'coordenador' %}
+      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
+        <a href="/logs"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/logs') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/logs') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          Logs
+        </a>
+      </div>
+      {% endif %}
+    </nav>
+
+    <!-- Usuário logado + logout -->
+    <div class="px-4 py-4" style="border-top:1px solid rgba(94,147,204,0.2);">
+      <div class="flex items-center gap-2 mb-2">
+        <div class="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+             style="background-color:#5e93cc;">
+          {{ usuario.nome[0].upper() if usuario.nome else '?' }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-xs text-white font-medium truncate">{{ usuario.nome }}</p>
+          <p class="text-[10px] capitalize" style="color:rgba(94,147,204,0.7);">{{ usuario.perfil }}</p>
+        </div>
+      </div>
+      <form method="post" action="/logout">
+        <button type="submit"
+                class="w-full text-left text-xs transition-colors py-1 hover:text-white"
+                style="color:rgba(244,244,244,0.45);">
+          Sair →
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- =========================================================
+       CONTEÚDO PRINCIPAL
+  ========================================================== -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Topbar -->
+    <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between app-topbar">
+      <div class="flex items-center gap-3 min-w-0">
+        <h2 class="text-base font-semibold flex-shrink-0" style="color:#222049;">{% block page_title %}{% endblock %}</h2>
+        {% if _ns.nome %}
+        <span style="background:#eef4fb; color:#5e93cc; border:1px solid #bfd4ee; border-radius:6px; padding:2px 10px; font-size:11px; font-weight:700; white-space:nowrap; max-width:200px; overflow:hidden; text-overflow:ellipsis;">
+          {{ _ns.nome }}
+        </span>
+        {% endif %}
+      </div>
+      <span class="text-xs text-gray-400 flex-shrink-0">{{ now.strftime('%d/%m/%Y') if now else '' }}</span>
+    </header>
+
+    <!-- Flash messages -->
+    {% if flash_success %}
+    <div class="mx-6 mt-4 rounded-lg border text-sm px-4 py-3 flash-card"
+         style="background:#f0f7f0;border-color:#b6d9b6;color:#2d6a2d;">
+      {{ flash_success }}
+    </div>
+    {% endif %}
+    {% if flash_error %}
+    <div class="mx-6 mt-4 rounded-lg border text-sm px-4 py-3 flash-card"
+         style="background:#fef2f2;border-color:#fca5a5;color:#b91c1c;">
+      {{ flash_error }}
+    </div>
+    {% endif %}
+
+    <!-- Conteúdo da página -->
+    <main class="flex-1 p-6 overflow-auto app-content-shell">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const PAGE_SIZE_DEFAULT = 25;
+
+      function isEnhanced(table) {
+        return table.dataset.tableEnhanced === '1';
+      }
+
+      function getSearchText(row) {
+        return (row.innerText || row.textContent || '').toLowerCase();
+      }
+
+      function isPlaceholderRow(row, table) {
+        const cells = Array.from(row.children || []);
+        if (cells.length !== 1) return false;
+        const colCount = table.querySelectorAll('thead th').length;
+        const text = (cells[0].innerText || cells[0].textContent || '').trim().toLowerCase();
+        return cells[0].colSpan >= Math.max(colCount, 1)
+          && /nenhum|nenhuma|sem registro|sem resultado/.test(text);
+      }
+
+      function buildEmptyRow(table) {
+        const row = document.createElement('tr');
+        row.className = 'table-empty-filter';
+        const cell = document.createElement('td');
+        const colCount = Math.max(1, table.querySelectorAll('thead th').length || row.children.length);
+        cell.colSpan = colCount;
+        cell.className = 'px-4 py-8 text-center text-gray-400';
+        cell.textContent = 'Nenhum resultado encontrado.';
+        row.appendChild(cell);
+        return row;
+      }
+
+      function enhanceTable(table, index) {
+        if (isEnhanced(table) || table.dataset.noTableTools === '1') return;
+        const tbody = table.tBodies && table.tBodies[0];
+        if (!tbody) return;
+
+        const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => !isPlaceholderRow(row, table));
+        if (!rows.length) return;
+
+        table.dataset.tableEnhanced = '1';
+        rows.forEach(row => {
+          row.dataset.searchText = getSearchText(row);
+        });
+
+        const state = {
+          query: '',
+          page: 1,
+          pageSize: PAGE_SIZE_DEFAULT,
+        };
+
+        const anchor = table.parentElement && table.parentElement.classList.contains('overflow-x-auto')
+          ? table.parentElement
+          : table;
+
+        const tools = document.createElement('div');
+        tools.className = 'table-tools';
+        tools.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <input type="search" aria-label="Pesquisar na tabela" placeholder="Pesquisar na tabela...">
+            <select aria-label="Registros por página">
+              <option value="10">10 por página</option>
+              <option value="25" selected>25 por página</option>
+              <option value="50">50 por página</option>
+              <option value="100">100 por página</option>
+              <option value="0">Todos</option>
+            </select>
+          </div>
+          <span class="table-count"></span>
+        `;
+
+        const pager = document.createElement('div');
+        pager.className = 'table-pager';
+        pager.innerHTML = `
+          <span class="table-page-info"></span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button type="button" data-page-action="first">Primeira</button>
+            <button type="button" data-page-action="prev">Anterior</button>
+            <button type="button" data-page-action="next">Próxima</button>
+            <button type="button" data-page-action="last">Última</button>
+          </div>
+        `;
+
+        anchor.parentNode.insertBefore(tools, anchor);
+        anchor.parentNode.insertBefore(pager, anchor.nextSibling);
+
+        const emptyRow = buildEmptyRow(table);
+        tbody.appendChild(emptyRow);
+
+        const input = tools.querySelector('input');
+        const select = tools.querySelector('select');
+        const count = tools.querySelector('.table-count');
+        const pageInfo = pager.querySelector('.table-page-info');
+        const buttons = Array.from(pager.querySelectorAll('button[data-page-action]'));
+
+        function getFilteredRows() {
+          if (!state.query) return rows;
+          return rows.filter(row => row.dataset.searchText.includes(state.query));
+        }
+
+        function render() {
+          const filtered = getFilteredRows();
+          const total = filtered.length;
+          const pageSize = state.pageSize || Math.max(total, 1);
+          const totalPages = Math.max(1, Math.ceil(total / pageSize));
+          state.page = Math.min(Math.max(state.page, 1), totalPages);
+
+          const start = state.pageSize ? (state.page - 1) * pageSize : 0;
+          const end = state.pageSize ? start + pageSize : total;
+          const visible = new Set(filtered.slice(start, end));
+
+          rows.forEach(row => {
+            row.style.display = visible.has(row) ? '' : 'none';
+          });
+
+          emptyRow.style.display = total === 0 ? '' : 'none';
+          const firstItem = total ? start + 1 : 0;
+          const lastItem = state.pageSize ? Math.min(end, total) : total;
+          count.textContent = `${total} registro(s)`;
+          pageInfo.textContent = total
+            ? `Mostrando ${firstItem}-${lastItem} de ${total}`
+            : 'Nenhum registro';
+
+          buttons.forEach(btn => {
+            const action = btn.dataset.pageAction;
+            btn.disabled = total === 0
+              || !state.pageSize
+              || ((action === 'first' || action === 'prev') && state.page <= 1)
+              || ((action === 'next' || action === 'last') && state.page >= totalPages);
+          });
+        }
+
+        input.addEventListener('input', () => {
+          state.query = input.value.trim().toLowerCase();
+          state.page = 1;
+          render();
+        });
+
+        select.addEventListener('change', () => {
+          state.pageSize = parseInt(select.value, 10) || 0;
+          state.page = 1;
+          render();
+        });
+
+        buttons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const filtered = getFilteredRows();
+            const pageSize = state.pageSize || Math.max(filtered.length, 1);
+            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+            if (btn.dataset.pageAction === 'first') state.page = 1;
+            if (btn.dataset.pageAction === 'prev') state.page -= 1;
+            if (btn.dataset.pageAction === 'next') state.page += 1;
+            if (btn.dataset.pageAction === 'last') state.page = totalPages;
+            render();
+          });
+        });
+
+        render();
+      }
+
+      function enhanceAllTables(root) {
+        (root || document).querySelectorAll('table').forEach(enhanceTable);
+      }
+
+      document.addEventListener('DOMContentLoaded', () => enhanceAllTables(document));
+      document.body.addEventListener('htmx:afterSwap', event => enhanceAllTables(event.target));
+    })();
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

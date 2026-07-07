@@ -1,0 +1,832 @@
+{% extends "base.html" %}
+{% block title %}Lançamentos — FLIC{% endblock %}
+{% block page_title %}Lançamentos para Conciliação{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if flash_success %}
+  <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-medium text-emerald-700">
+    {{ flash_success }}
+  </div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-medium text-rose-700">
+    {{ flash_error }}
+  </div>
+  {% endif %}
+
+  <!-- Import card -->
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 max-w-2xl">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="flex-1">
+        <h3 class="font-semibold text-slate-800">Importar lançamentos</h3>
+        <p class="text-xs text-slate-400">Planilha com atendimentos do período (cartão, Pix e TED)</p>
+      </div>
+      {% if lancamentos %}
+      <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+        {{ lancamentos|length }} pendente(s)
+      </span>
+      {% endif %}
+    </div>
+
+    {% set somente_leitura = usuario.perfil in ['medico'] %}
+    {% if not cliente_selecionado %}
+    <form method="get" action="/conciliacao/lancamentos" class="flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-[180px]">
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Cliente</label>
+        <select name="cliente_id" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none">
+          <option value="">Selecione...</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit"
+              class="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 text-sm">
+        Carregar
+      </button>
+    </form>
+    {% elif not somente_leitura %}
+    <form method="post" action="/conciliacao/lancamentos/importar"
+          enctype="multipart/form-data" class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div class="flex-1 min-w-[180px]">
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Arquivo</label>
+        <input type="file" name="arquivo" required accept=".xlsx,.xls,.csv"
+               class="w-full text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
+      </div>
+      <button type="submit"
+              class="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 text-sm">
+        Importar
+      </button>
+    </form>
+    <div class="mt-3 flex flex-wrap gap-4 text-xs">
+      <a href="/conciliacao/lancamentos"
+         class="text-slate-400 hover:text-slate-600 transition">← Trocar cliente</a>
+      <a href="/conciliacao?cliente_id={{ cliente_selecionado }}"
+         class="font-semibold hover:underline" style="color:#5e93cc;">Conc. Cartão →</a>
+      <a href="/conciliacao/banco?cliente_id={{ cliente_selecionado }}"
+         class="font-semibold hover:underline" style="color:#5e93cc;">Conc. Banco →</a>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if cliente_selecionado and not somente_leitura %}
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Lançamento manual</h3>
+        <p class="text-xs text-slate-400">Cadastro direto de atendimento para entrar como pendente na conciliação.</p>
+      </div>
+      <button type="button" onclick="document.getElementById('form-manual-lancamento').classList.toggle('hidden')"
+              class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+        Expandir / Recolher
+      </button>
+    </div>
+
+    <form id="form-manual-lancamento" method="post" action="/conciliacao/lancamentos/manual" class="space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Data *</label>
+          <input type="date" name="data_atendimento" required value="{{ hoje }}"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Paciente</label>
+          <input type="text" name="nome_paciente"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">CPF</label>
+          <input type="text" name="cpf_paciente" maxlength="14" placeholder="000.000.000-00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="hidden">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Centro de Custo</label>
+          <select name="centro_custo_id"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">— Selecione —</option>
+            {% for cc in centros_custo %}
+            <option value="{{ cc.id }}">{%- if cc.codigo %}{{ cc.codigo }} — {% endif %}{{ cc.nome }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="rateios_json" value="[]">
+        </div>
+        <div class="manual-especialidade hidden">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Especialidade</label>
+          <input type="text" name="especialidade"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Serviço</label>
+          <input type="text" name="descricao_servico"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase text-slate-500">Rateio por centro de custo</p>
+            <p class="text-xs text-slate-400">Distribua a receita entre um ou mais centros.</p>
+          </div>
+          <button type="button" onclick="adicionarRateioManual()"
+                  class="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">+ Adicionar centro</button>
+        </div>
+        <div id="rateios-manual" class="space-y-2"></div>
+        <p id="rateio-manual-resumo" class="mt-2 text-xs text-slate-400">Percentual usado: 0%</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor *</label>
+          <input type="number" name="valor_servico" step="0.01" min="0.01" required placeholder="0,00"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Forma</label>
+          <select name="forma_pagamento" onchange="atualizarManualLancamento()"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">-</option>
+            <option value="cartao_credito">Cartão</option>
+            <option value="pix">Pix</option>
+            <option value="transferencia">Transferência</option>
+            <option value="dinheiro">Dinheiro</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Condição</label>
+          <select name="condicao_pagamento" onchange="atualizarManualLancamento()"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="avista">À vista</option>
+            <option value="parcelado">Parcelado</option>
+          </select>
+        </div>
+        <div class="manual-cartao hidden">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">4 dígitos</label>
+          <input type="text" name="ultimos_digitos_cartao" maxlength="4"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div class="manual-cartao hidden">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Bandeira</label>
+          <select name="bandeira_cartao"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">-</option>
+            <option>Visa</option>
+            <option>Mastercard</option>
+            <option>Elo</option>
+            <option>Amex</option>
+            <option>Hipercard</option>
+          </select>
+        </div>
+        <div class="manual-parcelas-cartao hidden">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Parcelas</label>
+          <input type="number" name="parcela_total" min="2" max="48" value="2"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="manual-recorrencia hidden md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Recorrência em dias</label>
+          <input type="text" name="recorrencia" placeholder="30/60/90"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono outline-none focus:border-sky-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">% Centro de Custo</label>
+          <input type="number" name="percentual_medico" step="0.01" min="0" max="100"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
+          <input type="text" name="observacao"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="submit"
+                class="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold px-5 py-2 text-sm">
+          Salvar lançamento manual
+        </button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if cliente_selecionado %}
+    {% if lancamentos %}
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+      <!-- Cabeçalho -->
+      <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4 flex-wrap gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Lançamentos</p>
+          <h3 class="mt-1 font-semibold text-slate-800">Pendentes de conciliação</h3>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+            {{ lancamentos|length }}
+          </span>
+          <button type="button" onclick="abrirColunas()"
+                  style="display:inline-flex;align-items:center;gap:5px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;padding:5px 12px;font-size:12px;color:#475569;cursor:pointer;font-family:inherit;">
+            &#9776; Colunas
+          </button>
+        </div>
+      </div>
+
+      <!-- Painel de colunas (checkboxes estáticos no HTML) -->
+      <div id="col-picker-panel" style="display:none; border-bottom:1px solid #e2e8f0; padding:16px 20px; background:#f8fafc;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <span style="font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.05em;">Colunas visíveis</span>
+          <div style="display:flex; gap:6px;">
+            <button type="button" onclick="marcarTodas()" style="font-size:11px;padding:3px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#475569;cursor:pointer;">Todas</button>
+            <button type="button" onclick="desmarcarTodas()" style="font-size:11px;padding:3px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#475569;cursor:pointer;">Nenhuma</button>
+            <button type="button" onclick="resetarColunas()" style="font-size:11px;padding:3px 10px;border:1px solid #93c5fd;border-radius:6px;background:#fff;color:#3b82f6;cursor:pointer;">Padrão</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:6px 12px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-id"               onchange="salvarCol('id',this)"> ID</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-nome_paciente"     onchange="salvarCol('nome_paciente',this)"> Paciente</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-cpf_paciente"      onchange="salvarCol('cpf_paciente',this)"> CPF</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-medico"            onchange="salvarCol('medico',this)"> Centro de Custo</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-especialidade"     onchange="salvarCol('especialidade',this)"> Especialidade</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-descricao_servico" onchange="salvarCol('descricao_servico',this)"> Serviço</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-data_atendimento"  onchange="salvarCol('data_atendimento',this)"> Atendimento</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-prev_recebimento"  onchange="salvarCol('prev_recebimento',this)"> Prev. Receb.</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-forma_pagamento"   onchange="salvarCol('forma_pagamento',this)"> Forma</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-condicao"          onchange="salvarCol('condicao',this)"> Condição</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-parcela"           onchange="salvarCol('parcela',this)"> Parcela</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-digitos_cartao"    onchange="salvarCol('digitos_cartao',this)"> Dígitos</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-bandeira_cartao"   onchange="salvarCol('bandeira_cartao',this)"> Bandeira</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-valor_servico"     onchange="salvarCol('valor_servico',this)"> Valor</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-taxa_cartao"       onchange="salvarCol('taxa_cartao',this)"> Taxa %</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-valor_liquido"     onchange="salvarCol('valor_liquido',this)"> Vlr Líquido</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-data_credito"      onchange="salvarCol('data_credito',this)"> Data Crédito</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-banco_recebimento" onchange="salvarCol('banco_recebimento',this)"> Banco</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-valor_clinica"     onchange="salvarCol('valor_clinica',this)"> Vlr Clínica</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-pct_medico"        onchange="salvarCol('pct_medico',this)"> % C.Custo</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-valor_medico"      onchange="salvarCol('valor_medico',this)"> Vlr C.Custo</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-data_pgto_medico"  onchange="salvarCol('data_pgto_medico',this)"> Pgto C.Custo</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-observacao"        onchange="salvarCol('observacao',this)"> Observação</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-lancado_por"       onchange="salvarCol('lancado_por',this)"> Lançado por</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;cursor:pointer;"><input type="checkbox" id="cc-status"            onchange="salvarCol('status',this)"> Status</label>
+        </div>
+      </div>
+
+      <!-- Tabela -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th data-col="id"               class="px-4 py-3 text-left whitespace-nowrap">ID</th>
+              <th data-col="nome_paciente"     class="px-4 py-3 text-left whitespace-nowrap">Paciente</th>
+              <th data-col="cpf_paciente"      class="px-4 py-3 text-left whitespace-nowrap">CPF</th>
+              <th data-col="medico"            class="px-4 py-3 text-left whitespace-nowrap">Centro de Custo</th>
+              <th data-col="especialidade"     class="px-4 py-3 text-left whitespace-nowrap">Especialidade</th>
+              <th data-col="descricao_servico" class="px-4 py-3 text-left whitespace-nowrap">Serviço</th>
+              <th data-col="data_atendimento"  class="px-4 py-3 text-left whitespace-nowrap">Atendimento</th>
+              <th data-col="prev_recebimento"  class="px-4 py-3 text-left whitespace-nowrap">Prev. Receb.</th>
+              <th data-col="forma_pagamento"   class="px-4 py-3 text-left whitespace-nowrap">Forma</th>
+              <th data-col="condicao"          class="px-4 py-3 text-left whitespace-nowrap">Condição</th>
+              <th data-col="parcela"           class="px-4 py-3 text-center whitespace-nowrap">Parcela</th>
+              <th data-col="digitos_cartao"    class="px-4 py-3 text-center whitespace-nowrap">Dígitos</th>
+              <th data-col="bandeira_cartao"   class="px-4 py-3 text-left whitespace-nowrap">Bandeira</th>
+              <th data-col="valor_servico"     class="px-4 py-3 text-right whitespace-nowrap">Valor</th>
+              <th data-col="taxa_cartao"       class="px-4 py-3 text-right whitespace-nowrap">Taxa %</th>
+              <th data-col="valor_liquido"     class="px-4 py-3 text-right whitespace-nowrap">Vlr Líquido</th>
+              <th data-col="data_credito"      class="px-4 py-3 text-left whitespace-nowrap">Data Crédito</th>
+              <th data-col="banco_recebimento" class="px-4 py-3 text-left whitespace-nowrap">Banco</th>
+              <th data-col="valor_clinica"     class="px-4 py-3 text-right whitespace-nowrap">Vlr Clínica</th>
+              <th data-col="pct_medico"        class="px-4 py-3 text-right whitespace-nowrap">% C.Custo</th>
+              <th data-col="valor_medico"      class="px-4 py-3 text-right whitespace-nowrap">Vlr C.Custo</th>
+              <th data-col="data_pgto_medico"  class="px-4 py-3 text-left whitespace-nowrap">Pgto C.Custo</th>
+              <th data-col="observacao"        class="px-4 py-3 text-left whitespace-nowrap">Observação</th>
+              <th data-col="lancado_por"       class="px-4 py-3 text-left whitespace-nowrap">Lançado por</th>
+              <th data-col="status"            class="px-4 py-3 text-left whitespace-nowrap">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for a in lancamentos %}
+            <tr class="hover:bg-slate-50" style="cursor:pointer;"
+                onclick="abrirDetalhe(this)"
+                data-id="{{ a.id }}"
+                data-paciente="{{ a.nome_paciente or '—' | e }}"
+                data-cpf="{{ a.cpf_paciente or '—' }}"
+                data-medico="{{ a.medico or '—' | e }}"
+                data-especialidade="{{ a.especialidade or '—' | e }}"
+                data-servico="{{ (a.descricao_servico or a.tipo_servico or '—') | e }}"
+                data-atendimento="{{ a.data_atendimento.strftime('%d/%m/%Y') }}"
+                data-prev-receb="{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}"
+                data-forma="{{ (a.forma_pagamento.value if a.forma_pagamento else '—') | replace('_',' ') }}"
+                data-condicao="{{ (a.condicao_pagamento.value if a.condicao_pagamento else '—').replace('_',' ') }}"
+                data-parcela="{{ a.parcela_numero ~ '/' ~ a.parcela_total if a.parcela_total > 1 else 'À vista' }}"
+                data-digitos="{{ a.ultimos_digitos_cartao or '—' }}"
+                data-bandeira="{{ a.bandeira_cartao or '—' | e }}"
+                data-valor="R$ {{ '%.2f'|format(a.valor_servico|float) }}"
+                data-taxa="{{ '%.2f'|format(a.taxa_cartao|float) ~ '%' if a.taxa_cartao else '—' }}"
+                data-liquido="{{ 'R$ ' ~ '%.2f'|format(a.valor_liquido|float) if a.valor_liquido else '—' }}"
+                data-credito="{{ a.data_credito.strftime('%d/%m/%Y') if a.data_credito else '—' }}"
+                data-banco="{{ a.banco_recebimento or '—' | e }}"
+                data-clinica="{{ 'R$ ' ~ '%.2f'|format(a.valor_clinica|float) if a.valor_clinica else '—' }}"
+                data-pct-medico="{{ '%.2f'|format(a.percentual_medico|float) ~ '%' if a.percentual_medico else '—' }}"
+                data-valor-medico="{{ 'R$ ' ~ '%.2f'|format(a.valor_medico|float) if a.valor_medico else '—' }}"
+                data-pgto-medico="{{ a.data_pagamento_medico.strftime('%d/%m/%Y') if a.data_pagamento_medico else '—' }}"
+                data-obs="{{ a.observacao or '' | e }}"
+                data-lancado="{{ a.lancado_por.nome if a.lancado_por else '—' | e }}"
+                data-status="{{ a.status_conciliacao.value if a.status_conciliacao else '—' }}">
+              <td data-col="id"               class="px-4 py-3 font-mono text-slate-500 whitespace-nowrap">#{{ a.id }}</td>
+              <td data-col="nome_paciente"     class="px-4 py-3 text-slate-700">{{ a.nome_paciente or '—' }}</td>
+              <td data-col="cpf_paciente"      class="px-4 py-3 text-slate-500 font-mono text-xs whitespace-nowrap">{{ a.cpf_paciente or '—' }}</td>
+              <td data-col="medico" class="px-4 py-3 text-slate-600">
+                {% if a.rateios_centro_custo %}
+                  {% for r in a.rateios_centro_custo %}
+                    <span class="block">{{ r.centro_custo.nome }} · {{ '%.2f'|format(r.percentual|float) }}% · R$ {{ '%.2f'|format(r.valor|float) }}</span>
+                  {% endfor %}
+                {% else %}
+                  {{ (a.centro_custo.nome if a.centro_custo else a.medico) or '—' }}
+                {% endif %}
+              </td>
+              <td data-col="especialidade"     class="px-4 py-3 text-slate-500 text-xs">{{ a.especialidade or '—' }}</td>
+              <td data-col="descricao_servico" class="px-4 py-3 text-slate-600 max-w-[160px] truncate">{{ a.descricao_servico or a.tipo_servico or '—' }}</td>
+              <td data-col="data_atendimento"  class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
+              <td data-col="prev_recebimento"  class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                {{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}
+              </td>
+              <td data-col="forma_pagamento"   class="px-4 py-3 whitespace-nowrap">
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                  {{ (a.forma_pagamento.value if a.forma_pagamento else '—') | replace('_', ' ') }}
+                </span>
+              </td>
+              <td data-col="condicao"          class="px-4 py-3 text-slate-500 text-xs capitalize">{{ (a.condicao_pagamento.value if a.condicao_pagamento else '—').replace('_', ' ') }}</td>
+              <td data-col="parcela"           class="px-4 py-3 text-center text-slate-500 whitespace-nowrap">
+                {% if a.parcela_total > 1 %}
+                  <span class="font-medium text-slate-700">{{ a.parcela_numero }}/{{ a.parcela_total }}</span>
+                {% else %}À vista{% endif %}
+              </td>
+              <td data-col="digitos_cartao"    class="px-4 py-3 text-center text-slate-500 font-mono text-xs">{{ a.ultimos_digitos_cartao or '—' }}</td>
+              <td data-col="bandeira_cartao"   class="px-4 py-3 text-slate-500 text-xs">{{ a.bandeira_cartao or '—' }}</td>
+              <td data-col="valor_servico"     class="px-4 py-3 text-right font-medium text-slate-900 whitespace-nowrap">
+                R$ {{ '%.2f'|format(a.valor_servico|float) }}
+              </td>
+              <td data-col="taxa_cartao"       class="px-4 py-3 text-right text-slate-500 text-xs">
+                {%- if a.taxa_cartao %}{{ '%.2f'|format(a.taxa_cartao|float) }}%{% else %}—{% endif -%}
+              </td>
+              <td data-col="valor_liquido"     class="px-4 py-3 text-right text-slate-700 whitespace-nowrap">
+                {%- if a.valor_liquido %}R$ {{ '%.2f'|format(a.valor_liquido|float) }}{% else %}—{% endif -%}
+              </td>
+              <td data-col="data_credito"      class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{{ a.data_credito.strftime('%d/%m/%Y') if a.data_credito else '—' }}</td>
+              <td data-col="banco_recebimento" class="px-4 py-3 text-slate-500 text-xs">{{ a.banco_recebimento or '—' }}</td>
+              <td data-col="valor_clinica"     class="px-4 py-3 text-right text-slate-700 whitespace-nowrap">
+                {%- if a.valor_clinica %}R$ {{ '%.2f'|format(a.valor_clinica|float) }}{% else %}—{% endif -%}
+              </td>
+              <td data-col="pct_medico"        class="px-4 py-3 text-right text-slate-500 text-xs">
+                {%- if a.percentual_medico %}{{ '%.2f'|format(a.percentual_medico|float) }}%{% else %}—{% endif -%}
+              </td>
+              <td data-col="valor_medico"      class="px-4 py-3 text-right text-slate-700 whitespace-nowrap">
+                {%- if a.valor_medico %}R$ {{ '%.2f'|format(a.valor_medico|float) }}{% else %}—{% endif -%}
+              </td>
+              <td data-col="data_pgto_medico"  class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{{ a.data_pagamento_medico.strftime('%d/%m/%Y') if a.data_pagamento_medico else '—' }}</td>
+              <td data-col="observacao"        class="px-4 py-3 text-slate-500 text-xs max-w-[180px] truncate">{{ a.observacao or '—' }}</td>
+              <td data-col="lancado_por"       class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{{ a.lancado_por.nome if a.lancado_por else '—' }}</td>
+              <td data-col="status"            class="px-4 py-3 whitespace-nowrap">
+                {% if a.status_conciliacao and a.status_conciliacao.value == 'divergencia' %}
+                <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">Divergência</span>
+                {% else %}
+                <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Pendente</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+      <p class="text-sm text-slate-500">Nenhum lançamento pendente para este cliente.</p>
+      <p class="mt-1 text-xs text-slate-400">Importe uma planilha, faça um lançamento manual acima ou confira se todos já foram conciliados.</p>
+    </div>
+    {% endif %}
+  {% endif %}
+
+</div>
+
+<script>
+var COL_KEY = 'bpo_lanc_cols_v2';
+var COL_DEF = {
+  id: true, nome_paciente: true, cpf_paciente: false, medico: false,
+  especialidade: false, descricao_servico: false, data_atendimento: true,
+  prev_recebimento: true, forma_pagamento: true, condicao: false,
+  parcela: false, digitos_cartao: false, bandeira_cartao: false,
+  valor_servico: true, taxa_cartao: false, valor_liquido: false,
+  data_credito: false, banco_recebimento: false, valor_clinica: false,
+  pct_medico: false, valor_medico: false, data_pgto_medico: false,
+  observacao: false, lancado_por: false, status: true
+};
+
+function lerEstado() {
+  try {
+    var s = JSON.parse(localStorage.getItem(COL_KEY) || 'null');
+    if (s && typeof s === 'object') {
+      var merged = {};
+      for (var k in COL_DEF) merged[k] = (k in s) ? !!s[k] : COL_DEF[k];
+      return merged;
+    }
+  } catch(e) {}
+  var def = {};
+  for (var k in COL_DEF) def[k] = COL_DEF[k];
+  return def;
+}
+
+function aplicar(estado) {
+  for (var col in estado) {
+    var vis = estado[col];
+    var cells = document.querySelectorAll('[data-col="' + col + '"]');
+    for (var i = 0; i < cells.length; i++) {
+      cells[i].style.display = vis ? '' : 'none';
+    }
+    var chk = document.getElementById('cc-' + col);
+    if (chk) chk.checked = vis;
+  }
+}
+
+function salvarCol(col, chk) {
+  var estado = lerEstado();
+  estado[col] = chk.checked;
+  localStorage.setItem(COL_KEY, JSON.stringify(estado));
+  aplicar(estado);
+}
+
+function abrirColunas() {
+  var p = document.getElementById('col-picker-panel');
+  if (!p) return;
+  p.style.display = (p.style.display === 'none' || p.style.display === '') ? 'block' : 'none';
+}
+
+function marcarTodas() {
+  var e = lerEstado();
+  for (var k in e) e[k] = true;
+  localStorage.setItem(COL_KEY, JSON.stringify(e));
+  aplicar(e);
+}
+
+function desmarcarTodas() {
+  var e = lerEstado();
+  for (var k in e) e[k] = false;
+  localStorage.setItem(COL_KEY, JSON.stringify(e));
+  aplicar(e);
+}
+
+function resetarColunas() {
+  localStorage.removeItem(COL_KEY);
+  var def = {};
+  for (var k in COL_DEF) def[k] = COL_DEF[k];
+  aplicar(def);
+}
+
+aplicar(lerEstado());
+
+var centrosRateioManualDados = [
+  {% for cc in centros_custo %}
+  { id: {{ cc.id }}, nome: {{ cc.nome | tojson }}, codigo: {{ (cc.codigo or '') | tojson }}, is_medico: {{ 'true' if cc.is_medico else 'false' }}, especialidade: {{ (cc.especialidade or '') | tojson }} }{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+
+function adicionarRateioManual(percentual) {
+  var container = document.getElementById('rateios-manual');
+  if (!container) return;
+  var linha = document.createElement('div');
+  linha.className = 'grid grid-cols-1 md:grid-cols-[1fr_110px_140px_36px] gap-2 items-center';
+  var opcoes = '<option value="">Selecione...</option>' + centrosRateioManualDados.map(function(cc) {
+    return '<option value="' + cc.id + '" data-is-medico="' + (cc.is_medico ? '1' : '0') + '">' + (cc.codigo ? cc.codigo + ' - ' : '') + cc.nome + '</option>';
+  }).join('');
+  linha.innerHTML = '<select class="rateio-manual-centro rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">' + opcoes + '</select>' +
+    '<input type="number" class="rateio-manual-percentual rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400" value="' + (percentual || '') + '" step="0.01" min="0.01" max="100" placeholder="%">' +
+    '<div class="rateio-manual-valor rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600">R$ 0,00</div>' +
+    '<button type="button" class="h-9 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-red-500">x</button>';
+  linha.querySelector('select').addEventListener('change', atualizarRateioManual);
+  linha.querySelector('input').addEventListener('input', atualizarRateioManual);
+  linha.querySelector('button').addEventListener('click', function() {
+    linha.remove();
+    atualizarRateioManual();
+  });
+  container.appendChild(linha);
+  atualizarRateioManual();
+}
+
+function atualizarRateioManual() {
+  var form = document.getElementById('form-manual-lancamento');
+  if (!form) return;
+  var total = parseFloat(form.querySelector('[name="valor_servico"]').value || '0') || 0;
+  var soma = 0;
+  var rateios = [];
+  form.querySelectorAll('#rateios-manual > div').forEach(function(linha) {
+    var centro = linha.querySelector('.rateio-manual-centro').value;
+    var percentual = parseFloat(linha.querySelector('.rateio-manual-percentual').value || '0') || 0;
+    soma += percentual;
+    linha.querySelector('.rateio-manual-valor').textContent = 'R$ ' + (total * percentual / 100).toFixed(2).replace('.', ',');
+    if (centro && percentual > 0) rateios.push({ centro_custo_id: centro, percentual: percentual });
+  });
+  form.querySelector('[name="rateios_json"]').value = JSON.stringify(rateios);
+  if (rateios.length) form.querySelector('[name="centro_custo_id"]').value = rateios[0].centro_custo_id;
+  var especialidadeInput = form.querySelector('[name="especialidade"]');
+  var especialidadeCampo = form.querySelector('.manual-especialidade');
+  var medico = Array.from(form.querySelectorAll('.rateio-manual-centro')).find(function(select) {
+    return select.value && select.options[select.selectedIndex].dataset.isMedico === '1';
+  });
+  if (especialidadeInput && medico) {
+    var cadastroMedico = centrosRateioManualDados.find(function(cc) { return String(cc.id) === medico.value; });
+    especialidadeInput.value = cadastroMedico?.especialidade || '';
+    especialidadeInput.dataset.preenchidaPorMedico = '1';
+  } else if (especialidadeInput && especialidadeInput.dataset.preenchidaPorMedico === '1') {
+    especialidadeInput.value = '';
+    delete especialidadeInput.dataset.preenchidaPorMedico;
+  }
+  if (especialidadeCampo) especialidadeCampo.classList.toggle('hidden', !medico);
+  var restante = 100 - soma;
+  var resumo = document.getElementById('rateio-manual-resumo');
+  resumo.textContent = 'Percentual usado: ' + soma.toFixed(2).replace('.', ',') + '% | Restante: ' + restante.toFixed(2).replace('.', ',') + '%';
+  resumo.className = 'mt-2 text-xs ' + (Math.abs(restante) < 0.01 ? 'text-emerald-600' : 'text-amber-600');
+}
+
+function atualizarManualLancamento() {
+  var form = document.getElementById('form-manual-lancamento');
+  if (!form) return;
+  var forma = form.querySelector('[name="forma_pagamento"]').value;
+  var condicao = form.querySelector('[name="condicao_pagamento"]').value;
+  var isCartao = forma === 'cartao_credito';
+  var isParcelado = condicao === 'parcelado';
+  form.querySelectorAll('.manual-cartao').forEach(function(el) {
+    el.classList.toggle('hidden', !isCartao);
+  });
+  form.querySelectorAll('.manual-parcelas-cartao').forEach(function(el) {
+    el.classList.toggle('hidden', !(isCartao && isParcelado));
+  });
+  form.querySelectorAll('.manual-recorrencia').forEach(function(el) {
+    el.classList.toggle('hidden', !(!isCartao && isParcelado));
+  });
+}
+
+atualizarManualLancamento();
+var formManual = document.getElementById('form-manual-lancamento');
+if (formManual) {
+  adicionarRateioManual('100');
+  formManual.querySelector('[name="valor_servico"]').addEventListener('input', atualizarRateioManual);
+  formManual.addEventListener('submit', function(evento) {
+    atualizarRateioManual();
+    var linhas = Array.from(formManual.querySelectorAll('#rateios-manual > div'));
+    var preenchidas = linhas.filter(function(linha) { return linha.querySelector('.rateio-manual-centro').value; });
+    if (!preenchidas.length) return;
+    var centros = preenchidas.map(function(linha) { return linha.querySelector('.rateio-manual-centro').value; });
+    var soma = preenchidas.reduce(function(total, linha) {
+      return total + (parseFloat(linha.querySelector('.rateio-manual-percentual').value || '0') || 0);
+    }, 0);
+    var incompleto = linhas.some(function(linha) {
+      return Boolean(linha.querySelector('.rateio-manual-centro').value) !== Boolean(parseFloat(linha.querySelector('.rateio-manual-percentual').value || '0'));
+    });
+    if (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01) {
+      evento.preventDefault();
+      alert('Selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
+    }
+  });
+}
+</script>
+
+<!-- Overlay -->
+<div id="drawer-overlay"
+     onclick="fecharDetalhe()"
+     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:40;"></div>
+
+<!-- Drawer detalhe do lançamento -->
+<div id="drawer"
+     style="position:fixed; top:0; right:0; height:100%; width:460px; max-width:95vw;
+            background:#fff; z-index:50; box-shadow:-4px 0 24px rgba(0,0,0,0.12);
+            transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; display:none; flex-direction:column;"
+     aria-hidden="true">
+
+  <!-- Cabeçalho -->
+  <div style="padding:20px 24px 16px; border-bottom:1px solid #e2e8f0; display:flex; align-items:flex-start; justify-content:space-between; flex-shrink:0; background:#fff;">
+    <div>
+      <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Lançamento</p>
+      <p id="d-paciente" style="font-size:16px; font-weight:700; color:#1e293b; line-height:1.3;"></p>
+      <p id="d-servico"  style="font-size:12px; color:#64748b; margin-top:2px;"></p>
+    </div>
+    <button onclick="fecharDetalhe()"
+            style="background:none; border:none; cursor:pointer; padding:4px; color:#94a3b8; flex-shrink:0; margin-top:2px;">
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Corpo -->
+  <div style="padding:20px 24px; flex:1; display:flex; flex-direction:column; gap:20px;">
+
+    <!-- Valor em destaque -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div style="background:#f0fdf4; border-radius:10px; padding:14px 16px; text-align:center;">
+        <p style="font-size:10px; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Valor Serviço</p>
+        <p id="d-valor" style="font-size:22px; font-weight:800; color:#15803d;"></p>
+      </div>
+      <div style="background:#f8fafc; border-radius:10px; padding:14px 16px; text-align:center;">
+        <p style="font-size:10px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Valor Líquido</p>
+        <p id="d-liquido" style="font-size:22px; font-weight:800; color:#334155;"></p>
+      </div>
+    </div>
+
+    <!-- Seção Paciente -->
+    <div>
+      <p style="font-size:10px; font-weight:700; color:#5e93cc; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">Paciente</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Nome</p>
+          <p id="d-p-nome" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">CPF</p>
+          <p id="d-cpf" style="font-size:13px; color:#374151; font-family:monospace;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Centro de Custo</p>
+          <p id="d-medico" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Especialidade</p>
+          <p id="d-especialidade" style="font-size:13px; color:#374151;"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seção Datas -->
+    <div>
+      <p style="font-size:10px; font-weight:700; color:#5e93cc; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">Datas</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Atendimento</p>
+          <p id="d-atendimento" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Prev. Recebimento</p>
+          <p id="d-prev-receb" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Data Crédito</p>
+          <p id="d-credito" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Pgto C.Custo</p>
+          <p id="d-pgto-medico" style="font-size:13px; color:#374151;"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seção Pagamento -->
+    <div>
+      <p style="font-size:10px; font-weight:700; color:#5e93cc; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">Pagamento</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Forma</p>
+          <p id="d-forma" style="font-size:13px; color:#374151; text-transform:capitalize;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Condição</p>
+          <p id="d-condicao" style="font-size:13px; color:#374151; text-transform:capitalize;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Parcela</p>
+          <p id="d-parcela" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Banco</p>
+          <p id="d-banco" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Bandeira / Dígitos</p>
+          <p id="d-cartao" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Taxa Cartão</p>
+          <p id="d-taxa" style="font-size:13px; color:#374151;"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seção Clínica / Centro de Custo -->
+    <div>
+      <p style="font-size:10px; font-weight:700; color:#5e93cc; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">Repasse</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Valor Clínica</p>
+          <p id="d-clinica" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">% C.Custo</p>
+          <p id="d-pct-medico" style="font-size:13px; color:#374151;"></p>
+        </div>
+        <div>
+          <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Valor C.Custo</p>
+          <p id="d-valor-medico" style="font-size:13px; color:#374151;"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rodapé: status / lançado / obs -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Status</p>
+        <p id="d-status" style="font-size:13px; color:#374151; text-transform:capitalize;"></p>
+      </div>
+      <div>
+        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">ID</p>
+        <p id="d-id" style="font-size:13px; color:#374151; font-family:monospace;"></p>
+      </div>
+      <div style="grid-column:1 / -1;">
+        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px;">Lançado por</p>
+        <p id="d-lancado" style="font-size:13px; color:#374151;"></p>
+      </div>
+    </div>
+
+    <!-- Observação -->
+    <div id="bloco-obs" style="display:none;">
+      <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px;">Observação</p>
+      <p id="d-obs" style="font-size:13px; color:#374151; background:#f8fafc; border-radius:8px; padding:12px; line-height:1.6;"></p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function abrirDetalhe(row) {
+  var d = row.dataset;
+  document.getElementById('d-paciente').textContent    = d.paciente;
+  document.getElementById('d-servico').textContent     = d.servico;
+  document.getElementById('d-valor').textContent       = d.valor;
+  document.getElementById('d-liquido').textContent     = d.liquido;
+  document.getElementById('d-p-nome').textContent      = d.paciente;
+  document.getElementById('d-cpf').textContent         = d.cpf;
+  document.getElementById('d-medico').textContent      = d.medico;
+  document.getElementById('d-especialidade').textContent = d.especialidade;
+  document.getElementById('d-atendimento').textContent = d.atendimento;
+  document.getElementById('d-prev-receb').textContent  = d.prevReceb;
+  document.getElementById('d-credito').textContent     = d.credito;
+  document.getElementById('d-pgto-medico').textContent = d.pgtoMedico;
+  document.getElementById('d-forma').textContent       = d.forma;
+  document.getElementById('d-condicao').textContent    = d.condicao;
+  document.getElementById('d-parcela').textContent     = d.parcela;
+  document.getElementById('d-banco').textContent       = d.banco;
+  document.getElementById('d-cartao').textContent      = d.bandeira + (d.digitos !== '—' ? ' ···· ' + d.digitos : '');
+  document.getElementById('d-taxa').textContent        = d.taxa;
+  document.getElementById('d-clinica').textContent     = d.clinica;
+  document.getElementById('d-pct-medico').textContent  = d.pctMedico;
+  document.getElementById('d-valor-medico').textContent= d.valorMedico;
+  document.getElementById('d-status').textContent      = d.status.replace('_',' ');
+  document.getElementById('d-id').textContent          = '#' + d.id;
+  document.getElementById('d-lancado').textContent     = d.lancado;
+
+  var blocoObs = document.getElementById('bloco-obs');
+  if (d.obs) {
+    document.getElementById('d-obs').textContent = d.obs;
+    blocoObs.style.display = 'block';
+  } else {
+    blocoObs.style.display = 'none';
+  }
+
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('drawer');
+  overlay.style.display = 'block';
+  drawer.style.display = 'flex';
+  drawer.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(function() {
+    drawer.style.transform = 'translateX(0)';
+  });
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharDetalhe() {
+  var overlay = document.getElementById('drawer-overlay');
+  var drawer = document.getElementById('drawer');
+  if (!drawer || drawer.style.display === 'none') return;
+  drawer.style.transform = 'translateX(100%)';
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+  drawer.setAttribute('aria-hidden', 'true');
+  window.setTimeout(function() {
+    if (drawer.getAttribute('aria-hidden') === 'true') {
+      drawer.style.display = 'none';
+    }
+  }, 260);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') fecharDetalhe();
+});
+</script>
+{% endblock %}

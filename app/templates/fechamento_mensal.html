@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Fechamento — FLIC{% endblock %}
+{% block page_title %}Fechamento{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Filtro de período -->
+  <form method="get" action="/fechamento/mensal"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente</label>
+      <select name="cliente_id" required
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">De</label>
+      <input type="date" name="data_inicio" value="{{ data_inicio }}"
+             class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Até</label>
+      <input type="date" name="data_fim" value="{{ data_fim }}"
+             class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+    </div>
+    <button type="submit"
+            class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      Gerar fechamento
+    </button>
+  </form>
+
+  {% if cliente %}
+
+  <!-- Cards resumo -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Total Receitas</p>
+      <p class="text-2xl font-bold text-emerald-600">R$ {{ formatar_brl(total_receitas) }}</p>
+      <div class="text-xs text-gray-400 mt-1 space-y-0.5">
+        {% if receitas_banco %}<p>{{ receitas_banco|length }} recebimento(s) PIX/TED — R$ {{ formatar_brl(total_receitas_banco) }}</p>{% endif %}
+        {% if lotes_cartao %}<p>{{ lotes_cartao|length }} lote(s) cartão — R$ {{ formatar_brl(total_receitas_cartao) }}</p>{% endif %}
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Total Despesas</p>
+      <p class="text-2xl font-bold text-rose-600">R$ {{ formatar_brl(total_despesas) }}</p>
+      <p class="text-xs text-gray-400 mt-1">{{ contas|length }} conta(s) paga(s)</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5
+                {% if resultado >= 0 %}border-l-4 border-l-emerald-400{% else %}border-l-4 border-l-rose-400{% endif %}">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Resultado do Período</p>
+      <p class="text-2xl font-bold {% if resultado >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+        R$ {{ formatar_brl(resultado) }}
+      </p>
+      <p class="text-xs text-gray-400 mt-1">Receitas − Despesas</p>
+    </div>
+  </div>
+
+  <!-- Tabela Receitas PIX/TED (banco confirmado) -->
+  {% if receitas_banco %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400">PIX / TED / Transferência</p>
+        <h3 class="mt-0.5 font-semibold text-gray-800">Recebimentos confirmados no banco</h3>
+      </div>
+      <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+        R$ {{ formatar_brl(total_receitas_banco) }}
+      </span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Data Banco</th>
+            <th class="px-4 py-3 text-left">Descrição</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Paciente</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Valor</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for m in receitas_banco %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ m.data_movimento.strftime('%d/%m/%Y') }}</td>
+            <td class="px-4 py-3 text-gray-500 text-xs truncate max-w-xs">{{ m.descricao or '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ m.atendimento.nome_paciente if m.atendimento else '—' }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">R$ {{ formatar_brl(m.valor or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-emerald-50 border-t border-emerald-100">
+          <tr>
+            <td colspan="3" class="px-4 py-3 text-right text-xs font-semibold uppercase text-emerald-700">Total PIX/TED</td>
+            <td class="px-4 py-3 text-right font-bold text-emerald-700 whitespace-nowrap">R$ {{ formatar_brl(total_receitas_banco) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not receitas_banco and not lotes_cartao %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-10 text-center">
+    <p class="text-sm text-gray-400">Nenhuma receita confirmada no banco neste período.</p>
+    <p class="text-xs text-gray-400 mt-1">As receitas só aparecem após a Conciliação Banco ser finalizada.</p>
+  </div>
+  {% endif %}
+
+  <!-- Tabela Receitas Cartão (lotes conciliados no banco) -->
+  {% if lotes_cartao %}
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Maquininha</p>
+        <h3 class="mt-0.5 font-semibold text-gray-800">Lotes de cartão conciliados no banco</h3>
+      </div>
+      <span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
+        R$ {{ formatar_brl(total_receitas_cartao) }}
+      </span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Data Crédito</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Bandeira</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Transações</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Valor Bruto</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Taxas</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Valor Líquido</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for lote in lotes_cartao %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ lote.data.strftime('%d/%m/%Y') }}</td>
+            <td class="px-4 py-3">
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold
+                {% if lote.bandeira == 'Visa' %}bg-blue-100 text-blue-700
+                {% elif lote.bandeira in ['Mastercard','Master'] %}bg-orange-100 text-orange-700
+                {% elif lote.bandeira == 'Elo' %}bg-yellow-100 text-yellow-800
+                {% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ lote.bandeira }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-500">{{ lote.qtd_transacoes }}</td>
+            <td class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">R$ {{ formatar_brl(lote.valor_bruto or 0) }}</td>
+            <td class="px-4 py-3 text-right text-rose-500 text-xs whitespace-nowrap">− R$ {{ formatar_brl(lote.taxa_total or 0) }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-violet-700 whitespace-nowrap">R$ {{ formatar_brl(lote.valor_liquido or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-violet-50 border-t border-violet-100">
+          <tr>
+            <td colspan="5" class="px-4 py-3 text-right text-xs font-semibold uppercase text-violet-700">Total Cartão</td>
+            <td class="px-4 py-3 text-right font-bold text-violet-700 whitespace-nowrap">R$ {{ formatar_brl(total_receitas_cartao) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Tabela Despesas -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Contas a Pagar</p>
+        <h3 class="mt-0.5 font-semibold text-gray-800">Despesas pagas no período</h3>
+      </div>
+      <span class="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+        R$ {{ formatar_brl(total_despesas) }}
+      </span>
+    </div>
+
+    {% if contas %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Data Pgto</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Vencimento</th>
+            <th class="px-4 py-3 text-left">Descrição</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Fornecedor</th>
+            <th class="px-4 py-3 text-left whitespace-nowrap">Tipo</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Valor</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for c in contas %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">
+              {{ c.data_pagamento.strftime('%d/%m/%Y') if c.data_pagamento else '—' }}
+            </td>
+            <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+              {{ c.vencimento.strftime('%d/%m/%Y') }}
+            </td>
+            <td class="px-4 py-3 text-gray-700">{{ c.descricao }}</td>
+            <td class="px-4 py-3 text-gray-500 text-xs">{{ c.fornecedor or '—' }}</td>
+            <td class="px-4 py-3">
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold
+                {% if c.tipo.value == 'fixa' %}bg-blue-100 text-blue-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+                {{ c.tipo.value | capitalize }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-right font-semibold text-rose-700 whitespace-nowrap">
+              R$ {{ formatar_brl(c.valor or 0) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-rose-50 border-t border-rose-100">
+          <tr>
+            <td colspan="5" class="px-4 py-3 text-right text-xs font-semibold uppercase text-rose-700">Total Despesas</td>
+            <td class="px-4 py-3 text-right font-bold text-rose-700 whitespace-nowrap">R$ {{ formatar_brl(total_despesas) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-10 text-center text-sm text-gray-400">
+      Nenhuma despesa paga neste período.
+    </p>
+    {% endif %}
+  </div>
+
+  <!-- Linha de resultado final -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center justify-between">
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Resultado final do período</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        De {{ data_inicio | replace('-', '/') }} até {{ data_fim | replace('-', '/') }} — {{ cliente.nome }}
+      </p>
+    </div>
+    <div class="text-right">
+      <p class="text-3xl font-extrabold {% if resultado >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
+        R$ {{ formatar_brl(resultado) }}
+      </p>
+      <p class="text-xs text-gray-400 mt-1">
+        R$ {{ formatar_brl(total_receitas) }} receitas − R$ {{ formatar_brl(total_despesas) }} despesas
+      </p>
+    </div>
+  </div>
+
+  {% elif cliente_selecionado %}
+  <div class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+    <p class="text-sm text-gray-400">Nenhum cliente encontrado para este acesso.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

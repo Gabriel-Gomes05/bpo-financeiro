@@ -1,0 +1,651 @@
+{% extends "base.html" %}
+{% block title %}Conciliação Cartão — FLIC{% endblock %}
+{% block page_title %}Conciliação Cartão{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {# ── Flash ────────────────────────────────────────────────────────── #}
+  {% if flash_success %}
+  <div class="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">✓ {{ flash_success }}</div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">⚠ {{ flash_error }}</div>
+  {% endif %}
+
+  {# ── Barra: cliente + importar ─────────────────────────────────────── #}
+  <div class="flex flex-wrap items-end gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <form method="get" action="/conciliacao" class="flex-1 min-w-44">
+      <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Cliente</label>
+      <select name="cliente_id" onchange="this.form.submit()"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-400">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if cliente_selecionado %}
+    <form method="post" action="/conciliacao/importar" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Extrato Maquininha (XLSX / CSV)</label>
+        <input type="file" name="arquivo" required accept=".xlsx,.xls,.csv"
+               class="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100"/>
+      </div>
+      <button type="submit" class="rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold px-4 py-2 text-sm transition-colors">
+        Importar vendas
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if not cliente_selecionado %}
+  <div class="rounded-2xl border border-slate-200 bg-white p-16 text-center text-slate-400">
+    <div class="text-4xl mb-3">💳</div>
+    <p class="font-medium text-slate-600">Selecione um cliente para ver as vendas do cartão</p>
+  </div>
+
+  {% else %}
+
+  {# ── Painel principal ──────────────────────────────────────────────── #}
+  {% if painel %}
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+    {# Barra de ações #}
+    <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-slate-100">
+      <div class="flex gap-3 text-sm text-slate-500">
+        <span><strong class="text-slate-800">{{ painel.totais.vendas }}</strong> venda(s) a conciliar</span>
+        <span>·</span>
+        <span><strong class="text-slate-800">{{ painel.totais.atendimentos }}</strong> lançamento(s) pendentes</span>
+      </div>
+      {% if painel.totais.prontas > 0 %}
+      <form method="post" action="/conciliacao/conciliar-todos-prontos" class="ml-auto">
+        <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+        <button type="submit" class="rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 transition-colors">
+          ✅ Conciliar {{ painel.totais.prontas }} pronto(s)
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    {# Cabeçalhos do painel #}
+    <div class="grid gap-4 cols-painel px-4 pt-3 pb-1">
+      <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        <span class="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block"></span>Extrato maquininha
+      </div>
+      <div></div>
+      <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>Lançamento do sistema
+      </div>
+    </div>
+
+    {# Lista de itens #}
+    <div class="p-4 space-y-3">
+    {% if painel.itens %}
+      {% for item in painel.itens %}
+      {% set venda = item.venda %}
+      {% set sug   = item.sugestao %}
+      {% set vdata = venda.data_pagamento.strftime('%d/%m/%Y') if venda.data_pagamento else '—' %}
+      {% set vsem  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][venda.data_pagamento.weekday()] if venda.data_pagamento else '' %}
+
+      <div class="grid gap-4 items-start cols-painel">
+
+        {# ── Card esquerdo: venda da maquininha ── #}
+        <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-slate-400 text-xs">{{ vdata }} {{ vsem }}</span>
+            <span class="font-bold text-slate-900 text-base">R$ {{ '%.2f'|format(venda.valor_bruto|float) }}</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            {% if venda.bandeira %}
+            <span class="rounded-full px-2 py-0.5 text-xs font-semibold
+              {% if venda.bandeira == 'Visa' %}bg-blue-100 text-blue-700
+              {% elif venda.bandeira in ['Mastercard','Master'] %}bg-orange-100 text-orange-700
+              {% elif venda.bandeira == 'Elo' %}bg-yellow-100 text-yellow-800
+              {% else %}bg-slate-100 text-slate-700{% endif %}">{{ venda.bandeira }}</span>
+            {% endif %}
+            {% if venda.ultimos_digitos %}
+            <span class="font-mono text-xs bg-slate-100 rounded px-1.5 py-0.5 text-slate-600">*{{ venda.ultimos_digitos }}</span>
+            {% endif %}
+          </div>
+          <p class="text-slate-700 text-sm font-medium truncate">{{ venda.nome_portador or '—' }}</p>
+          <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+            <div class="text-xs text-slate-400">
+              Líq: <span class="font-semibold text-emerald-600">R$ {{ '%.2f'|format((venda.valor_liquido or venda.valor_bruto)|float) }}</span>
+              {% if venda.taxa_percentual %}<span class="ml-1">({{ '%.2f'|format(venda.taxa_percentual|float) }}%)</span>{% endif %}
+            </div>
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/cancelar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <button type="submit" title="Remover" class="text-slate-300 hover:text-red-400 text-lg leading-none transition-colors">×</button>
+            </form>
+          </div>
+        </div>
+
+        {# ── Botão match central ── #}
+        <div class="flex flex-col items-center justify-center gap-1.5 py-2">
+          {% if sug %}
+            {% if sug.status == 'sugestao_pronta' or sug.status == 'sugestao_verde' %}
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
+              <input type="hidden" name="origem" value="sugestao">
+              <button type="submit" class="btn-match-verde">
+                <span class="text-base leading-none">⇅</span>
+                <span class="text-[10px] font-semibold">Encontramos</span>
+                <span class="text-[11px] font-bold">Conciliar</span>
+              </button>
+            </form>
+            {% else %}
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
+              <input type="hidden" name="origem" value="revisar">
+              <button type="submit" class="btn-match-amarelo">
+                <span class="text-base leading-none">≈</span>
+                <span class="text-[10px] font-semibold">Quase lá</span>
+                <span class="text-[11px] font-bold">Conciliar</span>
+              </button>
+            </form>
+            {% if sug.diferenca_valor > 0 %}
+            <span class="text-[10px] text-orange-600 font-medium text-center">Dif. R$ {{ '%.2f'|format(sug.diferenca_valor|float) }}</span>
+            {% endif %}
+            {% endif %}
+          {% else %}
+          <button onclick="toggleBuscaCartao('{{ venda.id }}')" class="btn-match-cinza">
+            <span class="text-base leading-none">🔍</span>
+            <span class="text-[11px] font-semibold">Buscar</span>
+          </button>
+          {% endif %}
+        </div>
+
+        {# ── Card direito: lançamento do sistema ── #}
+        {% if sug %}
+        {% set at = sug.atendimento %}
+        {% set at_data = at.data_prevista_recebimento.strftime('%d/%m/%Y') if at.data_prevista_recebimento else '—' %}
+        <div class="bg-white rounded-xl border border-slate-200 p-4 text-sm shadow-sm">
+          <div class="flex justify-between items-start mb-2">
+            <span class="font-bold text-base {% if sug.diferenca_valor > 0 %}text-orange-600{% else %}text-slate-900{% endif %}">
+              R$ {{ '%.2f'|format(at.valor_servico|float) }}
+            </span>
+            <span class="text-slate-400 text-xs">{{ at_data }}</span>
+          </div>
+          {% if at.nome_paciente %}<p class="font-medium text-slate-800 mb-1">{{ at.nome_paciente }}</p>{% endif %}
+          <div class="text-xs text-slate-500 space-y-0.5 mb-2">
+            {% if at.medico %}<div><span class="font-medium text-slate-600">Médico:</span> {{ at.medico }}</div>{% endif %}
+            {% if at.especialidade %}<div><span class="font-medium text-slate-600">Especialidade:</span> {{ at.especialidade }}</div>{% endif %}
+            {% if at.ultimos_digitos_cartao %}<div><span class="font-medium text-slate-600">Cartão:</span> *{{ at.ultimos_digitos_cartao }}</div>{% endif %}
+          </div>
+          {% if sug.diferenca_valor > 0 %}
+          <div class="mb-2 rounded-lg bg-orange-50 border border-orange-200 px-2.5 py-1.5 text-xs text-orange-700">
+            Diferença de R$ {{ '%.2f'|format(sug.diferenca_valor|float) }} — confira antes de conciliar
+          </div>
+          {% endif %}
+          <div class="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="atendimento_id" value="{{ at.id }}">
+              <input type="hidden" name="origem" value="manual">
+              <button type="submit" class="text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-2.5 py-1 hover:bg-emerald-100 transition-colors font-semibold">Confirmar</button>
+            </form>
+            <button onclick="toggleBuscaCartao('{{ venda.id }}')"
+                    class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Trocar</button>
+            <button type="button" onclick="abrirModalEditar(this)"
+                    data-venda-id="{{ venda.id }}"
+                    data-at-id="{{ at.id }}"
+                    data-valor-bruto="{{ '%.2f'|format(venda.valor_bruto) }}"
+                    data-taxa="{{ '%.2f'|format(venda.taxa_percentual or 0) }}"
+                    data-valor-liquido="{{ '%.2f'|format(venda.valor_liquido or venda.valor_bruto) }}"
+                    data-at-valor="{{ '%.2f'|format(at.valor_servico|float) }}"
+                    data-at-taxa="{{ '%.2f'|format(at.taxa_cartao|float) if at.taxa_cartao else '' }}"
+                    data-at-liquido="{{ '%.2f'|format(at.valor_liquido|float) if at.valor_liquido else '' }}"
+                    data-portador="{{ venda.nome_portador or '' }}"
+                    data-paciente="{{ at.nome_paciente or '' }}"
+                    class="text-xs border border-blue-200 text-blue-600 bg-blue-50 rounded-lg px-2.5 py-1 hover:bg-blue-100 transition-colors font-medium">✏ Editar</button>
+          </div>
+        </div>
+
+        {% else %}
+        {# Sem sugestão — painel busca #}
+        <div id="busca-c-{{ venda.id }}" class="{% if item.busca_aberta %}block{% else %}hidden{% endif %}">
+          <div class="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="font-medium text-violet-800">Buscar lançamento</span>
+              <button onclick="toggleBuscaCartao('{{ venda.id }}')" class="text-violet-400 hover:text-violet-600 text-lg leading-none">×</button>
+            </div>
+            <form method="get" action="/conciliacao" class="flex gap-2">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="buscar_venda" value="{{ venda.id }}">
+              <input type="text" name="termo" value="{{ item.busca_termo }}" placeholder="Paciente, CPF..."
+                     class="flex-1 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400">
+              <button type="submit" class="rounded-lg bg-violet-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-violet-700">Buscar</button>
+            </form>
+            {% if item.busca_aberta and item.resultados_busca %}
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" class="space-y-2">
+              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+              <input type="hidden" name="origem" value="manual">
+              <div class="space-y-2 max-h-48 overflow-y-auto">
+                {% for a in item.resultados_busca %}
+                <label class="flex items-center gap-3 bg-white rounded-lg border border-violet-100 px-3 py-2 cursor-pointer hover:border-violet-300">
+                  <input type="radio" name="atendimento_id" value="{{ a.id }}" required class="flex-shrink-0">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-slate-800 text-xs">{{ a.nome_paciente or '—' }}</p>
+                    <p class="text-slate-500 text-xs">
+                      {{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}
+                      · R$ {{ '%.2f'|format(a.valor_servico|float) }}
+                      {% if a.ultimos_digitos_cartao %} · *{{ a.ultimos_digitos_cartao }}{% endif %}
+                    </p>
+                  </div>
+                </label>
+                {% endfor %}
+              </div>
+              <button type="submit" class="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold py-2 hover:bg-emerald-600">Vincular selecionado</button>
+            </form>
+            {% elif item.busca_aberta %}<p class="text-xs text-red-600">Nenhum lançamento encontrado.</p>{% endif %}
+            <div class="pt-1 border-t border-violet-200">
+              <button type="button"
+                      data-venda-id="{{ venda.id }}"
+                      data-data="{{ venda.data_pagamento.strftime('%Y-%m-%d') if venda.data_pagamento else '' }}"
+                      data-valor="{{ venda.valor_bruto }}"
+                      data-digitos="{{ venda.ultimos_digitos or '' }}"
+                      data-bandeira="{{ venda.bandeira or '' }}"
+                      onclick="abrirModalCriar(this)"
+                      class="w-full text-center text-xs rounded-lg bg-white border border-violet-200 text-violet-700 py-1.5 font-semibold hover:bg-violet-50 transition-colors">
+                + Criar lançamento
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="nosug-c-{{ venda.id }}" class="{% if item.busca_aberta %}hidden{% else %}flex{% endif %} flex-col gap-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl items-center justify-center py-6">
+          <p class="text-xs text-slate-400">Nenhum lançamento encontrado</p>
+          <div class="flex gap-2">
+            <button onclick="toggleBuscaCartao('{{ venda.id }}')"
+                    class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Buscar</button>
+            <button type="button"
+                    data-venda-id="{{ venda.id }}"
+                    data-data="{{ venda.data_pagamento.strftime('%Y-%m-%d') if venda.data_pagamento else '' }}"
+                    data-valor="{{ venda.valor_bruto }}"
+                    data-digitos="{{ venda.ultimos_digitos or '' }}"
+                    data-bandeira="{{ venda.bandeira or '' }}"
+                    onclick="abrirModalCriar(this)"
+                    class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">+ Criar lançamento</button>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>{# /grid #}
+      {% endfor %}
+
+    {% else %}
+    <div class="py-12 text-center text-slate-400">
+      <div class="text-4xl mb-2">✅</div>
+      <p class="font-medium text-slate-600">Nenhuma venda pendente de conciliação</p>
+      <p class="text-sm mt-1">Importe o extrato da maquininha ou todas as vendas já foram conciliadas</p>
+    </div>
+    {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Grupos prontos para fechar lote ─────────────────────────────── #}
+  {% if grupos_prontos %}
+  <div class="space-y-2">
+    <div class="flex items-center justify-between px-1">
+      <h2 class="font-semibold text-slate-700 text-sm uppercase tracking-wide">Prontos para fechar lote</h2>
+      <span class="text-xs text-slate-400">Todas as vendas do grupo foram conciliadas com lançamentos</span>
+    </div>
+    {% for grupo in grupos_prontos %}
+    <div class="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 bg-emerald-50 border-b border-emerald-100">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-slate-700">{{ grupo.data_pagamento.strftime('%d/%m/%Y') }}</span>
+          <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold
+            {% if grupo.bandeira == 'Visa' %}bg-blue-100 text-blue-700
+            {% elif grupo.bandeira in ['Mastercard','Master'] %}bg-orange-100 text-orange-700
+            {% elif grupo.bandeira == 'Elo' %}bg-yellow-100 text-yellow-800
+            {% else %}bg-slate-100 text-slate-700{% endif %}">{{ grupo.bandeira }}</span>
+          <span class="text-xs text-slate-500">{{ grupo.qtd }} venda{{ 's' if grupo.qtd > 1 }}</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <div class="text-xs text-slate-400">Bruto</div>
+            <div class="font-semibold text-slate-700 text-sm">R$ {{ "%.2f"|format(grupo.total_bruto) }}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-slate-400">Líquido</div>
+            <div class="font-bold text-emerald-600 text-sm">R$ {{ "%.2f"|format(grupo.total_liquido) }}</div>
+          </div>
+          <form method="post" action="/conciliacao/fechar-lote">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <input type="hidden" name="data_pagamento" value="{{ grupo.data_pagamento.isoformat() }}">
+            <input type="hidden" name="bandeira" value="{{ grupo.bandeira }}">
+            <button type="submit" class="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 text-xs transition-colors">
+              🔒 Fechar lote
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="divide-y divide-slate-50">
+        {% for venda in grupo.vendas %}
+        {% set at = venda.atendimento %}
+        <div class="flex items-center gap-3 px-5 py-2.5 text-sm flex-wrap">
+          <div class="w-14 font-mono text-xs bg-slate-100 rounded px-1.5 py-0.5 text-slate-600 flex-shrink-0">*{{ venda.ultimos_digitos or '??' }}</div>
+          <div class="flex-1 text-slate-700 truncate min-w-0">{{ venda.nome_portador or '—' }}</div>
+          <div class="text-slate-500 text-xs truncate max-w-xs">
+            {% if at %}✓ {{ at.nome_paciente or 'Lançamento #' ~ at.id }}{% endif %}
+          </div>
+          <div class="text-xs text-slate-500 flex-shrink-0">
+            Bruto <span class="font-semibold text-slate-700">R$ {{ "%.2f"|format(venda.valor_bruto) }}</span>
+          </div>
+          <div class="text-xs text-slate-500 flex-shrink-0">
+            Líq. <span class="font-semibold text-emerald-600">R$ {{ "%.2f"|format(venda.valor_liquido or venda.valor_bruto) }}</span>
+          </div>
+          {% if at and (venda.valor_bruto|float - at.valor_servico|float)|abs > 0.01 %}
+          <span class="text-xs bg-orange-100 text-orange-700 rounded-lg px-2 py-0.5 font-medium flex-shrink-0">
+            Dif. R$ {{ "%.2f"|format((venda.valor_bruto|float - at.valor_servico|float)|abs) }}
+          </span>
+          {% endif %}
+          <button type="button" onclick="abrirModalEditar(this)"
+                  data-venda-id="{{ venda.id }}"
+                  data-valor-bruto="{{ '%.2f'|format(venda.valor_bruto) }}"
+                  data-taxa="{{ '%.2f'|format(venda.taxa_percentual or 0) }}"
+                  data-valor-liquido="{{ '%.2f'|format(venda.valor_liquido or venda.valor_bruto) }}"
+                  data-at-valor="{{ '%.2f'|format(at.valor_servico|float) if at else '0.00' }}"
+                  data-at-taxa="{{ '%.2f'|format(at.taxa_cartao|float) if at and at.taxa_cartao else '' }}"
+                  data-at-liquido="{{ '%.2f'|format(at.valor_liquido|float) if at and at.valor_liquido else '%.2f'|format(venda.valor_liquido or venda.valor_bruto) }}"
+                  data-portador="{{ venda.nome_portador or '' }}"
+                  data-paciente="{{ at.nome_paciente or '' if at else '' }}"
+                  class="text-xs border border-blue-200 text-blue-600 bg-blue-50 rounded-lg px-2.5 py-1 hover:bg-blue-100 transition-colors font-medium flex-shrink-0">
+            ✏ Editar
+          </button>
+          <form method="post" action="/conciliacao/venda/{{ venda.id }}/desvincular">
+            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <button type="submit" title="Desvincular" class="text-slate-300 hover:text-orange-400 transition-colors text-lg leading-none">↩</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Lotes aguardando banco ────────────────────────────────────────── #}
+  {% set lotes_aguardando = lotes_recentes | selectattr('status.value', 'equalto', 'pendente') | list %}
+  {% if lotes_aguardando %}
+  <div class="rounded-2xl border border-yellow-200 bg-yellow-50 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-yellow-100">
+      <div class="flex items-center gap-2">
+        <span class="text-lg">🏦</span>
+        <p class="text-sm font-semibold text-yellow-800">
+          {{ lotes_aguardando | length }} lote{{ 's' if lotes_aguardando | length > 1 }} aguardando conciliação bancária
+        </p>
+      </div>
+      <a href="/conciliacao/banco?cliente_id={{ cliente_selecionado }}"
+         class="text-xs font-semibold text-yellow-700 border border-yellow-300 bg-white rounded-lg px-3 py-1.5 hover:bg-yellow-50 transition">
+        Ir para Conciliação Banco →
+      </a>
+    </div>
+    <div class="divide-y divide-yellow-100">
+      {% for lote in lotes_aguardando %}
+      <div class="flex items-center gap-4 px-5 py-3 text-sm">
+        <div class="w-24 text-yellow-700 font-medium">{{ lote.data.strftime('%d/%m/%Y') }}</div>
+        <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold bg-yellow-100 text-yellow-800">{{ lote.bandeira }}</span>
+        <div class="text-xs text-yellow-600">{{ lote.qtd_transacoes }} transações</div>
+        <div class="flex-1"></div>
+        <div class="font-semibold text-yellow-800">R$ {{ "%.2f"|format(lote.valor_liquido) }}</div>
+        <form method="post" action="/conciliacao/lote/{{ lote.id }}/reabrir"
+              onsubmit="return confirm('Desfazer este lote? As vendas voltam para \'Prontos para fechar\' e o vínculo bancário será desfeito se existir.')">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <button type="submit" class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium">
+            ↩ Desfazer lote
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Histórico conciliado #}
+  {% set lotes_ok = lotes_recentes | selectattr('status.value', 'equalto', 'conciliada') | list %}
+  {% if lotes_ok %}
+  <details class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <summary class="px-5 py-3 cursor-pointer text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center justify-between">
+      <span>{{ lotes_ok | length }} lote{{ 's' if lotes_ok | length > 1 }} conciliado{{ 's' if lotes_ok | length > 1 }}</span>
+      <span class="text-slate-400 text-xs">▸</span>
+    </summary>
+    <div class="divide-y divide-slate-50">
+      {% for lote in lotes_ok %}
+      <div class="flex items-center gap-4 px-5 py-3 text-sm">
+        <div class="w-24 text-slate-600 font-medium">{{ lote.data.strftime('%d/%m/%Y') }}</div>
+        <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700">{{ lote.bandeira }}</span>
+        <div class="text-xs text-slate-400">{{ lote.qtd_transacoes }} transações</div>
+        <div class="flex-1"></div>
+        <div class="font-semibold text-emerald-600">R$ {{ "%.2f"|format(lote.valor_liquido) }}</div>
+        <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700">Conciliado ✓</span>
+        <form method="post" action="/conciliacao/lote/{{ lote.id }}/reabrir"
+              onsubmit="return confirm('Reabrir este lote? O vínculo com o extrato bancário também será desfeito.')">
+          <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+          <button type="submit" class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium">↩ Reabrir</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% endif %}{# /cliente_selecionado #}
+</div>
+
+{# ── Modelo colunas ────────────────────────────────────────────────── #}
+{% if cliente_selecionado %}
+<div class="mt-4 text-xs text-slate-400 text-center">
+  Colunas esperadas no extrato: <code>data_pagamento</code>, <code>valor_bruto</code> (obrigatórias) +
+  <code>data_venda</code>, <code>bandeira</code>, <code>ultimos_digitos</code>, <code>nome_portador</code>,
+  <code>taxa_percentual</code>, <code>valor_liquido</code>
+</div>
+{% endif %}
+
+{# ── Modal editar venda + lançamento ──────────────────────────────── #}
+<div id="modal-editar" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Editar valores</h3>
+        <p id="edit-subtitulo" class="text-xs text-slate-400 mt-0.5">—</p>
+      </div>
+      <button onclick="fecharModalEditar()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <form id="form-editar" method="post" action="" class="p-5 space-y-5">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <input type="hidden" id="edit-at-id" name="atendimento_id" value="">
+
+      {# Extrato maquininha #}
+      <div>
+        <p class="text-xs font-semibold text-violet-600 uppercase tracking-wide mb-2 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-sm bg-violet-500 inline-block"></span>Extrato da maquininha
+        </p>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Valor bruto</label>
+            <div class="flex items-center border border-slate-300 rounded-xl overflow-hidden focus-within:border-violet-400">
+              <span class="px-2.5 text-xs text-slate-400 bg-slate-50 border-r border-slate-200 py-2">R$</span>
+              <input type="text" id="edit-vb" name="valor_bruto" required
+                     class="flex-1 px-3 py-2 text-sm outline-none bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Taxa (%)</label>
+            <input type="text" id="edit-taxa" name="taxa_percentual" placeholder="2.50"
+                   class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Valor líquido</label>
+            <div class="flex items-center border border-slate-300 rounded-xl overflow-hidden focus-within:border-violet-400">
+              <span class="px-2.5 text-xs text-slate-400 bg-slate-50 border-r border-slate-200 py-2">R$</span>
+              <input type="text" id="edit-vl" name="valor_liquido" required
+                     class="flex-1 px-3 py-2 text-sm outline-none bg-white">
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="calcularLiquido()" class="mt-1.5 text-xs text-violet-500 hover:text-violet-700 underline">
+          Recalcular líquido pela taxa
+        </button>
+      </div>
+
+      <div class="border-t border-slate-100"></div>
+
+      {# Lançamento do sistema #}
+      <div>
+        <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>Lançamento do sistema
+        </p>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Valor serviço</label>
+            <div class="flex items-center border border-slate-300 rounded-xl overflow-hidden focus-within:border-blue-400">
+              <span class="px-2.5 text-xs text-slate-400 bg-slate-50 border-r border-slate-200 py-2">R$</span>
+              <input type="text" id="edit-at-vs" name="at_valor_servico" required
+                     class="flex-1 px-3 py-2 text-sm outline-none bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Taxa cartão (%)</label>
+            <input type="text" id="edit-at-taxa" name="at_taxa_cartao" placeholder="2.50"
+                   class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-400">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Valor líquido</label>
+            <div class="flex items-center border border-slate-300 rounded-xl overflow-hidden focus-within:border-blue-400">
+              <span class="px-2.5 text-xs text-slate-400 bg-slate-50 border-r border-slate-200 py-2">R$</span>
+              <input type="text" id="edit-at-vl" name="at_valor_liquido" required
+                     class="flex-1 px-3 py-2 text-sm outline-none bg-white">
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="espelharValores()" class="mt-1.5 text-xs text-blue-500 hover:text-blue-700 underline">
+          Espelhar valores do extrato
+        </button>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-1 border-t border-slate-100">
+        <button type="button" onclick="fecharModalEditar()" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold transition-colors">Salvar alterações</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Modal criar lançamento ────────────────────────────────────────── #}
+<div id="modal-criar" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="font-semibold text-slate-800">Criar lançamento e conciliar</h3>
+        <p class="text-xs text-slate-400 mt-0.5">Preencha os dados do atendimento referente a esta venda.</p>
+      </div>
+      <button onclick="fecharModal()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <form id="form-criar" method="post" action="" class="p-5 space-y-4">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div class="grid grid-cols-2 gap-4 rounded-xl bg-violet-50 border border-violet-100 px-4 py-3 text-sm">
+        <div><p class="text-xs font-semibold text-violet-500 uppercase mb-1">Valor bruto</p><p id="modal-valor" class="font-bold text-slate-900">—</p></div>
+        <div><p class="text-xs font-semibold text-violet-500 uppercase mb-1">Cartão</p><p id="modal-cartao" class="text-slate-700">—</p></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Data do atendimento *</label>
+          <input type="date" id="modal-data" name="data_atendimento" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400">
+        </div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Paciente</label><input type="text" name="nome_paciente" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">CPF</label><input type="text" name="cpf_paciente" placeholder="000.000.000-00" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Médico</label><input type="text" name="medico" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Especialidade</label><input type="text" name="especialidade" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div class="col-span-2"><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Descrição do serviço</label><input type="text" name="descricao_servico" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+        <div class="col-span-2"><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label><input type="text" name="observacao" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-400"></div>
+      </div>
+      <div class="flex justify-end gap-3 pt-1">
+        <button type="button" onclick="fecharModal()" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 text-sm font-semibold transition-colors">Criar e conciliar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .cols-painel { grid-template-columns: 1fr 100px 1fr; }
+  .btn-match-verde   { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#10b981;color:#fff;padding:10px 8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:background .15s; }
+  .btn-match-verde:hover   { background:#059669; }
+  .btn-match-amarelo { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#fbbf24;color:#78350f;padding:10px 8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:background .15s; }
+  .btn-match-amarelo:hover { background:#f59e0b; }
+  .btn-match-cinza   { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:88px;border-radius:12px;background:#f1f5f9;color:#475569;padding:10px 8px;font-size:12px;font-weight:500;border:1px solid #e2e8f0;cursor:pointer;transition:background .15s; }
+  .btn-match-cinza:hover   { background:#e2e8f0; }
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function abrirModalEditar(btn) {
+  var form  = document.getElementById('form-editar');
+  var modal = document.getElementById('modal-editar');
+  var sub   = document.getElementById('edit-subtitulo');
+  if (!form || !modal) return;
+  form.action = '/conciliacao/venda/' + btn.dataset.vendaId + '/editar';
+  sub.textContent = (btn.dataset.portador || 'Venda') + (btn.dataset.paciente ? ' → ' + btn.dataset.paciente : '');
+  document.getElementById('edit-at-id').value  = btn.dataset.atId || '';
+  document.getElementById('edit-vb').value     = btn.dataset.valorBruto || '';
+  document.getElementById('edit-taxa').value   = btn.dataset.taxa || '';
+  document.getElementById('edit-vl').value     = btn.dataset.valorLiquido || '';
+  document.getElementById('edit-at-vs').value  = btn.dataset.atValor || '';
+  document.getElementById('edit-at-taxa').value = btn.dataset.atTaxa || '';
+  document.getElementById('edit-at-vl').value  = btn.dataset.atLiquido || '';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+}
+function fecharModalEditar() {
+  var m = document.getElementById('modal-editar');
+  if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+}
+function calcularLiquido() {
+  var vb   = parseFloat(document.getElementById('edit-vb').value.replace(',','.')) || 0;
+  var taxa = parseFloat(document.getElementById('edit-taxa').value.replace(',','.')) || 0;
+  var vl   = taxa > 0 ? vb * (1 - taxa / 100) : vb;
+  document.getElementById('edit-vl').value = vl.toFixed(2);
+}
+function espelharValores() {
+  document.getElementById('edit-at-vs').value = document.getElementById('edit-vb').value;
+  document.getElementById('edit-at-taxa').value = document.getElementById('edit-taxa').value;
+  document.getElementById('edit-at-vl').value = document.getElementById('edit-vl').value;
+}
+var _me = document.getElementById('modal-editar');
+if (_me) _me.addEventListener('click', function(e){ if(e.target===this) fecharModalEditar(); });
+
+function toggleBuscaCartao(id) {
+  var busca = document.getElementById('busca-c-' + id);
+  var nosug = document.getElementById('nosug-c-' + id);
+  if (busca) busca.classList.toggle('hidden');
+  if (nosug) nosug.classList.toggle('hidden');
+}
+function abrirModalCriar(btn) {
+  var form  = document.getElementById('form-criar');
+  var modal = document.getElementById('modal-criar');
+  if (!form || !modal) return;
+  form.action = '/conciliacao/venda/' + btn.dataset.vendaId + '/criar-e-conciliar';
+  document.getElementById('modal-valor').textContent =
+    btn.dataset.valor ? 'R$ ' + parseFloat(btn.dataset.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+  var cartaoTxt = '';
+  if (btn.dataset.bandeira) cartaoTxt += btn.dataset.bandeira + ' ';
+  if (btn.dataset.digitos)  cartaoTxt += '*' + btn.dataset.digitos;
+  document.getElementById('modal-cartao').textContent = cartaoTxt || '—';
+  document.getElementById('modal-data').value = btn.dataset.data || '';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+}
+function fecharModal() {
+  var m = document.getElementById('modal-criar');
+  if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+}
+var _m = document.getElementById('modal-criar');
+if (_m) _m.addEventListener('click', function(e){ if(e.target===this) fecharModal(); });
+</script>
+{% endblock %}

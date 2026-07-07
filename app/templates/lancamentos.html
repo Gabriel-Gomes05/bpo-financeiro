@@ -1,0 +1,754 @@
+{% extends "base.html" %}
+{% block title %}Lançamentos — FLIC{% endblock %}
+{% block page_title %}Lançamentos de Atendimento{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if flash %}
+  <div class="rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-800">
+    ⚠ {{ flash }}
+  </div>
+  {% endif %}
+
+  <!-- Formulário multi-serviço -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-700">Novo lançamento</h3>
+      <button onclick="document.getElementById('form-lancamento').classList.toggle('hidden')"
+              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
+    </div>
+
+    <form id="form-lancamento" method="post" action="/lancamentos" class="p-6 space-y-5" novalidate>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente *</label>
+          <select name="cliente_id" required onchange="onClienteChange(this.value)"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="">Selecione...</option>
+            {% for c in clientes %}
+            <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data do atendimento *</label>
+          <input type="date" name="data_atendimento" required value="{{ hoje }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        </div>
+        <div class="flex items-end">
+          <button type="button" onclick="adicionarLinha()"
+                  class="w-full rounded-lg border border-dashed border-[#5e93cc]/40 px-4 py-2 text-sm font-semibold text-[#5e93cc] hover:bg-[#5e93cc]/5 transition">
+            + Adicionar serviço
+          </button>
+        </div>
+      </div>
+
+      <div id="linhas-container" class="space-y-3"></div>
+
+      <div class="flex items-center justify-between pt-2">
+        <button type="button" onclick="adicionarLinha()"
+                class="text-sm text-[#5e93cc] hover:underline">+ Adicionar mais um serviço</button>
+        <button type="submit" id="btn-salvar"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors">
+          Salvar lançamento
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- Lista de lançamentos -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <h3 class="font-semibold text-gray-700">Lançamentos</h3>
+        <p class="text-xs text-gray-400 mt-0.5">{{ atendimentos|length }} registro(s) no período</p>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Filtro por cliente + datas -->
+        <form method="get" action="/lancamentos" class="flex items-center gap-2 flex-wrap">
+          <select name="cliente_id"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none">
+            <option value="">Todos os clientes</option>
+            {% for c in clientes %}
+            <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+          <input type="date" name="data_inicio" value="{{ data_inicio }}"
+                 class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none" />
+          <input type="date" name="data_fim" value="{{ data_fim }}"
+                 class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none" />
+          <button type="submit"
+                  class="rounded-lg bg-[#222049] px-3 py-1.5 text-xs text-white font-semibold hover:bg-[#1a1836] transition">Filtrar</button>
+        </form>
+
+        <!-- Seletor de colunas -->
+        <div class="relative" id="col-picker-wrapper">
+          <button type="button" onclick="toggleColPicker()"
+                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 flex items-center gap-1.5 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+            </svg>
+            Colunas ▾
+          </button>
+
+          <div id="col-picker" class="hidden absolute right-0 top-full mt-1 bg-white rounded-xl border border-gray-200 shadow-xl z-50 p-4 w-80">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Colunas visíveis</p>
+            <div class="grid grid-cols-2 gap-y-2 gap-x-4">
+              <!-- preenchido pelo JS -->
+            </div>
+            <div class="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+              <button type="button" onclick="selectAllCols()"
+                      class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition">Todas</button>
+              <button type="button" onclick="clearAllCols()"
+                      class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition">Nenhuma</button>
+              <button type="button" onclick="resetCols()"
+                      class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-[#5e93cc]/40 text-[#5e93cc] hover:bg-[#5e93cc]/5 transition">Padrão</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table id="tbl-lancamentos" class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+          <tr>
+            <th data-col="data"              class="px-4 py-3 text-left whitespace-nowrap">Data</th>
+            <th data-col="cliente"           class="px-4 py-3 text-left whitespace-nowrap">Cliente</th>
+            <th data-col="nome_paciente"     class="px-4 py-3 text-left whitespace-nowrap">Paciente</th>
+            <th data-col="cpf_paciente"      class="px-4 py-3 text-left whitespace-nowrap">CPF</th>
+            <th data-col="medico"            class="px-4 py-3 text-left whitespace-nowrap">Centro de Custo</th>
+            <th data-col="especialidade"     class="px-4 py-3 text-left whitespace-nowrap">Especialidade</th>
+            <th data-col="descricao_servico" class="px-4 py-3 text-left whitespace-nowrap">Serviço</th>
+            <th data-col="valor_servico"     class="px-4 py-3 text-right whitespace-nowrap">Valor</th>
+            <th data-col="condicao"          class="px-4 py-3 text-left whitespace-nowrap">Condição</th>
+            <th data-col="forma_pagamento"   class="px-4 py-3 text-left whitespace-nowrap">Forma</th>
+            <th data-col="parcela"           class="px-4 py-3 text-center whitespace-nowrap">Parcela</th>
+            <th data-col="digitos_cartao"    class="px-4 py-3 text-center whitespace-nowrap">Dígitos</th>
+            <th data-col="bandeira_cartao"   class="px-4 py-3 text-left whitespace-nowrap">Bandeira</th>
+            <th data-col="taxa_cartao"       class="px-4 py-3 text-right whitespace-nowrap">Taxa %</th>
+            <th data-col="valor_liquido"     class="px-4 py-3 text-right whitespace-nowrap">Vlr Líquido</th>
+            <th data-col="data_credito"      class="px-4 py-3 text-left whitespace-nowrap">Data Crédito</th>
+            <th data-col="banco_recebimento" class="px-4 py-3 text-left whitespace-nowrap">Banco</th>
+            <th data-col="prev_recebimento"  class="px-4 py-3 text-left whitespace-nowrap">Prev. Receb.</th>
+            <th data-col="status"            class="px-4 py-3 text-center whitespace-nowrap">Conciliação</th>
+            <th data-col="valor_clinica"     class="px-4 py-3 text-right whitespace-nowrap">Vlr Clínica</th>
+            <th data-col="pct_medico"        class="px-4 py-3 text-right whitespace-nowrap">% C.Custo</th>
+            <th data-col="valor_medico"      class="px-4 py-3 text-right whitespace-nowrap">Vlr C.Custo</th>
+            <th data-col="data_pgto_medico"  class="px-4 py-3 text-left whitespace-nowrap">Pgto C.Custo</th>
+            <th data-col="observacao"        class="px-4 py-3 text-left whitespace-nowrap">Observação</th>
+            <th data-col="lancado_por"       class="px-4 py-3 text-left whitespace-nowrap">Lançado por</th>
+            <th class="px-4 py-3 text-center whitespace-nowrap">Ações</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for a in atendimentos %}
+          <tr class="hover:bg-gray-50">
+            <td data-col="data"              class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
+            <td data-col="cliente"           class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{{ a.cliente.nome }}</td>
+            <td data-col="nome_paciente"     class="px-4 py-3 text-gray-600">{{ a.nome_paciente or '—' }}</td>
+            <td data-col="cpf_paciente"      class="px-4 py-3 text-gray-500 whitespace-nowrap font-mono text-xs">{{ a.cpf_paciente or '—' }}</td>
+            <td data-col="medico" class="px-4 py-3 text-gray-600">
+              {% if a.rateios_centro_custo %}
+                {% for r in a.rateios_centro_custo %}
+                  <span class="block">{{ r.centro_custo.nome }} · {{ '%.2f'|format(r.percentual|float) }}% · R$ {{ formatar_brl(r.valor) }}</span>
+                {% endfor %}
+              {% else %}
+                {{ (a.centro_custo.nome if a.centro_custo else a.medico) or '—' }}
+              {% endif %}
+            </td>
+            <td data-col="especialidade"     class="px-4 py-3 text-gray-500">{{ a.especialidade or '—' }}</td>
+            <td data-col="descricao_servico" class="px-4 py-3 text-gray-600 max-w-[160px] truncate">{{ a.descricao_servico or a.tipo_servico or '—' }}</td>
+            <td data-col="valor_servico"     class="px-4 py-3 text-right font-medium text-gray-800 whitespace-nowrap">R$ {{ '%.2f'|format(a.valor_servico|float) }}</td>
+            <td data-col="condicao"          class="px-4 py-3 text-gray-500 text-xs capitalize">{{ (a.condicao_pagamento.value if a.condicao_pagamento else '—').replace('_', ' ') }}</td>
+            <td data-col="forma_pagamento"   class="px-4 py-3 text-gray-500 text-xs capitalize whitespace-nowrap">{{ (a.forma_pagamento.value if a.forma_pagamento else '—').replace('_', ' ') }}</td>
+            <td data-col="parcela"           class="px-4 py-3 text-center text-gray-500 whitespace-nowrap">
+              {% if a.parcela_total > 1 %}
+                <span class="font-medium text-gray-700">{{ a.parcela_numero }}/{{ a.parcela_total }}</span>
+              {% else %}À vista{% endif %}
+            </td>
+            <td data-col="digitos_cartao"    class="px-4 py-3 text-center text-gray-500 font-mono text-xs">{{ a.ultimos_digitos_cartao or '—' }}</td>
+            <td data-col="bandeira_cartao"   class="px-4 py-3 text-gray-500 text-xs">{{ a.bandeira_cartao or '—' }}</td>
+            <td data-col="taxa_cartao"       class="px-4 py-3 text-right text-gray-500 text-xs">
+              {%- if a.taxa_cartao %}{{ '%.2f'|format(a.taxa_cartao|float) }}%{% else %}—{% endif -%}
+            </td>
+            <td data-col="valor_liquido"     class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
+              {%- if a.valor_liquido %}R$ {{ '%.2f'|format(a.valor_liquido|float) }}{% else %}—{% endif -%}
+            </td>
+            <td data-col="data_credito"      class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.data_credito.strftime('%d/%m/%Y') if a.data_credito else '—' }}</td>
+            <td data-col="banco_recebimento" class="px-4 py-3 text-gray-500 text-xs">{{ a.banco_recebimento or '—' }}</td>
+            <td data-col="prev_recebimento"  class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}</td>
+            <td data-col="status"            class="px-4 py-3 text-center whitespace-nowrap">
+              {% if a.status_conciliacao.value == 'conciliado' %}
+                <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">Conciliado</span>
+              {% elif a.status_conciliacao.value == 'divergencia' %}
+                <span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">Divergência</span>
+              {% else %}
+                <span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">Pendente</span>
+              {% endif %}
+            </td>
+            <td data-col="valor_clinica"     class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
+              {%- if a.valor_clinica %}R$ {{ '%.2f'|format(a.valor_clinica|float) }}{% else %}—{% endif -%}
+            </td>
+            <td data-col="pct_medico"        class="px-4 py-3 text-right text-gray-500 text-xs">
+              {%- if a.percentual_medico %}{{ '%.2f'|format(a.percentual_medico|float) }}%{% else %}—{% endif -%}
+            </td>
+            <td data-col="valor_medico"      class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
+              {%- if a.valor_medico %}R$ {{ '%.2f'|format(a.valor_medico|float) }}{% else %}—{% endif -%}
+            </td>
+            <td data-col="data_pgto_medico"  class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.data_pagamento_medico.strftime('%d/%m/%Y') if a.data_pagamento_medico else '—' }}</td>
+            <td data-col="observacao"        class="px-4 py-3 text-gray-500 text-xs max-w-[180px] truncate">{{ a.observacao or '—' }}</td>
+            <td data-col="lancado_por"       class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.lancado_por.nome if a.lancado_por else '—' }}</td>
+            <td class="px-4 py-3 text-center whitespace-nowrap">
+              {% if a.status_conciliacao.value != 'conciliado' %}
+              <div class="flex items-center justify-center gap-1">
+                <a href="/lancamentos/{{ a.id }}/editar"
+                   class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100 transition">✏ Editar</a>
+                <form method="post" action="/lancamentos/{{ a.id }}/excluir"
+                      onsubmit="return confirm('Excluir este lançamento?')" class="inline">
+                  <input type="hidden" name="cliente_id" value="{{ a.cliente_id }}">
+                  <button type="submit"
+                          class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition">✕ Excluir</button>
+                </form>
+              </div>
+              {% else %}
+              <span class="text-xs text-gray-300">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="26" class="px-4 py-8 text-center text-gray-400">Nenhum lançamento encontrado no período.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Template de linha — FORA do form, nunca enviado -->
+<div id="linha-template" style="display:none" aria-hidden="true">
+  <div class="linha-servico rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide linha-numero">Serviço</span>
+      <button type="button" onclick="removerLinha(this)"
+              class="text-gray-400 hover:text-red-500 text-lg leading-none transition">×</button>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div class="lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Paciente</label>
+        <input type="text" name="nome_paciente" placeholder="Nome do paciente"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">CPF</label>
+        <input type="text" name="cpf_paciente" placeholder="000.000.000-00" maxlength="14"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Centro de Custo</label>
+        <select name="centro_custo_id"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none centro-custo-select">
+          <option value="">— Selecione —</option>
+        </select>
+        <input type="hidden" name="rateios_json" class="rateios-json" value="[]">
+      </div>
+      <div class="campo-especialidade hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Especialidade</label>
+        <input type="text" name="especialidade" placeholder="Ortopedia, Clínica..."
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Serviço / Procedimento</label>
+        <input type="text" name="descricao_servico" placeholder="Consulta, exame, cirurgia..."
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Valor (R$) *</label>
+        <input type="number" name="valor_servico" step="0.01" min="0" placeholder="0,00"
+               oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 bg-white p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <p class="text-[11px] font-semibold text-gray-400 uppercase">Rateio por centro de custo</p>
+        <button type="button" onclick="adicionarRateioServico(this)"
+                class="text-[11px] font-semibold text-[#5e93cc] hover:underline">Adicionar centro</button>
+      </div>
+      <div class="space-y-2 rateios-servico"></div>
+      <p class="mt-2 text-[11px] text-gray-400 rateio-resumo">Percentual usado: 0%</p>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Forma</label>
+        <select name="forma_pagamento" onchange="atualizarLinha(this)"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          <option value="cartao_credito">Cartão</option>
+          <option value="pix">Pix</option>
+          <option value="transferencia">Transferência</option>
+          <option value="dinheiro">Dinheiro</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Condição</label>
+        <select name="condicao_pagamento" onchange="atualizarLinha(this)"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="avista">À vista</option>
+          <option value="parcelado">Parcelado</option>
+        </select>
+      </div>
+      <div class="campo-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">4 dígitos</label>
+        <input type="text" name="ultimos_digitos_cartao" maxlength="4" placeholder="0000"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="campo-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Bandeira</label>
+        <select name="bandeira_cartao"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          <option>Visa</option><option>Mastercard</option><option>Elo</option>
+          <option>Amex</option><option>Hipercard</option>
+        </select>
+      </div>
+      <div class="campo-parcelas-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Parcelas</label>
+        <input type="number" name="parcela_total" min="2" max="48" value="2"
+               oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="campo-recorrencia hidden lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Recorrência (dias)</label>
+        <div class="flex gap-1 flex-wrap mb-1">
+          <button type="button" onclick="setRec(this,'30/60')"        class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60</button>
+          <button type="button" onclick="setRec(this,'30/60/90')"     class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60/90</button>
+          <button type="button" onclick="setRec(this,'30/60/90/120')" class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60/90/120</button>
+          <button type="button" onclick="setRec(this,'60/90')"        class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">60/90</button>
+          <button type="button" onclick="setRec(this,'60/90/120')"    class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">60/90/120</button>
+        </div>
+        <input type="text" name="recorrencia" placeholder="30/60/90" oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-mono focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">% Médico</label>
+        <input type="number" name="percentual_medico" step="0.01" min="0" max="100" placeholder="30"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="campo-preview hidden">
+        <div class="rounded-lg bg-[#5e93cc]/5 border border-[#5e93cc]/25 px-3 py-2 flex items-center gap-2">
+          <span class="text-[#5e93cc] font-bold">÷</span>
+          <div>
+            <p class="text-[10px] text-[#5e93cc] uppercase font-semibold">Valor por parcela</p>
+            <p class="preview-valor text-base font-bold text-[#222049]">—</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Observação</label>
+        <input type="text" name="observacao" placeholder="Opcional"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ─── Seletor de colunas ────────────────────────────────────────────────────
+
+  const COLUNAS = [
+    { key: 'data',              label: 'Data',           def: true  },
+    { key: 'cliente',           label: 'Cliente',        def: true  },
+    { key: 'nome_paciente',     label: 'Paciente',       def: true  },
+    { key: 'cpf_paciente',      label: 'CPF',            def: false },
+    { key: 'medico',            label: 'Centro de Custo', def: true  },
+    { key: 'especialidade',     label: 'Especialidade',  def: false },
+    { key: 'descricao_servico', label: 'Serviço',        def: true  },
+    { key: 'valor_servico',     label: 'Valor',          def: true  },
+    { key: 'condicao',          label: 'Condição',       def: false },
+    { key: 'forma_pagamento',   label: 'Forma',          def: true  },
+    { key: 'parcela',           label: 'Parcela',        def: true  },
+    { key: 'digitos_cartao',    label: 'Dígitos',        def: false },
+    { key: 'bandeira_cartao',   label: 'Bandeira',       def: false },
+    { key: 'taxa_cartao',       label: 'Taxa %',         def: false },
+    { key: 'valor_liquido',     label: 'Vlr Líquido',    def: false },
+    { key: 'data_credito',      label: 'Data Crédito',   def: false },
+    { key: 'banco_recebimento', label: 'Banco',          def: false },
+    { key: 'prev_recebimento',  label: 'Prev. Receb.',   def: true  },
+    { key: 'status',            label: 'Conciliação',    def: true  },
+    { key: 'valor_clinica',     label: 'Vlr Clínica',    def: false },
+    { key: 'pct_medico',        label: '% C.Custo',      def: false },
+    { key: 'valor_medico',      label: 'Vlr C.Custo',    def: false },
+    { key: 'data_pgto_medico',  label: 'Pgto C.Custo',   def: false },
+    { key: 'observacao',        label: 'Observação',     def: false },
+    { key: 'lancado_por',       label: 'Lançado por',    def: false },
+  ];
+
+  const COL_KEY = 'bpo_lancamentos_colunas_v1';
+
+  function estadoDefault() {
+    const s = {};
+    COLUNAS.forEach(c => s[c.key] = c.def);
+    return s;
+  }
+
+  function carregarEstado() {
+    try {
+      const raw = localStorage.getItem(COL_KEY);
+      if (raw) return { ...estadoDefault(), ...JSON.parse(raw) };
+    } catch {}
+    return estadoDefault();
+  }
+
+  function salvarEstado(estado) {
+    localStorage.setItem(COL_KEY, JSON.stringify(estado));
+  }
+
+  function aplicarEstado(estado) {
+    COLUNAS.forEach(({ key }) => {
+      document.querySelectorAll(`[data-col="${key}"]`).forEach(el => {
+        el.style.display = estado[key] ? '' : 'none';
+      });
+    });
+    // atualiza checkboxes se picker estiver aberto
+    COLUNAS.forEach(({ key }) => {
+      const chk = document.getElementById(`col-chk-${key}`);
+      if (chk) chk.checked = !!estado[key];
+    });
+  }
+
+  function renderizarCheckboxes(estado) {
+    const grid = document.querySelector('#col-picker .grid');
+    grid.innerHTML = '';
+    COLUNAS.forEach(({ key, label }) => {
+      const id = `col-chk-${key}`;
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.id = id;
+      chk.dataset.colkey = key;
+      chk.checked = !!estado[key];
+      chk.className = 'rounded border-gray-300 text-[#5e93cc] cursor-pointer w-3.5 h-3.5 flex-shrink-0';
+      chk.addEventListener('change', () => {
+        const s = carregarEstado();
+        s[key] = chk.checked;
+        salvarEstado(s);
+        aplicarEstado(s);
+      });
+      const lbl = document.createElement('label');
+      lbl.htmlFor = id;
+      lbl.textContent = label;
+      lbl.className = 'text-xs text-gray-600 cursor-pointer select-none';
+      div.appendChild(chk);
+      div.appendChild(lbl);
+      grid.appendChild(div);
+    });
+  }
+
+  function toggleColPicker() {
+    const picker = document.getElementById('col-picker');
+    const visivel = !picker.classList.contains('hidden');
+    if (!visivel) {
+      renderizarCheckboxes(carregarEstado());
+    }
+    picker.classList.toggle('hidden');
+  }
+
+  function selectAllCols() {
+    const s = {};
+    COLUNAS.forEach(c => s[c.key] = true);
+    salvarEstado(s);
+    aplicarEstado(s);
+    renderizarCheckboxes(s);
+  }
+
+  function clearAllCols() {
+    const s = {};
+    COLUNAS.forEach(c => s[c.key] = false);
+    salvarEstado(s);
+    aplicarEstado(s);
+    renderizarCheckboxes(s);
+  }
+
+  function resetCols() {
+    localStorage.removeItem(COL_KEY);
+    const s = estadoDefault();
+    aplicarEstado(s);
+    renderizarCheckboxes(s);
+  }
+
+  // fecha o picker ao clicar fora dele
+  document.addEventListener('click', e => {
+    const w = document.getElementById('col-picker-wrapper');
+    if (w && !w.contains(e.target)) {
+      document.getElementById('col-picker').classList.add('hidden');
+    }
+  });
+
+  // inicialização
+  (function () {
+    const s = carregarEstado();
+    renderizarCheckboxes(s);
+    aplicarEstado(s);
+  })();
+
+  // ─── Centros de custo ─────────────────────────────────────────────────────
+
+  const centrosPorCliente = {{ centros_por_cliente | tojson }};
+
+  function popularCentrosCusto(sel, clienteId) {
+    const centros = centrosPorCliente[clienteId] || [];
+    sel.innerHTML = '<option value="">— Selecione —</option>';
+    centros.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.codigo ? cc.codigo + ' — ' + cc.nome : cc.nome;
+      sel.appendChild(opt);
+    });
+  }
+
+  function popularRateioSelect(sel, clienteId) {
+    const centros = centrosPorCliente[clienteId] || [];
+    const selecionado = sel.value;
+    sel.innerHTML = '<option value="">Selecione...</option>';
+    centros.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.codigo ? cc.codigo + ' - ' + cc.nome : cc.nome;
+      opt.dataset.isMedico = cc.is_medico ? '1' : '0';
+      opt.dataset.especialidade = cc.especialidade || '';
+      sel.appendChild(opt);
+    });
+    sel.value = selecionado;
+  }
+
+  function adicionarRateioServico(origem, percentual = '') {
+    const linha = origem.classList?.contains('linha-servico') ? origem : origem.closest('.linha-servico');
+    const container = linha?.querySelector('.rateios-servico');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 md:grid-cols-[1fr_100px_130px_34px] gap-2 items-center';
+    row.innerHTML = `
+      <select class="rateio-centro-select rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none"
+              onchange="atualizarRateioServico(this.closest('.linha-servico'))">
+        <option value="">Selecione...</option>
+      </select>
+      <input type="number" value="${percentual}" step="0.01" min="0" max="100" placeholder="%"
+             oninput="atualizarRateioServico(this.closest('.linha-servico'))"
+             class="rateio-percentual rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+      <div class="rateio-valor rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-600">R$ 0,00</div>
+      <button type="button" onclick="removerRateioServico(this)"
+              class="h-9 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200">x</button>
+    `;
+    container.appendChild(row);
+    popularRateioSelect(row.querySelector('.rateio-centro-select'), document.querySelector('[name="cliente_id"]').value);
+    atualizarRateioServico(linha);
+  }
+
+  function removerRateioServico(botao) {
+    const linha = botao.closest('.linha-servico');
+    botao.closest('.rateios-servico > div').remove();
+    atualizarRateioServico(linha);
+  }
+
+  function atualizarRateioServico(linha) {
+    if (!linha) return;
+    const total = parseFloat(linha.querySelector('[name="valor_servico"]')?.value || '0') || 0;
+    let soma = 0;
+    const rateios = [];
+    linha.querySelectorAll('.rateios-servico > div').forEach(row => {
+      const select = row.querySelector('.rateio-centro-select');
+      const pctInput = row.querySelector('.rateio-percentual');
+      const pct = parseFloat(pctInput?.value || '0') || 0;
+      const valor = total * pct / 100;
+      soma += pct;
+      row.querySelector('.rateio-valor').textContent = 'R$ ' + valor.toFixed(2).replace('.', ',');
+      if (select.value && pct > 0) {
+        rateios.push({ centro_custo_id: select.value, percentual: pctInput.value });
+      }
+    });
+    const resumo = linha.querySelector('.rateio-resumo');
+    if (resumo) {
+      const restante = 100 - soma;
+      resumo.textContent = `Percentual usado: ${soma.toFixed(2).replace('.', ',')}% | Restante: ${restante.toFixed(2).replace('.', ',')}%`;
+      resumo.className = 'mt-2 text-[11px] ' + (Math.abs(restante) < 0.01 ? 'text-green-600' : 'text-amber-600') + ' rateio-resumo';
+    }
+    const hidden = linha.querySelector('.rateios-json');
+    if (hidden) hidden.value = JSON.stringify(rateios);
+    const centroPrincipal = linha.querySelector('.centro-custo-select');
+    if (centroPrincipal && rateios.length) centroPrincipal.value = rateios[0].centro_custo_id;
+    const especialidadeInput = linha.querySelector('[name="especialidade"]');
+    const especialidadeCampo = linha.querySelector('.campo-especialidade');
+    const medicoSelecionado = Array.from(linha.querySelectorAll('.rateio-centro-select')).find(select => {
+      const option = select.options[select.selectedIndex];
+      return select.value && option?.dataset.isMedico === '1';
+    });
+    if (especialidadeInput && medicoSelecionado) {
+      const option = medicoSelecionado.options[medicoSelecionado.selectedIndex];
+      especialidadeInput.value = option.dataset.especialidade || '';
+      especialidadeInput.dataset.preenchidaPorMedico = '1';
+    } else if (especialidadeInput?.dataset.preenchidaPorMedico === '1') {
+      especialidadeInput.value = '';
+      delete especialidadeInput.dataset.preenchidaPorMedico;
+    }
+    if (especialidadeCampo) especialidadeCampo.classList.toggle('hidden', !medicoSelecionado);
+  }
+
+  function onClienteChange(clienteId) {
+    document.querySelectorAll('.centro-custo-select').forEach(sel => {
+      popularCentrosCusto(sel, clienteId);
+    });
+    document.querySelectorAll('.rateio-centro-select').forEach(sel => {
+      popularRateioSelect(sel, clienteId);
+    });
+    document.querySelectorAll('.linha-servico').forEach(atualizarRateioServico);
+  }
+
+  // ─── Formulário de lançamento ──────────────────────────────────────────────
+
+  let contador = 0;
+
+  function adicionarLinha() {
+    contador++;
+    const tpl = document.getElementById('linha-template');
+    const clone = tpl.querySelector('.linha-servico').cloneNode(true);
+    clone.querySelector('.linha-numero').textContent = 'Serviço ' + contador;
+
+    if (contador > 1) {
+      const primeira = document.querySelector('#linhas-container .linha-servico');
+      if (primeira) {
+        clone.querySelector('[name="nome_paciente"]').value =
+          primeira.querySelector('[name="nome_paciente"]').value;
+        clone.querySelector('[name="cpf_paciente"]').value =
+          primeira.querySelector('[name="cpf_paciente"]').value;
+      }
+    }
+
+    const clienteId = document.querySelector('[name="cliente_id"]').value;
+    const ccSel = clone.querySelector('.centro-custo-select');
+    if (ccSel) popularCentrosCusto(ccSel, clienteId);
+
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(clone);
+    document.getElementById('linhas-container').appendChild(wrapper);
+    const valorServico = clone.querySelector('[name="valor_servico"]');
+    if (valorServico) valorServico.addEventListener('input', () => atualizarRateioServico(clone));
+    adicionarRateioServico(clone, '100');
+    atualizarBotao();
+  }
+
+  function removerLinha(btn) {
+    const container = document.getElementById('linhas-container');
+    if (container.querySelectorAll('.linha-servico').length <= 1) return;
+    btn.closest('.linha-servico').parentElement.remove();
+    renumerar();
+    atualizarBotao();
+  }
+
+  function renumerar() {
+    document.querySelectorAll('#linhas-container .linha-numero').forEach((el, i) => {
+      el.textContent = 'Serviço ' + (i + 1);
+    });
+    contador = document.querySelectorAll('#linhas-container .linha-servico').length;
+  }
+
+  function atualizarLinha(select) {
+    const bloco = select.closest('.linha-servico');
+    const forma = bloco.querySelector('[name="forma_pagamento"]').value;
+    const condicao = bloco.querySelector('[name="condicao_pagamento"]').value;
+    const isCartao = forma === 'cartao_credito';
+    const isParcelado = condicao === 'parcelado';
+
+    bloco.querySelectorAll('.campo-cartao').forEach(el => el.classList.toggle('hidden', !isCartao));
+    bloco.querySelector('.campo-parcelas-cartao').classList.toggle('hidden', !(isCartao && isParcelado));
+    bloco.querySelector('.campo-recorrencia').classList.toggle('hidden', !(!isCartao && isParcelado));
+    bloco.querySelector('.campo-preview').classList.toggle('hidden', !isParcelado);
+  }
+
+  function setRec(btn, valor) {
+    const bloco = btn.closest('.linha-servico');
+    bloco.querySelector('[name="recorrencia"]').value = valor;
+    calcularPreviewLinha(btn);
+  }
+
+  function calcularPreviewLinha(el) {
+    const bloco = el.closest('.linha-servico');
+    if (!bloco) return;
+    const valorInput = bloco.querySelector('[name="valor_servico"]');
+    const forma = bloco.querySelector('[name="forma_pagamento"]').value;
+    const condicao = bloco.querySelector('[name="condicao_pagamento"]').value;
+    const previewEl = bloco.querySelector('.preview-valor');
+    if (!previewEl) return;
+
+    if (condicao !== 'parcelado' || !valorInput.value) { previewEl.textContent = '—'; return; }
+
+    const total = parseFloat(valorInput.value);
+    let n = 1;
+    if (forma === 'cartao_credito') {
+      n = parseInt(bloco.querySelector('[name="parcela_total"]')?.value || 1);
+    } else {
+      const rec = bloco.querySelector('[name="recorrencia"]')?.value || '';
+      const partes = rec.split('/').filter(x => x.trim().match(/^\d+$/));
+      n = partes.length || 1;
+    }
+    if (n > 0 && total > 0) {
+      previewEl.textContent = 'R$ ' + (total / n).toFixed(2).replace('.', ',') + ' × ' + n + 'x';
+    }
+  }
+  function atualizarBotao() {
+    const total = document.querySelectorAll('#linhas-container .linha-servico').length;
+    document.getElementById('btn-salvar').textContent =
+      total === 1 ? 'Salvar lançamento' : 'Salvar ' + total + ' lançamentos';
+  }
+
+  document.getElementById('form-lancamento').addEventListener('submit', function (e) {
+    const clienteId = this.querySelector('[name="cliente_id"]').value;
+    const dataAtend = this.querySelector('[name="data_atendimento"]').value;
+    if (!clienteId) { alert('Selecione o cliente.'); e.preventDefault(); return; }
+    if (!dataAtend) { alert('Informe a data do atendimento.'); e.preventDefault(); return; }
+    const valores = this.querySelectorAll('[name="valor_servico"]');
+    const temValor = Array.from(valores).some(i => i.value && parseFloat(i.value) > 0);
+    if (!temValor) { alert('Informe o valor de ao menos um serviço.'); e.preventDefault(); return; }
+    for (const linha of this.querySelectorAll('.linha-servico')) {
+      const valor = parseFloat(linha.querySelector('[name="valor_servico"]')?.value || '0') || 0;
+      if (!valor) continue;
+      atualizarRateioServico(linha);
+      const selects = Array.from(linha.querySelectorAll('.rateio-centro-select'));
+      const preenchidos = selects.filter(sel => sel.value);
+      const centros = preenchidos.map(sel => sel.value);
+      const soma = preenchidos.reduce((acc, select) => {
+        const input = select.closest('.rateios-servico > div').querySelector('.rateio-percentual');
+        return acc + (parseFloat(input?.value || '0') || 0);
+      }, 0);
+      const incompleto = selects.some(select => {
+        const input = select.closest('.rateios-servico > div').querySelector('.rateio-percentual');
+        return Boolean(select.value) !== Boolean(parseFloat(input?.value || '0'));
+      });
+      if (preenchidos.length && (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01)) {
+        alert('Em cada receita, selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  adicionarLinha();
+</script>
+{% endblock %}

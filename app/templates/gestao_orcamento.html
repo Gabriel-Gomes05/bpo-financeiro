@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Orçamento — FLIC{% endblock %}
+{% block page_title %}Orçamento{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Filtro -->
+  <form method="get" action="/gestao/orcamento"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente</label>
+      <select name="cliente_id" required onchange="this.form.submit()"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Mês</label>
+      <select name="mes" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for m in range(1,13) %}
+        <option value="{{ m }}" {% if m == mes %}selected{% endif %}>
+          {{ ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][m] }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Ano</label>
+      <select name="ano" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for a in range(2023, 2028) %}
+        <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      Carregar
+    </button>
+  </form>
+
+  {% if cliente_selecionado %}
+  <form method="post" action="/gestao/orcamento">
+    <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+    <input type="hidden" name="mes" value="{{ mes }}">
+    <input type="hidden" name="ano" value="{{ ano }}">
+
+    <section class="mb-6 overflow-hidden rounded-2xl border border-[#5e93cc]/30 bg-gradient-to-br from-[#222049] to-[#3b5f91] text-white shadow-lg">
+      <div class="grid grid-cols-1 gap-5 p-6 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div>
+          <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-blue-100">Planejamento inteligente</span>
+          <h2 class="mt-3 text-xl font-bold">Recomendação entre receitas e despesas</h2>
+          <p class="mt-1 max-w-2xl text-sm text-blue-100/80">Base utilizada: receitas e despesas efetivamente realizadas em {{ ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][mes_base] }}/{{ ano_base }}.</p>
+        </div>
+        <div class="rounded-xl bg-white/10 p-3">
+          <label class="block text-[10px] font-semibold uppercase tracking-wide text-blue-100">Margem desejada</label>
+          <div class="mt-1 flex items-center gap-2"><input id="margem-alvo" type="number" min="0" max="95" step="1" value="{{ margem_recomendada|float }}" class="w-24 rounded-lg border border-white/20 bg-white px-3 py-2 text-right text-sm font-bold text-[#222049]"><span class="font-bold">%</span></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-px bg-white/10 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="bg-[#222049]/60 p-5"><p class="text-xs uppercase tracking-wide text-blue-200">Receita real · mês anterior</p><p class="mt-2 text-2xl font-black">R$ {{ brl(receita_base_real) }}</p></div>
+        <div class="bg-[#222049]/60 p-5"><p class="text-xs uppercase tracking-wide text-blue-200">Despesa real · mês anterior</p><p class="mt-2 text-2xl font-black">R$ {{ brl(despesa_base_real) }}</p></div>
+        <div class="bg-[#222049]/60 p-5"><p class="text-xs uppercase tracking-wide text-emerald-200">Limite recomendado de despesas</p><p id="rec-limite-despesas" class="mt-2 text-2xl font-black text-emerald-200">R$ {{ brl(limite_despesas) }}</p><p id="rec-acao-despesas" class="mt-2 text-xs text-blue-100/75"></p></div>
+        <div class="bg-[#222049]/60 p-5"><p class="text-xs uppercase tracking-wide text-amber-200">Receita mínima recomendada</p><p id="rec-receita-necessaria" class="mt-2 text-2xl font-black text-amber-200">R$ {{ brl(receita_necessaria) }}</p><p id="rec-acao-receitas" class="mt-2 text-xs text-blue-100/75"></p></div>
+      </div>
+      <div id="rec-diagnostico" class="border-t border-white/10 bg-white/5 px-6 py-4 text-sm text-blue-50"></div>
+    </section>
+
+    <div class="space-y-4">
+      {% for grupo in grupos %}
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <!-- Cabeçalho grupo -->
+        <div class="px-5 py-3 flex items-center justify-between"
+             style="background:{% if grupo.tipo == 'receita' %}#f0fdf4{% else %}#fff7f7{% endif %};">
+          <p class="text-xs font-bold uppercase tracking-widest"
+             style="color:{% if grupo.tipo == 'receita' %}#16a34a{% else %}#dc2626{% endif %};">
+            {{ grupo.nome }}
+          </p>
+        </div>
+
+        <!-- Categorias -->
+        <div class="divide-y divide-gray-100">
+          {% for cat in grupo.categorias %}
+          <div class="flex items-center justify-between px-5 py-3">
+            <label class="text-sm text-gray-700 flex-1">
+              {% if cat.codigo %}
+              <span class="mr-2 rounded bg-gray-100 px-2 py-0.5 font-mono text-xs font-semibold text-gray-600">{{ cat.codigo }}</span>
+              {% endif %}
+              {{ cat.nome }}
+            </label>
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-gray-400">R$</span>
+              {% set chave_orcamento = grupo.tipo ~ ':' ~ cat.key %}
+              <input type="number" name="val_{{ grupo.tipo }}_{{ cat.key }}" step="0.01" min="0"
+                     value="{{ '%.2f'|format((valores.get(chave_orcamento, valores.get(cat.key)) or 0)|float) }}"
+                     data-orcamento-tipo="{{ grupo.tipo }}"
+                     class="w-36 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-right focus:border-[#5e93cc] outline-none font-mono" />
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex justify-end mt-4">
+      <button type="submit"
+              class="bg-[#222049] hover:bg-[#1a1836] text-white font-bold px-8 py-3 rounded-xl text-sm">
+        Salvar orçamento
+      </button>
+    </div>
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (() => {
+    const campos = [...document.querySelectorAll('[data-orcamento-tipo]')];
+    const margemInput = document.getElementById('margem-alvo');
+    const receitaBase = {{ receita_base_real|float }};
+    const despesaBase = {{ despesa_base_real|float }};
+    if (!campos.length || !margemInput) return;
+    const dinheiro = valor => new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(valor || 0);
+    const numero = campo => Math.max(0, Number(String(campo.value || 0).replace(',', '.')) || 0);
+    function recalcular() {
+      const receitas = campos.filter(c => c.dataset.orcamentoTipo === 'receita').reduce((s,c) => s + numero(c), 0);
+      const despesas = campos.filter(c => c.dataset.orcamentoTipo === 'despesa').reduce((s,c) => s + numero(c), 0);
+      const margem = Math.min(95, Math.max(0, numero(margemInput)));
+      const fator = 1 - margem / 100;
+      const limiteDespesas = receitaBase * fator;
+      const receitaNecessaria = fator > 0 ? despesaBase / fator : 0;
+      const folgaDespesa = limiteDespesas - despesas;
+      const folgaReceita = receitas - receitaNecessaria;
+      document.getElementById('rec-limite-despesas').textContent = dinheiro(limiteDespesas);
+      document.getElementById('rec-receita-necessaria').textContent = dinheiro(receitaNecessaria);
+      document.getElementById('rec-acao-despesas').textContent = folgaDespesa >= 0
+        ? `Há margem para até ${dinheiro(folgaDespesa)} em despesas adicionais.`
+        : `Recomendação: reduzir despesas em ${dinheiro(Math.abs(folgaDespesa))}.`;
+      document.getElementById('rec-acao-receitas').textContent = folgaReceita >= 0
+        ? `A receita prevista supera o mínimo em ${dinheiro(folgaReceita)}.`
+        : `Recomendação: aumentar receitas em ${dinheiro(Math.abs(folgaReceita))}.`;
+      const resultado = receitas - despesas;
+      const margemAtual = receitas > 0 ? resultado / receitas * 100 : 0;
+      const diagnostico = document.getElementById('rec-diagnostico');
+      if (!receitaBase && !despesaBase) diagnostico.textContent = 'O mês anterior ainda não possui receitas ou despesas realizadas. As recomendações ficarão disponíveis após o primeiro fechamento.';
+      else if (!receitas && !despesas) diagnostico.textContent = 'A referência do mês anterior está pronta. Preencha o orçamento abaixo para comparar o planejamento.';
+      else if (receitas >= receitaNecessaria && despesas <= limiteDespesas) diagnostico.innerHTML = `<strong>Planejamento alinhado à base real:</strong> resultado previsto de ${dinheiro(resultado)} e margem de ${margemAtual.toFixed(1).replace('.', ',')}%.`;
+      else diagnostico.innerHTML = `<strong>Atenção ao planejamento:</strong> ajuste receitas ou despesas para respeitar a meta de ${margem.toFixed(0)}% calculada sobre o realizado do mês anterior.`;
+    }
+    campos.forEach(c => c.addEventListener('input', recalcular));
+    margemInput.addEventListener('input', recalcular);
+    recalcular();
+  })();
+</script>
+{% endblock %}

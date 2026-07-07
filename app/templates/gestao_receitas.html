@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Receitas — FLIC{% endblock %}
+{% block page_title %}Gestão de Receitas{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Filtro -->
+  <form method="get" action="/gestao/receitas"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente</label>
+      <select name="cliente_id" required onchange="this.form.submit()"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Mês</label>
+      <select name="mes" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for m in range(1,13) %}
+        <option value="{{ m }}" {% if m == mes %}selected{% endif %}>
+          {{ ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][m] }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Ano</label>
+      <select name="ano" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for a in range(2023, 2028) %}
+        <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      Filtrar
+    </button>
+  </form>
+
+  {% if cliente_selecionado %}
+
+  <!-- Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Total Receitas</p>
+      <p class="text-2xl font-bold text-emerald-600">R$ {{ brl(total) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Atendimentos</p>
+      <p class="text-2xl font-bold text-[#222049]">{{ atendimentos|length }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Ticket Médio</p>
+      <p class="text-2xl font-bold text-slate-700">
+        R$ {% if atendimentos %}{{ brl(total / atendimentos|length) }}{% else %}0,00{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-800">Lançamentos do período</h3>
+    </div>
+    {% if atendimentos %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3 text-left">Data</th>
+            <th class="px-4 py-3 text-left">Descrição / Paciente</th>
+            <th class="px-4 py-3 text-left">Forma de Recebimento</th>
+            <th class="px-4 py-3 text-left">Bandeira</th>
+            <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-right">Valor Serviço</th>
+            <th class="px-4 py-3 text-right">Valor Líquido</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for a in atendimentos %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
+            <td class="px-4 py-3 text-gray-700">
+              <p class="font-medium">{{ a.nome_paciente or '—' }}</p>
+              {% if a.descricao_servico or a.tipo_servico %}
+              <p class="text-xs text-gray-400">{{ a.descricao_servico or a.tipo_servico }}</p>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                {{ (a.forma_pagamento.value if a.forma_pagamento else '—') | replace('_',' ') | capitalize }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500">{{ a.bandeira_cartao or '—' }}</td>
+            <td class="px-4 py-3 text-center">
+              {% if a.status_conciliacao and a.status_conciliacao.value == 'conciliado' %}
+              <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Conciliado</span>
+              {% elif a.status_conciliacao and a.status_conciliacao.value == 'divergencia' %}
+              <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">Divergência</span>
+              {% else %}
+              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Pendente</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">R$ {{ brl(a.valor_servico) }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">
+              R$ {{ brl(a.valor_liquido or a.valor_servico) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-emerald-50 border-t border-emerald-100">
+          <tr>
+            <td colspan="6" class="px-4 py-3 text-right text-xs font-semibold uppercase text-emerald-700">Total</td>
+            <td class="px-4 py-3 text-right font-bold text-emerald-700">R$ {{ brl(total) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-10 text-center text-sm text-gray-400">Nenhum lançamento encontrado neste período.</p>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

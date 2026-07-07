@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DRE - {{ cliente.nome }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;overflow:hidden;background:#111027;font-family:Inter,Segoe UI,Arial,sans-serif}.slide{position:absolute;inset:0;display:grid;place-items:center;padding:clamp(28px,6vw,88px);opacity:0;transform:translateX(7%) scale(.98);pointer-events:none;transition:opacity .5s ease,transform .55s cubic-bezier(.22,.8,.22,1)}.slide.ativa{opacity:1;transform:none;pointer-events:auto}.slide.saindo{transform:translateX(-7%) scale(.98)}.conteudo{width:min(1160px,100%);max-height:78vh;overflow:auto}.entrada{animation:subir .55s ease both}.entrada:nth-child(2){animation-delay:.08s}.entrada:nth-child(3){animation-delay:.16s}.entrada:nth-child(4){animation-delay:.24s}@keyframes subir{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}.grade{background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:40px 40px}@media(prefers-reduced-motion:reduce){.slide,.entrada{transition:none;animation:none}}@media print{body{overflow:visible}.slide{position:relative;opacity:1;transform:none;min-height:100vh;page-break-after:always}.controles{display:none!important}.conteudo{max-height:none;overflow:visible}}
+  </style>
+</head>
+<body class="text-white">
+<main>
+  <section class="slide ativa grade bg-gradient-to-br from-[#222049] via-[#293d6a] to-[#5e93cc]" data-slide>
+    <div class="conteudo text-center">
+      <span class="entrada inline-block rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[.28em] text-blue-100">Apresentação financeira</span>
+      <h1 class="entrada mt-7 text-4xl font-black sm:text-6xl lg:text-7xl">DRE · {{ cliente.nome }}</h1>
+      <p class="entrada mt-5 text-xl text-blue-100/85">Resultado e principais tópicos do período</p>
+      <p class="entrada mt-10 text-sm text-blue-100/60">{{ dre.inicio.strftime('%d/%m/%Y') }} a {{ dre.fim.strftime('%d/%m/%Y') }}</p>
+    </div>
+  </section>
+
+  <section class="slide bg-slate-50 text-[#222049]" data-slide>
+    <div class="conteudo">
+      <p class="entrada text-xs font-bold uppercase tracking-[.25em] text-[#5e93cc]">Resumo executivo</p>
+      <h2 class="entrada mt-3 text-3xl font-black sm:text-5xl">O período em quatro números</h2>
+      <div class="mt-9 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="entrada rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm"><p class="text-xs font-bold uppercase text-emerald-600">Receitas</p><p class="mt-3 text-3xl font-black text-emerald-700">R$ {{ brl(dre.total_real_rec) }}</p><p class="mt-2 text-xs text-slate-500">{% if comparativo.delta_receitas >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_receitas) }} vs. mês anterior</p></div>
+        <div class="entrada rounded-2xl border border-rose-100 bg-white p-6 shadow-sm"><p class="text-xs font-bold uppercase text-rose-600">Despesas</p><p class="mt-3 text-3xl font-black text-rose-700">R$ {{ brl(dre.total_real_desp) }}</p><p class="mt-2 text-xs text-slate-500">{{ dre.peso_despesa_pct }}% da receita</p></div>
+        <div class="entrada rounded-2xl border border-sky-100 bg-white p-6 shadow-sm"><p class="text-xs font-bold uppercase text-sky-600">Resultado</p><p class="mt-3 text-3xl font-black {% if dre.resultado_real >= 0 %}text-emerald-700{% else %}text-rose-700{% endif %}">R$ {{ brl(dre.resultado_real) }}</p><p class="mt-2 text-xs text-slate-500">{% if comparativo.delta_resultado >= 0 %}+{% endif %}R$ {{ brl(comparativo.delta_resultado) }} vs. mês anterior</p></div>
+        <div class="entrada rounded-2xl border border-violet-100 bg-white p-6 shadow-sm"><p class="text-xs font-bold uppercase text-violet-600">Margem</p><p class="mt-3 text-3xl font-black text-violet-700">{{ dre.margem_real_pct }}%</p><p class="mt-2 text-xs text-slate-500">Orçada: {{ dre.margem_orcada_pct }}%</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide grade bg-gradient-to-br from-[#17162f] to-[#263e69]" data-slide>
+    <div class="conteudo">
+      <p class="entrada text-xs font-bold uppercase tracking-[.25em] text-blue-200">Tópicos gerados</p>
+      <h2 class="entrada mt-3 text-3xl font-black sm:text-5xl">Leituras importantes</h2>
+      <div class="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {% for insight in insights %}
+        <div class="entrada rounded-2xl border border-white/10 bg-white/10 p-6 backdrop-blur"><p class="text-xs font-bold uppercase tracking-wider text-blue-200">{{ insight.titulo }}</p><p class="mt-3 text-lg leading-relaxed text-white/90">{{ insight.texto }}</p></div>
+        {% else %}<div class="entrada rounded-2xl border border-white/10 bg-white/10 p-8 text-blue-100">Sem alertas relevantes no período.</div>{% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="slide bg-slate-50 text-[#222049]" data-slide>
+    <div class="conteudo">
+      <p class="entrada text-xs font-bold uppercase tracking-[.25em] text-[#5e93cc]">Planejamento</p><h2 class="entrada mt-3 text-3xl font-black sm:text-5xl">Orçado x realizado</h2>
+      <div class="mt-9 grid grid-cols-1 gap-5 md:grid-cols-3">
+        {% for titulo, orcado, real, cor in [('Receitas',dre.total_orcado_rec,dre.total_real_rec,'emerald'),('Despesas',dre.total_orcado_desp,dre.total_real_desp,'rose'),('Resultado',dre.resultado_orcado,dre.resultado_real,'sky')] %}
+        <div class="entrada rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><p class="text-sm font-bold text-slate-500">{{ titulo }}</p><div class="mt-5 space-y-4"><div><p class="text-xs uppercase text-slate-400">Orçado</p><p class="mt-1 text-2xl font-black text-slate-700">R$ {{ brl(orcado) }}</p></div><div><p class="text-xs uppercase text-slate-400">Realizado</p><p class="mt-1 text-3xl font-black {% if titulo == 'Resultado' and real < 0 %}text-rose-700{% else %}text-[#222049]{% endif %}">R$ {{ brl(real) }}</p></div><p class="rounded-lg bg-slate-50 p-3 text-sm font-semibold">Diferença: {% if real-orcado >= 0 %}+{% endif %}R$ {{ brl(real-orcado) }}</p></div></div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="slide grade bg-gradient-to-br from-[#222049] to-[#304e7c]" data-slide>
+    <div class="conteudo">
+      <p class="entrada text-xs font-bold uppercase tracking-[.25em] text-blue-200">Composição</p><h2 class="entrada mt-3 text-3xl font-black sm:text-5xl">Maiores despesas</h2>
+      <div class="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2">
+        {% for item in dre.maiores_despesas %}
+        <div class="entrada flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/10 p-5"><div class="min-w-0"><p class="truncate font-bold">{{ item.nome }}</p><p class="text-xs text-blue-200">Orçado: R$ {{ brl(item.orcado) }}</p></div><p class="shrink-0 text-xl font-black text-rose-200">R$ {{ brl(item.real) }}</p></div>
+        {% else %}<div class="entrada rounded-2xl border border-white/10 bg-white/10 p-8 text-blue-100">Nenhuma despesa realizada no período.</div>{% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {% set escala = ([1] + (serie_mensal | map(attribute='receita') | list) + (serie_mensal | map(attribute='despesa') | list)) | max %}
+  <section class="slide bg-slate-50 text-[#222049]" data-slide>
+    <div class="conteudo">
+      <p class="entrada text-xs font-bold uppercase tracking-[.25em] text-[#5e93cc]">Tendência</p><h2 class="entrada mt-3 text-3xl font-black sm:text-5xl">Evolução dos últimos seis meses</h2>
+      <div class="mt-10 flex h-72 items-end gap-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {% for item in serie_mensal %}<div class="entrada flex h-full flex-1 flex-col justify-end gap-1"><div class="mx-auto w-full max-w-10 rounded-t bg-emerald-400" style="height:{{ ((item.receita / escala) * 100)|float }}%" title="Receita R$ {{ brl(item.receita) }}"></div><div class="mx-auto w-full max-w-10 rounded-t bg-rose-400" style="height:{{ ((item.despesa / escala) * 100)|float }}%" title="Despesa R$ {{ brl(item.despesa) }}"></div><p class="mt-2 text-center text-[10px] font-bold text-slate-500">{{ item.label }}</p></div>{% endfor %}
+      </div><div class="mt-3 flex justify-center gap-5 text-xs text-slate-500"><span><b class="text-emerald-500">■</b> Receitas</span><span><b class="text-rose-500">■</b> Despesas</span></div>
+    </div>
+  </section>
+
+  <section class="slide grade bg-gradient-to-br from-[#5e93cc] to-[#222049]" data-slide><div class="conteudo text-center"><p class="entrada text-xs font-bold uppercase tracking-[.3em] text-blue-100">Conclusão</p><h2 class="entrada mt-5 text-4xl font-black sm:text-6xl">Próximos passos</h2><p class="entrada mx-auto mt-6 max-w-3xl text-xl leading-relaxed text-blue-100">Revisar os principais desvios, definir responsáveis e acompanhar as ações financeiras até o próximo fechamento.</p></div></section>
+</main>
+
+<div class="controles fixed left-5 top-5 z-50 flex gap-2"><a href="/gestao/dre?cliente_id={{ cliente.id }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}&visao=cliente" class="rounded-xl border border-white/15 bg-black/25 px-4 py-2 text-sm backdrop-blur">← Voltar à DRE</a><button onclick="document.documentElement.requestFullscreen?.()" class="rounded-xl border border-white/15 bg-black/25 px-4 py-2 text-sm backdrop-blur">Tela cheia</button><button onclick="window.print()" class="rounded-xl border border-white/15 bg-black/25 px-4 py-2 text-sm backdrop-blur">Imprimir</button></div>
+<div class="controles fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/15 bg-black/35 p-2 backdrop-blur"><button id="anterior" class="grid h-10 w-10 place-items-center rounded-xl text-xl hover:bg-white/10">‹</button><span id="contador" class="min-w-16 text-center text-xs font-semibold"></span><button id="proximo" class="grid h-10 w-10 place-items-center rounded-xl text-xl hover:bg-white/10">›</button></div><div id="progresso" class="controles fixed bottom-0 left-0 z-50 h-1 bg-[#5e93cc] transition-all duration-500"></div>
+<script>const slides=[...document.querySelectorAll('[data-slide]')];let atual=0;const contador=document.getElementById('contador'),progresso=document.getElementById('progresso');function ir(i){i=Math.max(0,Math.min(slides.length-1,i));slides.forEach((s,n)=>{s.classList.toggle('ativa',n===i);s.classList.toggle('saindo',n<i)});atual=i;contador.textContent=`${i+1} / ${slides.length}`;progresso.style.width=`${((i+1)/slides.length)*100}%`}anterior.onclick=()=>ir(atual-1);proximo.onclick=()=>ir(atual+1);addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))ir(atual+1);if(['ArrowLeft','PageUp'].includes(e.key))ir(atual-1);if(e.key==='Home')ir(0);if(e.key==='End')ir(slides.length-1)});let x=0;addEventListener('touchstart',e=>x=e.changedTouches[0].clientX,{passive:true});addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-x;if(Math.abs(d)>50)ir(atual+(d<0?1:-1))},{passive:true});ir(0)</script>
+</body></html>

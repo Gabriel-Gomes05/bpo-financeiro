@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Despesas — FLIC{% endblock %}
+{% block page_title %}Gestão de Despesas{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Filtro -->
+  <form method="get" action="/gestao/despesas"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente</label>
+      <select name="cliente_id" required onchange="this.form.submit()"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        <option value="">Selecione...</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Mês</label>
+      <select name="mes" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for m in range(1,13) %}
+        <option value="{{ m }}" {% if m == mes %}selected{% endif %}>
+          {{ ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][m] }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Ano</label>
+      <select name="ano" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
+        {% for a in range(2023, 2028) %}
+        <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+            class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
+      Filtrar
+    </button>
+  </form>
+
+  {% if cliente_selecionado %}
+
+  <!-- Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Total Despesas</p>
+      <p class="text-2xl font-bold text-rose-600">R$ {{ brl(total) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Qtd de Contas</p>
+      <p class="text-2xl font-bold text-[#222049]">{{ contas|length }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">Pagas</p>
+      <p class="text-2xl font-bold text-emerald-600">
+        {{ contas | selectattr('status.value', 'equalto', 'pago') | list | length }}
+        <span class="text-sm font-normal text-gray-400">de {{ contas|length }}</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-800">Lançamentos do período</h3>
+    </div>
+    {% if contas %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3 text-left">Vencimento</th>
+            <th class="px-4 py-3 text-left">Descrição</th>
+            <th class="px-4 py-3 text-left">Fornecedor</th>
+            <th class="px-4 py-3 text-left">Tipo</th>
+            <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-left">Data Pgto</th>
+            <th class="px-4 py-3 text-right">Valor</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for c in contas %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ c.vencimento.strftime('%d/%m/%Y') }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ c.descricao }}</td>
+            <td class="px-4 py-3 text-xs text-gray-500">{{ c.fornecedor or '—' }}</td>
+            <td class="px-4 py-3">
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold
+                {% if c.tipo.value == 'fixa' %}bg-blue-100 text-blue-700{% else %}bg-amber-100 text-amber-700{% endif %}">
+                {{ c.tipo.value | capitalize }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              {% if c.status.value == 'pago' %}
+              <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Pago</span>
+              {% elif c.status.value == 'cancelado' %}
+              <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">Cancelado</span>
+              {% else %}
+              <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Pendente</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+              {{ c.data_pagamento.strftime('%d/%m/%Y') if c.data_pagamento else '—' }}
+            </td>
+            <td class="px-4 py-3 text-right font-semibold text-rose-700 whitespace-nowrap">
+              R$ {{ brl(c.valor) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-rose-50 border-t border-rose-100">
+          <tr>
+            <td colspan="6" class="px-4 py-3 text-right text-xs font-semibold uppercase text-rose-700">Total</td>
+            <td class="px-4 py-3 text-right font-bold text-rose-700">R$ {{ brl(total) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-10 text-center text-sm text-gray-400">Nenhuma despesa encontrada neste período.</p>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

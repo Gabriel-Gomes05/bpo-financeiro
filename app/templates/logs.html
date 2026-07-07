@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Logs de Auditoria{% endblock %}
+{% block page_title %}Logs de Auditoria{% endblock %}
+
+{% block content %}
+
+{% set cores_modulo = {
+  'auth':        ('rgba(107,114,128,0.12)', '#374151'),
+  'lancamentos': ('rgba(94,147,204,0.15)',  '#1d4ed8'),
+  'conciliacao': ('rgba(124,58,237,0.12)',  '#6d28d9'),
+  'contas_pagar':('rgba(217,119,6,0.12)',   '#b45309'),
+  'admin':       ('rgba(5,150,105,0.12)',   '#065f46'),
+  'rotinas':     ('rgba(8,145,178,0.12)',   '#0e7490'),
+} %}
+
+{% set nomes_modulo = {
+  'auth':        'Autenticação',
+  'lancamentos': 'Lançamentos',
+  'conciliacao': 'Conciliação',
+  'contas_pagar':'Contas a Pagar',
+  'admin':       'Admin',
+  'rotinas':     'Rotinas',
+} %}
+
+<div class="space-y-4">
+
+  <!-- Filtros -->
+  <form method="get" action="/logs"
+        class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap gap-3 items-end">
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Módulo</label>
+      <select name="modulo"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+        <option value="">Todos</option>
+        {% for m in modulos %}
+        <option value="{{ m }}" {% if filtro_modulo == m %}selected{% endif %}>
+          {{ nomes_modulo.get(m, m) }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Usuário</label>
+      <select name="usuario_id"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300">
+        <option value="">Todos</option>
+        {% for u in usuarios %}
+        <option value="{{ u.id }}" {% if filtro_usuario_id == u.id %}selected{% endif %}>
+          {{ u.nome }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">De</label>
+      <input type="date" name="data_inicio" value="{{ filtro_data_inicio }}"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Até</label>
+      <input type="date" name="data_fim" value="{{ filtro_data_fim }}"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+    </div>
+
+    <button type="submit"
+            class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-opacity hover:opacity-90"
+            style="background:#222049;">
+      Filtrar
+    </button>
+
+    <a href="/logs"
+       class="px-4 py-2 text-sm text-gray-500 hover:text-gray-800 rounded-lg border border-gray-300 transition-colors">
+      Limpar
+    </a>
+  </form>
+
+  <!-- Tabela -->
+  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+
+    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+      <span class="text-sm font-semibold text-gray-700">
+        {{ logs|length }} registro(s)
+        {% if logs|length == 500 %}
+        <span class="text-xs font-normal text-gray-400 ml-1">(limite de 500 — refine os filtros para ver mais)</span>
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Data / Hora</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Usuário</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Módulo</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Ação</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Cliente</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Detalhes</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          {% set cor = cores_modulo.get(log.modulo, ('rgba(209,213,219,0.3)', '#6b7280')) %}
+          <tr>
+            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+              {{ log.criado_em.strftime('%d/%m/%Y %H:%M:%S') }}
+            </td>
+            <td class="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">
+              {{ log.usuario_nome or '—' }}
+            </td>
+            <td class="px-4 py-3 whitespace-nowrap">
+              <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                    style="background:{{ cor[0] }}; color:{{ cor[1] }};">
+                {{ nomes_modulo.get(log.modulo, log.modulo) }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              {{ log.acao }}
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+              {{ log.cliente_nome or '—' }}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" title="{{ log.detalhes or '' }}">
+              {{ log.detalhes or '' }}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+              {{ log.ip or '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+
+          {% if not logs %}
+          <tr>
+            <td colspan="7" class="px-4 py-10 text-center text-sm text-gray-400">
+              Nenhum registro encontrado com os filtros selecionados.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

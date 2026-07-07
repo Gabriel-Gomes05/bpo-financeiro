@@ -1,0 +1,32 @@
+# Segredos e configuracoes locais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Dados financeiros, uploads e backups
+uploads/
+backups/
+*.sql
+*.dump
+*.backup
+
+# Python / ferramentas
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Sistema e IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.agents/
+.claude/
+.codex/
+.tools/
