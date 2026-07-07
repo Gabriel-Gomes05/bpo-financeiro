@@ -451,6 +451,64 @@ def buscar_sugestao(movimentacao: MovimentacaoBancaria, receitas: list):
 # Conciliação de cartão
 # ---------------------------------------------------------------------------
 
+def _selecionar_taxa_por_parcelas(
+    taxas: list[TaxaCartaoCliente], parcelas: int,
+) -> TaxaCartaoCliente | None:
+    """Aplica a prioridade de faixas personalizadas e padrões sobre uma lista de taxas."""
+    personalizadas = [
+        taxa for taxa in taxas
+        if taxa.faixa_parcelamento == "personalizada"
+        and taxa.parcela_inicial is not None
+        and taxa.parcela_final is not None
+        and taxa.parcela_inicial <= parcelas <= taxa.parcela_final
+    ]
+    if personalizadas:
+        return min(
+            personalizadas,
+            key=lambda taxa: (
+                taxa.parcela_final - taxa.parcela_inicial,
+                taxa.maquininha_id is not None,
+                -taxa.id,
+            ),
+        )
+
+    faixa_esperada = (
+        "avista_credito" if parcelas <= 1
+        else "parcelado_2_6" if parcelas <= 6
+        else "parcelado_6_12" if parcelas <= 12
+        else None
+    )
+    if faixa_esperada:
+        taxa = next((item for item in taxas if item.faixa_parcelamento == faixa_esperada), None)
+        if taxa:
+            return taxa
+    if parcelas <= 1:
+        return next((item for item in taxas if item.faixa_parcelamento == "avista"), None)
+    return None
+
+
+def _taxa_cartao_para_parcelas(
+    db: Session,
+    cliente_id: int,
+    bandeira: str | None,
+    parcelas: int,
+) -> TaxaCartaoCliente | None:
+    """Carrega as taxas ativas da bandeira e seleciona a faixa das parcelas."""
+    if not bandeira:
+        return None
+    taxas = (
+        db.query(TaxaCartaoCliente)
+        .filter(
+            TaxaCartaoCliente.cliente_id == cliente_id,
+            TaxaCartaoCliente.bandeira == bandeira,
+            TaxaCartaoCliente.ativo == True,
+        )
+        .order_by(TaxaCartaoCliente.maquininha_id.asc().nullsfirst(), TaxaCartaoCliente.id.desc())
+        .all()
+    )
+    return _selecionar_taxa_por_parcelas(taxas, parcelas)
+
+
 def conciliar_cartao(
     db: Session,
     cliente_id: int,
@@ -465,6 +523,7 @@ def conciliar_cartao(
     col_digitos  = _extrair_coluna(df, ["ultimos_digitos", "final_cartao", "card_last4", "digitos"])
     col_taxa     = _extrair_coluna(df, ["taxa", "mdr", "taxa_percentual", "fee"])
     col_liquido  = _extrair_coluna(df, ["valor_liquido", "valor_liq", "net_amount", "liquido"])
+    col_parcelas = _extrair_coluna(df, ["parcelas", "num_parcelas", "parcelamento", "qtd_parcelas"])
     col_bandeira = _extrair_coluna(df, ["bandeira", "brand", "bandeira_cartao", "flag"])
     col_descricao = _extrair_coluna(df, ["descricao", "historico", "titulo", "estabelecimento"])
 
@@ -484,25 +543,17 @@ def conciliar_cartao(
         valor_liquido = _decimal_seguro(row[col_liquido.name]) if col_liquido is not None else None
         bandeira_arquivo = str(row[col_bandeira.name]).strip() if col_bandeira is not None and pd.notna(row[col_bandeira.name]) else None
         descricao        = str(row[col_descricao.name]).strip() if col_descricao is not None and pd.notna(row[col_descricao.name]) else None
+        parcelas = 1
+        if col_parcelas is not None and pd.notna(row.get(col_parcelas.name)):
+            try:
+                parcelas = max(1, int(row[col_parcelas.name]))
+            except (TypeError, ValueError):
+                pass
 
         if valor_liquido is None and bandeira_arquivo:
             # Sem valor líquido no arquivo: usa taxa à vista como fallback
-            taxa_cad = (
-                db.query(TaxaCartaoCliente)
-                .filter(
-                    TaxaCartaoCliente.cliente_id == cliente_id,
-                    TaxaCartaoCliente.bandeira == bandeira_arquivo,
-                    TaxaCartaoCliente.faixa_parcelamento == "avista",
-                    TaxaCartaoCliente.ativo == True,
-                )
-                .first()
-                or db.query(TaxaCartaoCliente)
-                .filter(
-                    TaxaCartaoCliente.cliente_id == cliente_id,
-                    TaxaCartaoCliente.bandeira == bandeira_arquivo,
-                    TaxaCartaoCliente.ativo == True,
-                )
-                .first()
+            taxa_cad = _taxa_cartao_para_parcelas(
+                db, cliente_id, bandeira_arquivo, parcelas,
             )
             if taxa_cad:
                 fator = Decimal("1") - (Decimal(str(taxa_cad.taxa_percentual)) / Decimal("100"))
@@ -936,12 +987,27 @@ def importar_vendas_cartao(
             d = str(row[c_digitos]).strip().split(".")[0]
             digitos = d.zfill(4)[-4:] if d else None
 
+        parcelas = 1
+        if c_parcelas and pd.notna(row.get(c_parcelas)):
+            try:
+                parcelas = max(1, int(row[c_parcelas]))
+            except (TypeError, ValueError):
+                pass
+
         taxa = None
         if c_taxa and pd.notna(row.get(c_taxa)):
             try:
                 taxa = Decimal(str(row[c_taxa]))
             except Exception:
                 pass
+
+        bandeira = _v(c_bandeira)
+        if taxa is None:
+            taxa_cadastrada = _taxa_cartao_para_parcelas(
+                db, cliente_id, bandeira, parcelas,
+            )
+            if taxa_cadastrada:
+                taxa = Decimal(str(taxa_cadastrada.taxa_percentual))
 
         liquido = None
         if c_liquido and pd.notna(row.get(c_liquido)):
@@ -957,18 +1023,11 @@ def importar_vendas_cartao(
         if liquido is None:
             liquido = valor_bruto
 
-        parcelas = 1
-        if c_parcelas and pd.notna(row.get(c_parcelas)):
-            try:
-                parcelas = int(row[c_parcelas])
-            except Exception:
-                pass
-
         db.add(VendaCartao(
             cliente_id=cliente_id,
             data_venda=data_venda,
             data_pagamento=data_pgto,
-            bandeira=_v(c_bandeira),
+            bandeira=bandeira,
             ultimos_digitos=digitos,
             nome_portador=_v(c_portador),
             valor_bruto=valor_bruto,

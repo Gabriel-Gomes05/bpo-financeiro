@@ -455,8 +455,10 @@ class TaxaCartaoCliente(Base):
     cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=False)
     maquininha_id = Column(Integer, ForeignKey("maquininhas_cliente.id"), nullable=True)
     bandeira = Column(String(50), nullable=False)           # Visa, Mastercard, Elo...
-    # avista_credito | avista_debito | parcelado_2_6 | parcelado_6_12
+    # avista_credito | avista_debito | parcelado_2_6 | parcelado_6_12 | personalizada
     faixa_parcelamento = Column(String(20), nullable=False, server_default="avista")
+    parcela_inicial = Column(Integer, nullable=True)
+    parcela_final = Column(Integer, nullable=True)
     taxa_percentual = Column(Numeric(5, 2), nullable=False)  # ex: 2.50
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)

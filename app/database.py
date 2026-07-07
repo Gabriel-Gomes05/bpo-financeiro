@@ -119,6 +119,12 @@ def migrar_schema():
             "ADD COLUMN IF NOT EXISTS faixa_parcelamento VARCHAR(20) NOT NULL DEFAULT 'avista'"
         ))
         conn.execute(text(
+            "ALTER TABLE taxas_cartao_cliente ADD COLUMN IF NOT EXISTS parcela_inicial INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE taxas_cartao_cliente ADD COLUMN IF NOT EXISTS parcela_final INTEGER"
+        ))
+        conn.execute(text(
             "ALTER TABLE taxas_cartao_cliente "
             "ADD COLUMN IF NOT EXISTS maquininha_id INTEGER REFERENCES maquininhas_cliente(id)"
         ))

@@ -10,6 +10,7 @@
   'avista_debito':   'À vista — Débito',
   'parcelado_2_6':   'Parcelado 2x a 6x',
   'parcelado_6_12':  'Parcelado 6x a 12x',
+  'personalizada':   'Faixa personalizada',
 } %}
 
 {% set cores_faixa = {
@@ -18,6 +19,7 @@
   'avista_debito':   ('rgba(124,58,237,0.1)',  '#6d28d9'),
   'parcelado_2_6':   ('rgba(94,147,204,0.15)', '#1d4ed8'),
   'parcelado_6_12':  ('rgba(217,119,6,0.12)',  '#b45309'),
+  'personalizada':   ('rgba(219,39,119,0.12)', '#be185d'),
 } %}
 
 <div class="space-y-6">
@@ -119,12 +121,25 @@
 
       <div>
         <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Faixa de parcelamento</label>
-        <select name="faixa_parcelamento" required
+        <select id="faixa-parcelamento" name="faixa_parcelamento" required onchange="alternarFaixaPersonalizada()"
                 class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
           {% for valor, nome in faixas %}
           <option value="{{ valor }}">{{ nome }}</option>
           {% endfor %}
         </select>
+      </div>
+
+      <div id="campos-faixa-personalizada" class="hidden flex flex-wrap items-end gap-3 rounded-xl border border-pink-200 bg-pink-50 px-3 py-2">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-pink-700 mb-1">Parcela inicial</label>
+          <input id="parcela-inicial" type="number" name="parcela_inicial" min="2" max="24" placeholder="Ex: 3"
+                 class="w-24 rounded-lg border border-pink-200 bg-white px-3 py-2 text-sm outline-none focus:border-pink-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-pink-700 mb-1">Parcela final</label>
+          <input id="parcela-final" type="number" name="parcela_final" min="2" max="24" placeholder="Ex: 10"
+                 class="w-24 rounded-lg border border-pink-200 bg-white px-3 py-2 text-sm outline-none focus:border-pink-400">
+        </div>
       </div>
 
       <div>
@@ -140,7 +155,7 @@
         Salvar taxa
       </button>
     </form>
-    <p class="mt-2 text-xs text-slate-400">Se já existir uma taxa para essa bandeira + faixa, ela será atualizada.</p>
+    <p class="mt-2 text-xs text-slate-400">Se já existir uma taxa para essa bandeira + faixa, ela será atualizada. Na faixa personalizada, informe um intervalo entre 2x e 24x.</p>
   </section>
 
   <!-- Taxas cadastradas -->
@@ -162,7 +177,13 @@
             <h4 class="font-bold text-[#222049]">{{ t.bandeira }}</h4>
             {% if t.maquininha %}<p class="truncate text-xs text-slate-500">{{ t.maquininha.rede }}{% if t.maquininha.apelido %} · {{ t.maquininha.apelido }}{% endif %}</p>{% endif %}
           </div>
-          <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style="background:{{ cor[0] }}; color:{{ cor[1] }};">{{ nomes_faixa.get(t.faixa_parcelamento, t.faixa_parcelamento) }}</span>
+          <span class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style="background:{{ cor[0] }}; color:{{ cor[1] }};">
+            {% if t.faixa_parcelamento == 'personalizada' %}
+              Personalizada {{ t.parcela_inicial }}x a {{ t.parcela_final }}x
+            {% else %}
+              {{ nomes_faixa.get(t.faixa_parcelamento, t.faixa_parcelamento) }}
+            {% endif %}
+          </span>
         </div>
         <div class="mt-4 grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-3 text-center">
           <div><p class="text-[10px] uppercase text-slate-400">Taxa</p><p class="font-mono text-sm font-bold text-slate-700">{{ '%.2f'|format(t.taxa_percentual|float) }}%</p></div>
@@ -194,6 +215,7 @@
       <li><strong>À vista — Débito</strong> — pagamento no cartão de débito.</li>
       <li><strong>Parcelado 2x a 6x</strong> — crédito parcelado em 2 a 6 vezes.</li>
       <li><strong>Parcelado 6x a 12x</strong> — crédito parcelado em 7 a 12 vezes.</li>
+      <li><strong>Faixa personalizada</strong> — intervalo livre entre 2 e 24 parcelas, como 3x a 10x.</li>
     </ul>
     <p class="mt-2 text-sky-600 text-xs">Se o arquivo da maquininha não trouxer o valor líquido, o sistema calcula automaticamente pela taxa da faixa correspondente ao número de parcelas do lançamento.</p>
   </section>
@@ -287,4 +309,27 @@
 
   {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function alternarFaixaPersonalizada() {
+    const seletor = document.getElementById('faixa-parcelamento');
+    const container = document.getElementById('campos-faixa-personalizada');
+    const inicial = document.getElementById('parcela-inicial');
+    const final = document.getElementById('parcela-final');
+    if (!seletor || !container || !inicial || !final) return;
+
+    const personalizada = seletor.value === 'personalizada';
+    container.classList.toggle('hidden', !personalizada);
+    inicial.required = personalizada;
+    final.required = personalizada;
+    if (!personalizada) {
+      inicial.value = '';
+      final.value = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', alternarFaixaPersonalizada);
+</script>
 {% endblock %}

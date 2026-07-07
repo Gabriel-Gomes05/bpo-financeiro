@@ -303,91 +303,91 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `pagina_taxas_cartao(request: Request, cliente_id: Optional[int]=None, maquininha_id: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_taxas_cartao](../app/routers/admin.py#L557)
+- Local: [pagina_taxas_cartao](../app/routers/admin.py#L559)
 - Rota: `GET /admin/taxas-cartao`
 - Responsabilidade: Endpoint que renderiza a página de taxas cartao e devolve a resposta HTTP correspondente.
 
-### `criar_taxa(cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), bandeira: str=Form(...), faixa_parcelamento: str=Form('avista_credito'), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_taxa(cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), bandeira: str=Form(...), faixa_parcelamento: str=Form('avista_credito'), parcela_inicial: Optional[int]=Form(None), parcela_final: Optional[int]=Form(None), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa](../app/routers/admin.py#L610)
+- Local: [criar_taxa](../app/routers/admin.py#L612)
 - Rota: `POST /admin/taxas-cartao`
 - Responsabilidade: Endpoint que cria taxa e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa(taxa_id: int, cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa](../app/routers/admin.py#L652)
+- Local: [excluir_taxa](../app/routers/admin.py#L694)
 - Rota: `POST /admin/taxas-cartao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa e devolve a resposta HTTP correspondente.
 
 ### `adicionar_maquininha(cliente_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [adicionar_maquininha](../app/routers/admin.py#L674)
+- Local: [adicionar_maquininha](../app/routers/admin.py#L716)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/maquininha/adicionar`
 - Responsabilidade: Endpoint que adiciona maquininha e devolve a resposta HTTP correspondente.
 
 ### `editar_maquininha(maquininha_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_maquininha](../app/routers/admin.py#L700)
+- Local: [editar_maquininha](../app/routers/admin.py#L742)
 - Rota: `POST /admin/maquininha/{maquininha_id}/editar`
 - Responsabilidade: Endpoint que edita maquininha e devolve a resposta HTTP correspondente.
 
 ### `toggle_antecipa_cliente(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L730)
+- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L772)
 - Rota: `POST /admin/taxas-cartao/toggle-antecipa`
 - Responsabilidade: Endpoint que alterna o estado de antecipa cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_taxa_antecipacao(cliente_id: int=Form(...), bandeira: str=Form(...), descricao: str=Form(...), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L749)
+- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L791)
 - Rota: `POST /admin/taxas-antecipacao`
 - Responsabilidade: Endpoint que cria taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `selecionar_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L777)
+- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L819)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/selecionar`
 - Responsabilidade: Endpoint que seleciona taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `toggle_ativo_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L802)
+- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L844)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/toggle-ativo`
 - Responsabilidade: Endpoint que alterna o estado de ativo antecipacao e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L823)
+- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L865)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `pagina_centros_custo(request: Request, cliente_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_centros_custo](../app/routers/admin.py#L840)
+- Local: [pagina_centros_custo](../app/routers/admin.py#L882)
 - Rota: `GET /admin/centros-custo`
 - Responsabilidade: Endpoint que renderiza a página de centros custo e devolve a resposta HTTP correspondente.
 
 ### `criar_centro_custo(cliente_id: int=Form(...), codigo: str=Form(...), nome: str=Form(...), is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_centro_custo](../app/routers/admin.py#L862)
+- Local: [criar_centro_custo](../app/routers/admin.py#L904)
 - Rota: `POST /admin/centros-custo`
 - Responsabilidade: Endpoint que cria centro custo e devolve a resposta HTTP correspondente.
 
 ### `excluir_centro_custo(cc_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [excluir_centro_custo](../app/routers/admin.py#L886)
+- Local: [excluir_centro_custo](../app/routers/admin.py#L928)
 - Rota: `POST /admin/centros-custo/{cc_id}/excluir`
 - Responsabilidade: Endpoint que exclui centro custo e devolve a resposta HTTP correspondente.
 
 ### `editar_centro_custo(cc_id: int, is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_centro_custo](../app/routers/admin.py#L900)
+- Local: [editar_centro_custo](../app/routers/admin.py#L942)
 - Rota: `POST /admin/centros-custo/{cc_id}/editar`
 - Responsabilidade: Endpoint que edita centro custo e devolve a resposta HTTP correspondente.
 
 ### `remover_maquininha(maquininha_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [remover_maquininha](../app/routers/admin.py#L917)
+- Local: [remover_maquininha](../app/routers/admin.py#L959)
 - Rota: `POST /admin/maquininha/{maquininha_id}/remover`
 - Responsabilidade: Endpoint que executa o fluxo remover maquininha e devolve a resposta HTTP correspondente.
 
@@ -1537,59 +1537,69 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 - Local: [buscar_sugestao](../app/services/conciliacao_service.py#L390)
 - Responsabilidade: Retorna o melhor Atendimento candidato para a movimentacao, ou None.
 
+### `_selecionar_taxa_por_parcelas(taxas: list[TaxaCartaoCliente], parcelas: int) -> TaxaCartaoCliente | None`
+
+- Local: [_selecionar_taxa_por_parcelas](../app/services/conciliacao_service.py#L454)
+- Responsabilidade: Aplica a prioridade de faixas personalizadas e padrões sobre uma lista de taxas.
+
+### `_taxa_cartao_para_parcelas(db: Session, cliente_id: int, bandeira: str | None, parcelas: int) -> TaxaCartaoCliente | None`
+
+- Local: [_taxa_cartao_para_parcelas](../app/services/conciliacao_service.py#L490)
+- Responsabilidade: Carrega as taxas ativas da bandeira e seleciona a faixa das parcelas.
+
 ### `conciliar_cartao(db: Session, cliente_id: int, df: pd.DataFrame, origem_arquivo: str) -> Tuple[List[dict], List[dict]]`
 
-- Local: [conciliar_cartao](../app/services/conciliacao_service.py#L454)
+- Local: [conciliar_cartao](../app/services/conciliacao_service.py#L512)
 - Responsabilidade: Função auxiliar que concilia cartao.
 
 ### `conciliar_pix_ted(db: Session, cliente_id: int, df: pd.DataFrame, origem_arquivo: str) -> Tuple[List[dict], List[dict]]`
 
-- Local: [conciliar_pix_ted](../app/services/conciliacao_service.py#L576)
+- Local: [conciliar_pix_ted](../app/services/conciliacao_service.py#L627)
 - Responsabilidade: Função auxiliar que concilia pix ted.
 
 ### `limpar_movimentacoes_banco_livres(db: Session, cliente_id: int)`
 
-- Local: [limpar_movimentacoes_banco_livres](../app/services/conciliacao_service.py#L654)
+- Local: [limpar_movimentacoes_banco_livres](../app/services/conciliacao_service.py#L705)
 - Responsabilidade: Remove apenas movimentacoes bancarias ainda sem vinculo de conciliacao.
 
 ### `importar_movimentacoes_bancarias(db: Session, cliente_id: int, df: pd.DataFrame, origem_arquivo: str, conta_bancaria_id: int | None=None) -> dict`
 
-- Local: [importar_movimentacoes_bancarias](../app/services/conciliacao_service.py#L671)
+- Local: [importar_movimentacoes_bancarias](../app/services/conciliacao_service.py#L722)
 - Responsabilidade: Importa o extrato da conta corrente como movimentacoes bancarias livres. Creditos ficam disponiveis para Pix/TED ou para vincular com lotes de cartao. Debitos ficam disponiveis para contas a pagar.
 
 ### `gerar_transferencias_cartao(db: Session, cliente_id: int) -> int`
 
-- Local: [gerar_transferencias_cartao](../app/services/conciliacao_service.py#L751)
+- Local: [gerar_transferencias_cartao](../app/services/conciliacao_service.py#L802)
 - Responsabilidade: Agrupa Atendimentos conciliados por cartão em TransferenciaCartao por (data_credito, bandeira_cartao). Cria ou atualiza os registros. Retorna o número de novos lotes criados.
 
 ### `buscar_sugestao_venda(venda: 'VendaCartao', atendimentos: list) -> dict | None`
 
-- Local: [buscar_sugestao_venda](../app/services/conciliacao_service.py#L815)
+- Local: [buscar_sugestao_venda](../app/services/conciliacao_service.py#L866)
 - Responsabilidade: Retorna o melhor Atendimento para uma VendaCartao, ou None.
 
 ### `importar_vendas_cartao(db: Session, cliente_id: int, df: pd.DataFrame, origem_arquivo: str) -> int`
 
-- Local: [importar_vendas_cartao](../app/services/conciliacao_service.py#L873)
+- Local: [importar_vendas_cartao](../app/services/conciliacao_service.py#L924)
 - Responsabilidade: Importa extrato da maquininha como VendaCartao individuais. Colunas esperadas: data_venda, data_pagamento, bandeira, ultimos_digitos, nome_portador, valor_bruto, taxa_percentual, valor_liquido, parcelas.
 
 ### `_col(*names)`
 
-- Local: [importar_vendas_cartao._col](../app/services/conciliacao_service.py#L887)
+- Local: [importar_vendas_cartao._col](../app/services/conciliacao_service.py#L938)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “col”.
 
 ### `_v(col)`
 
-- Local: [importar_vendas_cartao._v](../app/services/conciliacao_service.py#L928)
+- Local: [importar_vendas_cartao._v](../app/services/conciliacao_service.py#L979)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “v”.
 
 ### `fechar_lote_dia(db: Session, cliente_id: int, data_pagamento, bandeira: str | None) -> TransferenciaCartao`
 
-- Local: [fechar_lote_dia](../app/services/conciliacao_service.py#L988)
+- Local: [fechar_lote_dia](../app/services/conciliacao_service.py#L1047)
 - Responsabilidade: Agrupa as VendaCartao pendentes de um dia/bandeira em um TransferenciaCartao (lote). Retorna o lote criado ou atualizado.
 
 ### `importar_extrato_conta_corrente(db: Session, cliente_id: int, df: pd.DataFrame, origem_arquivo: str) -> dict`
 
-- Local: [importar_extrato_conta_corrente](../app/services/conciliacao_service.py#L1051)
+- Local: [importar_extrato_conta_corrente](../app/services/conciliacao_service.py#L1110)
 - Responsabilidade: Importa extrato da conta corrente como ExtratoLinhaBancaria. A conciliacao fica pendente para confirmacao individual ou em lote.
 
 ## `app/services/email_service.py`
@@ -1935,6 +1945,35 @@ Seed: exemplos completos para testar a Conciliação de Cartão. Cria Atendiment
 - Local: [add_at](../seed_exemplos_conciliacao.py#L54)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “add at”.
 
+## `tests/test_taxas_cartao.py`
+
+Testes da seleção automática de taxa por faixa de parcelamento.
+
+### `taxa(id, faixa, inicial=None, final=None, maquininha_id=None)`
+
+- Local: [taxa](../tests/test_taxas_cartao.py#L7)
+- Responsabilidade: Cria um objeto mínimo com os atributos usados pela regra.
+
+### `test_faixas_padrao()`
+
+- Local: [test_faixas_padrao](../tests/test_taxas_cartao.py#L18)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test faixas padrao”.
+
+### `test_personalizada_tem_prioridade()`
+
+- Local: [test_personalizada_tem_prioridade](../tests/test_taxas_cartao.py#L29)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test personalizada tem prioridade”.
+
+### `test_faixa_personalizada_mais_especifica_vence()`
+
+- Local: [test_faixa_personalizada_mais_especifica_vence](../tests/test_taxas_cartao.py#L37)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test faixa personalizada mais especifica vence”.
+
+### `test_sem_faixa_compativel()`
+
+- Local: [test_sem_faixa_compativel](../tests/test_taxas_cartao.py#L45)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test sem faixa compativel”.
+
 ---
 
-Total documentado: **345 funções e métodos**.
+Total documentado: **352 funções e métodos**.

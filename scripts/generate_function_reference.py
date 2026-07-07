@@ -66,7 +66,7 @@ VERBS = {
 def python_files() -> list[Path]:
     """Retorna os arquivos Python versionáveis, ignorando ambientes e dados locais."""
     files = list(ROOT.glob("*.py"))
-    for source_dir in (ROOT / "app", ROOT / "scripts", ROOT / "docs"):
+    for source_dir in (ROOT / "app", ROOT / "scripts", ROOT / "docs", ROOT / "tests"):
         if not source_dir.exists():
             continue
         for path in source_dir.rglob("*.py"):

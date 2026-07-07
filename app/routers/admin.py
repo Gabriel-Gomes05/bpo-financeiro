@@ -550,7 +550,9 @@ FAIXAS_PARCELAMENTO = [
     ("avista_debito",   "À vista — Débito"),
     ("parcelado_2_6",   "Parcelado 2x a 6x"),
     ("parcelado_6_12",  "Parcelado 6x a 12x"),
+    ("personalizada",   "Faixa personalizada"),
 ]
+FAIXAS_PARCELAMENTO_VALIDAS = {valor for valor, _ in FAIXAS_PARCELAMENTO}
 
 
 @router.get("/taxas-cartao", response_class=HTMLResponse)
@@ -612,6 +614,8 @@ async def criar_taxa(
     maquininha_id: Optional[int] = Form(None),
     bandeira: str = Form(...),
     faixa_parcelamento: str = Form("avista_credito"),
+    parcela_inicial: Optional[int] = Form(None),
+    parcela_final: Optional[int] = Form(None),
     taxa_percentual: float = Form(...),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
@@ -619,12 +623,48 @@ async def criar_taxa(
     if not pode_acessar_cliente(db, usuario, cliente_id):
         return RedirectResponse(url="/admin/taxas-cartao", status_code=303)
 
+    bandeira = bandeira.strip()
+    if bandeira not in BANDEIRAS or faixa_parcelamento not in FAIXAS_PARCELAMENTO_VALIDAS:
+        return RedirectResponse(url=f"/admin/taxas-cartao?cliente_id={cliente_id}", status_code=303)
+    if not 0 <= taxa_percentual <= 100:
+        return RedirectResponse(url=f"/admin/taxas-cartao?cliente_id={cliente_id}", status_code=303)
+
+    if maquininha_id:
+        maquininha_valida = db.query(MaquininhaCliente.id).filter(
+            MaquininhaCliente.id == maquininha_id,
+            MaquininhaCliente.cliente_id == cliente_id,
+            MaquininhaCliente.ativa == True,
+        ).first()
+        if not maquininha_valida:
+            return RedirectResponse(url=f"/admin/taxas-cartao?cliente_id={cliente_id}", status_code=303)
+
+    if faixa_parcelamento == "personalizada":
+        if (
+            parcela_inicial is None or parcela_final is None
+            or parcela_inicial < 2 or parcela_final > 24
+            or parcela_inicial > parcela_final
+        ):
+            return RedirectResponse(url=f"/admin/taxas-cartao?cliente_id={cliente_id}", status_code=303)
+    else:
+        parcela_inicial = None
+        parcela_final = None
+
     q = db.query(TaxaCartaoCliente).filter(
         TaxaCartaoCliente.cliente_id == cliente_id,
         TaxaCartaoCliente.bandeira == bandeira,
         TaxaCartaoCliente.faixa_parcelamento == faixa_parcelamento,
         TaxaCartaoCliente.ativo == True,
     )
+    if faixa_parcelamento == "personalizada":
+        q = q.filter(
+            TaxaCartaoCliente.parcela_inicial == parcela_inicial,
+            TaxaCartaoCliente.parcela_final == parcela_final,
+        )
+    else:
+        q = q.filter(
+            TaxaCartaoCliente.parcela_inicial.is_(None),
+            TaxaCartaoCliente.parcela_final.is_(None),
+        )
     if maquininha_id:
         q = q.filter(TaxaCartaoCliente.maquininha_id == maquininha_id)
     else:
@@ -639,6 +679,8 @@ async def criar_taxa(
             maquininha_id=maquininha_id or None,
             bandeira=bandeira,
             faixa_parcelamento=faixa_parcelamento,
+            parcela_inicial=parcela_inicial,
+            parcela_final=parcela_final,
             taxa_percentual=taxa_percentual,
         ))
     db.commit()
