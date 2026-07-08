@@ -47,6 +47,22 @@ def pode_acessar_cliente(db: Session, usuario: Usuario, cliente_id: int) -> bool
     ).first() is not None
 
 
+def _url_retorno_maquininha(
+    cliente_id: int,
+    origem: str | None,
+    maquininha_id: int | None = None,
+) -> str:
+    """Monta apenas destinos internos conhecidos após gerenciar uma maquininha."""
+    if origem == "taxas":
+        url = f"/admin/taxas-cartao?cliente_id={cliente_id}"
+        if maquininha_id:
+            url += f"&maquininha_id={maquininha_id}"
+        return url
+    if origem == "editar":
+        return f"/admin/clientes/cliente/{cliente_id}/editar?sucesso=1"
+    return "/admin/clientes"
+
+
 def _float_opcional(valor: str | None) -> Optional[float]:
     if valor is None or str(valor).strip() == "":
         return None
@@ -581,8 +597,13 @@ async def pagina_taxas_cartao(
         )
         q = db.query(TaxaCartaoCliente).filter(TaxaCartaoCliente.cliente_id == cliente_id)
         if maquininha_id:
-            maquininha_selecionada = db.query(MaquininhaCliente).filter(MaquininhaCliente.id == maquininha_id).first()
-            q = q.filter(TaxaCartaoCliente.maquininha_id == maquininha_id)
+            maquininha_selecionada = db.query(MaquininhaCliente).filter(
+                MaquininhaCliente.id == maquininha_id,
+                MaquininhaCliente.cliente_id == cliente_id,
+                MaquininhaCliente.ativa == True,
+            ).first()
+            if maquininha_selecionada:
+                q = q.filter(TaxaCartaoCliente.maquininha_id == maquininha_id)
         taxas = q.order_by(TaxaCartaoCliente.bandeira, TaxaCartaoCliente.faixa_parcelamento).all()
 
         if cliente_selecionado and cliente_selecionado.antecipa:
@@ -604,6 +625,7 @@ async def pagina_taxas_cartao(
         "maquininha_selecionada": maquininha_selecionada,
         "bandeiras": BANDEIRAS,
         "faixas": FAIXAS_PARCELAMENTO,
+        "redes_maquininha": REDES_MAQUININHA,
         "pode_excluir": usuario.perfil == PerfilUsuario.coordenador,
     })
 
@@ -718,24 +740,47 @@ async def adicionar_maquininha(
     rede: str = Form(...),
     apelido: Optional[str] = Form(None),
     antecipa: str = Form("nao"),
+    origem: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     if not pode_acessar_cliente(db, usuario, cliente_id):
         return RedirectResponse(url="/admin/clientes", status_code=303)
 
-    db.add(MaquininhaCliente(
+    rede = rede.strip()
+    apelido_limpo = (apelido or "").strip() or None
+    if rede not in REDES_MAQUININHA:
+        return RedirectResponse(
+            url=_url_retorno_maquininha(cliente_id, origem), status_code=303,
+        )
+
+    existente = db.query(MaquininhaCliente).filter(
+        MaquininhaCliente.cliente_id == cliente_id,
+        MaquininhaCliente.rede == rede,
+        MaquininhaCliente.apelido == apelido_limpo,
+        MaquininhaCliente.ativa == True,
+    ).first()
+    if existente:
+        return RedirectResponse(
+            url=_url_retorno_maquininha(cliente_id, origem, existente.id), status_code=303,
+        )
+
+    nova_maquininha = MaquininhaCliente(
         cliente_id=cliente_id,
         rede=rede,
-        apelido=apelido.strip() if apelido and apelido.strip() else None,
+        apelido=apelido_limpo,
         antecipa=antecipa == "sim",
         ativa=True,
-    ))
+    )
+    db.add(nova_maquininha)
     cliente = db.query(ClienteBPO).filter(ClienteBPO.id == cliente_id).first()
     if cliente:
         cliente.tem_maquininha = True
     db.commit()
-    return RedirectResponse(url="/admin/clientes", status_code=303)
+    db.refresh(nova_maquininha)
+    return RedirectResponse(
+        url=_url_retorno_maquininha(cliente_id, origem, nova_maquininha.id), status_code=303,
+    )
 
 
 @router.post("/maquininha/{maquininha_id}/editar")
@@ -744,6 +789,7 @@ async def editar_maquininha(
     rede: str = Form(...),
     apelido: Optional[str] = Form(None),
     antecipa: str = Form("nao"),
+    origem: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
@@ -754,12 +800,18 @@ async def editar_maquininha(
     if not maquininha or not pode_acessar_cliente(db, usuario, maquininha.cliente_id):
         return RedirectResponse(url="/admin/clientes?erro=sem_acesso", status_code=303)
 
-    maquininha.rede = rede.strip()
+    rede = rede.strip()
+    if rede not in REDES_MAQUININHA:
+        return RedirectResponse(
+            url=_url_retorno_maquininha(maquininha.cliente_id, origem, maquininha.id),
+            status_code=303,
+        )
+    maquininha.rede = rede
     maquininha.apelido = (apelido or "").strip() or None
     maquininha.antecipa = antecipa == "sim"
     db.commit()
     return RedirectResponse(
-        url=f"/admin/clientes/cliente/{maquininha.cliente_id}/editar?sucesso=1",
+        url=_url_retorno_maquininha(maquininha.cliente_id, origem, maquininha.id),
         status_code=303,
     )
 
@@ -958,10 +1010,12 @@ async def editar_centro_custo(
 @router.post("/maquininha/{maquininha_id}/remover")
 async def remover_maquininha(
     maquininha_id: int,
+    origem: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     maq = db.query(MaquininhaCliente).filter(MaquininhaCliente.id == maquininha_id).first()
+    cliente_id = maq.cliente_id if maq else 0
     if maq and pode_acessar_cliente(db, usuario, maq.cliente_id):
         maq.ativa = False
         ativas = db.query(MaquininhaCliente).filter(
@@ -974,4 +1028,6 @@ async def remover_maquininha(
             if cliente:
                 cliente.tem_maquininha = False
         db.commit()
-    return RedirectResponse(url="/admin/clientes", status_code=303)
+    return RedirectResponse(
+        url=_url_retorno_maquininha(cliente_id, origem), status_code=303,
+    )

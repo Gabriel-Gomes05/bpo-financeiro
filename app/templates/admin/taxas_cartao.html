@@ -89,6 +89,66 @@
   </section>
   {% endif %}
 
+  <!-- Cadastro e manutenção de maquininhas após a criação do cliente -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <h3 class="font-semibold text-slate-800">Gerenciar maquininhas</h3>
+        <p class="text-xs text-slate-400">Adicione quantas redes ou terminais forem necessários para este cliente.</p>
+      </div>
+    </div>
+
+    <form method="post" action="/admin/clientes/cliente/{{ cliente_selecionado.id }}/maquininha/adicionar"
+          class="grid grid-cols-1 gap-3 rounded-xl border border-sky-100 bg-sky-50/50 p-4 md:grid-cols-4">
+      <input type="hidden" name="origem" value="taxas">
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Rede *</label>
+        <select name="rede" required class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          {% for rede in redes_maquininha %}<option value="{{ rede }}">{{ rede }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Apelido / terminal</label>
+        <input name="apelido" placeholder="Ex.: Recepção 2" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Antecipa?</label>
+        <select name="antecipa" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="w-full rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">+ Adicionar maquininha</button>
+      </div>
+    </form>
+
+    {% if maquininhas %}
+    <div class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {% for m in maquininhas %}
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <form method="post" action="/admin/maquininha/{{ m.id }}/editar" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <input type="hidden" name="origem" value="taxas">
+          <select name="rede" required class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            {% for rede in redes_maquininha %}<option value="{{ rede }}" {% if m.rede == rede %}selected{% endif %}>{{ rede }}</option>{% endfor %}
+          </select>
+          <input name="apelido" value="{{ m.apelido or '' }}" placeholder="Apelido" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          <select name="antecipa" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="nao" {% if not m.antecipa %}selected{% endif %}>Sem antecipação</option>
+            <option value="sim" {% if m.antecipa %}selected{% endif %}>Com antecipação</option>
+          </select>
+          <button type="submit" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:col-span-2">Salvar alterações</button>
+        </form>
+        <form method="post" action="/admin/maquininha/{{ m.id }}/remover" class="mt-2" onsubmit="return confirm('Desativar esta maquininha? As taxas históricas serão preservadas.');">
+          <input type="hidden" name="origem" value="taxas">
+          <button type="submit" class="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600">Desativar maquininha</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
   <!-- Formulário para adicionar / atualizar taxa -->
   <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <h3 class="font-semibold text-slate-800 mb-4">Adicionar / atualizar taxa — {{ cliente_selecionado.nome }}{% if maquininha_selecionada %} · {{ maquininha_selecionada.rede }}{% if maquininha_selecionada.apelido %} — {{ maquininha_selecionada.apelido }}{% endif %}{% endif %}</h3>

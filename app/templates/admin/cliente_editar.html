@@ -133,13 +133,15 @@
   </form>
 
   {% set maquininhas_ativas = cliente.maquininhas | selectattr('ativa') | list %}
-  {% if maquininhas_ativas %}
   <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-    <h3 class="mb-4 font-semibold text-slate-800">Maquininhas cadastradas</h3>
+    <h3 class="font-semibold text-slate-800">Maquininhas do cliente</h3>
+    <p class="mb-4 text-xs text-slate-400">Cadastre novos terminais mesmo depois da criação do cliente.</p>
+    {% if maquininhas_ativas %}
     <div class="space-y-3">
       {% for m in maquininhas_ativas %}
       <div class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-end">
         <form method="post" action="/admin/maquininha/{{ m.id }}/editar" class="contents">
+          <input type="hidden" name="origem" value="editar">
           <div class="flex-1">
             <label class="mb-1 block text-xs text-slate-500">Rede</label>
             <select name="rede" required class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
@@ -160,13 +162,41 @@
           <button type="submit" class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white">Salvar maquininha</button>
         </form>
         <form method="post" action="/admin/maquininha/{{ m.id }}/remover" onsubmit="return confirm('Remover esta maquininha?');">
+          <input type="hidden" name="origem" value="editar">
           <button type="submit" class="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-700">Remover</button>
         </form>
       </div>
       {% endfor %}
     </div>
+    {% else %}
+    <p class="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-500">Nenhuma maquininha ativa cadastrada.</p>
+    {% endif %}
+
+    <form method="post" action="/admin/clientes/cliente/{{ cliente.id }}/maquininha/adicionar"
+          class="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 md:grid-cols-4">
+      <input type="hidden" name="origem" value="editar">
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Nova rede *</label>
+        <select name="rede" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          {% for rede in redes_maquininha %}<option value="{{ rede }}">{{ rede }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Apelido / terminal</label>
+        <input name="apelido" placeholder="Ex.: Consultório 2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Antecipa?</label>
+        <select name="antecipa" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="w-full rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white">+ Adicionar maquininha</button>
+      </div>
+    </form>
   </section>
-  {% endif %}
 </div>
 {% endblock %}
 

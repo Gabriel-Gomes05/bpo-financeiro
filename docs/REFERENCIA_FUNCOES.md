@@ -188,206 +188,211 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 - Local: [pode_acessar_cliente](../app/routers/admin.py#L40)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “pode acessar cliente”.
 
+### `_url_retorno_maquininha(cliente_id: int, origem: str | None, maquininha_id: int | None=None) -> str`
+
+- Local: [_url_retorno_maquininha](../app/routers/admin.py#L50)
+- Responsabilidade: Monta apenas destinos internos conhecidos após gerenciar uma maquininha.
+
 ### `_float_opcional(valor: str | None) -> Optional[float]`
 
-- Local: [_float_opcional](../app/routers/admin.py#L50)
+- Local: [_float_opcional](../app/routers/admin.py#L66)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “float opcional”.
 
 ### `pagina_equipe(usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_equipe](../app/routers/admin.py#L57)
+- Local: [pagina_equipe](../app/routers/admin.py#L73)
 - Rota: `GET /admin/equipe`
 - Responsabilidade: Endpoint que renderiza a página de equipe e devolve a resposta HTTP correspondente.
 
 ### `pagina_clientes(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_clientes](../app/routers/admin.py#L64)
+- Local: [pagina_clientes](../app/routers/admin.py#L80)
 - Rota: `GET /admin/clientes`
 - Responsabilidade: Endpoint que renderiza a página de clientes e devolve a resposta HTTP correspondente.
 
 ### `pagina_funcionarios(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(requer_coordenador))`
 
-- Local: [pagina_funcionarios](../app/routers/admin.py#L88)
+- Local: [pagina_funcionarios](../app/routers/admin.py#L104)
 - Rota: `GET /admin/funcionarios`
 - Responsabilidade: Endpoint que renderiza a página de funcionarios e devolve a resposta HTTP correspondente.
 
 ### `pagina_anotacoes_clientes(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_anotacoes_clientes](../app/routers/admin.py#L103)
+- Local: [pagina_anotacoes_clientes](../app/routers/admin.py#L119)
 - Rota: `GET /admin/anotacoes-clientes`
 - Responsabilidade: Endpoint que renderiza a página de anotacoes clientes e devolve a resposta HTTP correspondente.
 
 ### `pagina_anotacoes_cliente(cliente_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_anotacoes_cliente](../app/routers/admin.py#L117)
+- Local: [pagina_anotacoes_cliente](../app/routers/admin.py#L133)
 - Rota: `GET /admin/anotacoes-clientes/{cliente_id}`
 - Responsabilidade: Endpoint que renderiza a página de anotacoes cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_anotacao_cliente(cliente_id: int, categoria: str=Form('procedimento'), titulo: str=Form(...), conteudo: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_anotacao_cliente](../app/routers/admin.py#L141)
+- Local: [criar_anotacao_cliente](../app/routers/admin.py#L157)
 - Rota: `POST /admin/anotacoes-clientes/{cliente_id}/nova`
 - Responsabilidade: Endpoint que cria anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `editar_anotacao_cliente(anotacao_id: int, categoria: str=Form('procedimento'), titulo: str=Form(...), conteudo: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_anotacao_cliente](../app/routers/admin.py#L170)
+- Local: [editar_anotacao_cliente](../app/routers/admin.py#L186)
 - Rota: `POST /admin/anotacoes-clientes/anotacao/{anotacao_id}/editar`
 - Responsabilidade: Endpoint que edita anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `excluir_anotacao_cliente(anotacao_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [excluir_anotacao_cliente](../app/routers/admin.py#L192)
+- Local: [excluir_anotacao_cliente](../app/routers/admin.py#L208)
 - Rota: `POST /admin/anotacoes-clientes/anotacao/{anotacao_id}/excluir`
 - Responsabilidade: Endpoint que exclui anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_usuario(nome: str=Form(...), email: str=Form(...), senha: str=Form(...), perfil: str=Form('funcionario'), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [criar_usuario](../app/routers/admin.py#L210)
+- Local: [criar_usuario](../app/routers/admin.py#L226)
 - Rota: `POST /admin/equipe/usuario`
 - Responsabilidade: Endpoint que cria usuario e devolve a resposta HTTP correspondente.
 
 ### `editar_usuario(usuario_id: int, nome: str=Form(...), email: str=Form(...), perfil: str=Form(...), senha: Optional[str]=Form(None), db: Session=Depends(get_db), coordenador: Usuario=Depends(requer_coordenador))`
 
-- Local: [editar_usuario](../app/routers/admin.py#L241)
+- Local: [editar_usuario](../app/routers/admin.py#L257)
 - Rota: `POST /admin/funcionarios/usuario/{usuario_id}/editar`
 - Responsabilidade: Endpoint que edita usuario e devolve a resposta HTTP correspondente.
 
 ### `excluir_usuario(usuario_id: int, db: Session=Depends(get_db), coordenador: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_usuario](../app/routers/admin.py#L284)
+- Local: [excluir_usuario](../app/routers/admin.py#L300)
 - Rota: `POST /admin/funcionarios/usuario/{usuario_id}/excluir`
 - Responsabilidade: Endpoint que exclui usuario e devolve a resposta HTTP correspondente.
 
 ### `toggle_usuario(usuario_id: int, db: Session=Depends(get_db), coordenador: Usuario=Depends(requer_coordenador))`
 
-- Local: [toggle_usuario](../app/routers/admin.py#L324)
+- Local: [toggle_usuario](../app/routers/admin.py#L340)
 - Rota: `POST /admin/equipe/usuario/{usuario_id}/toggle`
 - Responsabilidade: Endpoint que alterna o estado de usuario e devolve a resposta HTTP correspondente.
 
 ### `criar_cliente(nome: str=Form(...), razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), bandeira: List[str]=Form(default=[]), taxa_percentual: List[str]=Form(default=[]), funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_cliente](../app/routers/admin.py#L344)
+- Local: [criar_cliente](../app/routers/admin.py#L360)
 - Rota: `POST /admin/equipe/cliente`
 - Responsabilidade: Endpoint que cria cliente e devolve a resposta HTTP correspondente.
 
 ### `atribuir_cliente(cliente_id: int, funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [atribuir_cliente](../app/routers/admin.py#L393)
+- Local: [atribuir_cliente](../app/routers/admin.py#L409)
 - Rota: `POST /admin/equipe/cliente/{cliente_id}/atribuir`
 - Responsabilidade: Endpoint que executa o fluxo atribuir cliente e devolve a resposta HTTP correspondente.
 
 ### `atualizar_cliente(cliente_id: int, razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [atualizar_cliente](../app/routers/admin.py#L407)
+- Local: [atualizar_cliente](../app/routers/admin.py#L423)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/atualizar`
 - Responsabilidade: Endpoint que atualiza cliente e devolve a resposta HTTP correspondente.
 
 ### `pagina_editar_cliente(cliente_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_editar_cliente](../app/routers/admin.py#L432)
+- Local: [pagina_editar_cliente](../app/routers/admin.py#L448)
 - Rota: `GET /admin/clientes/cliente/{cliente_id}/editar`
 - Responsabilidade: Endpoint que renderiza a página de editar cliente e devolve a resposta HTTP correspondente.
 
 ### `editar_cliente_completo(cliente_id: int, nome: str=Form(...), razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), regime_tributario: Optional[str]=Form(None), banco: Optional[str]=Form(None), agencia: Optional[str]=Form(None), conta: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_cliente_completo](../app/routers/admin.py#L460)
+- Local: [editar_cliente_completo](../app/routers/admin.py#L476)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/editar`
 - Responsabilidade: Endpoint que edita cliente completo e devolve a resposta HTTP correspondente.
 
 ### `excluir_cliente(cliente_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_cliente](../app/routers/admin.py#L522)
+- Local: [excluir_cliente](../app/routers/admin.py#L538)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/excluir`
 - Responsabilidade: Endpoint que exclui cliente e devolve a resposta HTTP correspondente.
 
 ### `pagina_taxas_cartao(request: Request, cliente_id: Optional[int]=None, maquininha_id: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_taxas_cartao](../app/routers/admin.py#L559)
+- Local: [pagina_taxas_cartao](../app/routers/admin.py#L575)
 - Rota: `GET /admin/taxas-cartao`
 - Responsabilidade: Endpoint que renderiza a página de taxas cartao e devolve a resposta HTTP correspondente.
 
 ### `criar_taxa(cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), bandeira: str=Form(...), faixa_parcelamento: str=Form('avista_credito'), parcela_inicial: Optional[int]=Form(None), parcela_final: Optional[int]=Form(None), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa](../app/routers/admin.py#L612)
+- Local: [criar_taxa](../app/routers/admin.py#L634)
 - Rota: `POST /admin/taxas-cartao`
 - Responsabilidade: Endpoint que cria taxa e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa(taxa_id: int, cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa](../app/routers/admin.py#L694)
+- Local: [excluir_taxa](../app/routers/admin.py#L716)
 - Rota: `POST /admin/taxas-cartao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa e devolve a resposta HTTP correspondente.
 
-### `adicionar_maquininha(cliente_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `adicionar_maquininha(cliente_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [adicionar_maquininha](../app/routers/admin.py#L716)
+- Local: [adicionar_maquininha](../app/routers/admin.py#L738)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/maquininha/adicionar`
 - Responsabilidade: Endpoint que adiciona maquininha e devolve a resposta HTTP correspondente.
 
-### `editar_maquininha(maquininha_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `editar_maquininha(maquininha_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_maquininha](../app/routers/admin.py#L742)
+- Local: [editar_maquininha](../app/routers/admin.py#L787)
 - Rota: `POST /admin/maquininha/{maquininha_id}/editar`
 - Responsabilidade: Endpoint que edita maquininha e devolve a resposta HTTP correspondente.
 
 ### `toggle_antecipa_cliente(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L772)
+- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L824)
 - Rota: `POST /admin/taxas-cartao/toggle-antecipa`
 - Responsabilidade: Endpoint que alterna o estado de antecipa cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_taxa_antecipacao(cliente_id: int=Form(...), bandeira: str=Form(...), descricao: str=Form(...), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L791)
+- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L843)
 - Rota: `POST /admin/taxas-antecipacao`
 - Responsabilidade: Endpoint que cria taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `selecionar_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L819)
+- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L871)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/selecionar`
 - Responsabilidade: Endpoint que seleciona taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `toggle_ativo_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L844)
+- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L896)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/toggle-ativo`
 - Responsabilidade: Endpoint que alterna o estado de ativo antecipacao e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L865)
+- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L917)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `pagina_centros_custo(request: Request, cliente_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_centros_custo](../app/routers/admin.py#L882)
+- Local: [pagina_centros_custo](../app/routers/admin.py#L934)
 - Rota: `GET /admin/centros-custo`
 - Responsabilidade: Endpoint que renderiza a página de centros custo e devolve a resposta HTTP correspondente.
 
 ### `criar_centro_custo(cliente_id: int=Form(...), codigo: str=Form(...), nome: str=Form(...), is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_centro_custo](../app/routers/admin.py#L904)
+- Local: [criar_centro_custo](../app/routers/admin.py#L956)
 - Rota: `POST /admin/centros-custo`
 - Responsabilidade: Endpoint que cria centro custo e devolve a resposta HTTP correspondente.
 
 ### `excluir_centro_custo(cc_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [excluir_centro_custo](../app/routers/admin.py#L928)
+- Local: [excluir_centro_custo](../app/routers/admin.py#L980)
 - Rota: `POST /admin/centros-custo/{cc_id}/excluir`
 - Responsabilidade: Endpoint que exclui centro custo e devolve a resposta HTTP correspondente.
 
 ### `editar_centro_custo(cc_id: int, is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_centro_custo](../app/routers/admin.py#L942)
+- Local: [editar_centro_custo](../app/routers/admin.py#L994)
 - Rota: `POST /admin/centros-custo/{cc_id}/editar`
 - Responsabilidade: Endpoint que edita centro custo e devolve a resposta HTTP correspondente.
 
-### `remover_maquininha(maquininha_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `remover_maquininha(maquininha_id: int, origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [remover_maquininha](../app/routers/admin.py#L959)
+- Local: [remover_maquininha](../app/routers/admin.py#L1011)
 - Rota: `POST /admin/maquininha/{maquininha_id}/remover`
 - Responsabilidade: Endpoint que executa o fluxo remover maquininha e devolve a resposta HTTP correspondente.
 
@@ -1824,6 +1829,15 @@ Gera uma referência navegável de todas as funções Python mantidas no projeto
 - Local: [main](../scripts/generate_function_reference.py#L210)
 - Responsabilidade: Gera o arquivo ou valida se a versão commitada está atualizada.
 
+## `scripts/verify_maquininha_flow.py`
+
+Valida adicionar, editar e desativar maquininha sem deixar dados de teste.
+
+### `aguardar_aplicacao(base_url: str, timeout_seconds: int=30) -> None`
+
+- Local: [aguardar_aplicacao](../scripts/verify_maquininha_flow.py#L18)
+- Responsabilidade: Aguarda o servidor aceitar conexões antes de iniciar o fluxo mutável.
+
 ## `seed.py`
 
 Script de seed com dados de exemplo. Execute da raiz do projeto: docker-compose exec web python seed.py Ou fora do Docker (com banco acessivel): python seed.py
@@ -1976,4 +1990,4 @@ Testes da seleção automática de taxa por faixa de parcelamento.
 
 ---
 
-Total documentado: **352 funções e métodos**.
+Total documentado: **354 funções e métodos**.
