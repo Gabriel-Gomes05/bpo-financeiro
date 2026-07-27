@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.database import get_db
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
@@ -22,6 +22,7 @@ def formatar_brl(valor) -> str:
     return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 router = APIRouter()
+require_lancamentos = require_permission(Permission.LANCAMENTOS)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
@@ -135,7 +136,7 @@ async def listar_lancamentos(
     data_fim: Optional[str] = None,
     flash: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_lancamentos),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -208,7 +209,7 @@ async def criar_lancamentos(
     percentual_medico: List[str] = Form(default=[]),
     observacao: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_lancamentos),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -341,7 +342,7 @@ async def form_editar_lancamento(
     at_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_lancamentos),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -383,7 +384,7 @@ async def salvar_edicao_lancamento(
     percentual_medico: str = Form(""),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_lancamentos),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -424,7 +425,16 @@ async def salvar_edicao_lancamento(
     valor_clinica = valor_liquido - valor_medico_calc if valor_medico_calc is not None else valor_liquido
 
     cc_id = int(centro_custo_id) if centro_custo_id.strip().isdigit() else None
-    cc = db.query(CentroCusto).filter(CentroCusto.id == cc_id).first() if cc_id else None
+    cc = db.query(CentroCusto).filter(
+        CentroCusto.id == cc_id,
+        CentroCusto.cliente_id == at.cliente_id,
+        CentroCusto.ativo.is_(True),
+    ).first() if cc_id else None
+    if cc_id and not cc:
+        return RedirectResponse(
+            url=f"/lancamentos/{at_id}/editar?erro=centro_custo_invalido",
+            status_code=303,
+        )
 
     at.data_atendimento = data_atendimento
     at.nome_paciente = nome_paciente.strip() or None
@@ -467,7 +477,7 @@ async def excluir_lancamento(
     request: Request,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_lancamentos),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]

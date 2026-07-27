@@ -15,7 +15,7 @@ from sqlalchemy import text
 sys.path.insert(0, os.path.dirname(__file__))
 
 from app.auth import hash_senha
-from app.database import SessionLocal, criar_tabelas
+from app.database import SessionLocal
 from app.models import (
     Atendimento,
     ClienteBPO,
@@ -42,8 +42,14 @@ from app.models import (
 )
 from app.constants import GRUPOS_DRE
 
-criar_tabelas()
 db = SessionLocal()
+
+SEED_ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "")
+SEED_USER_PASSWORD = os.getenv("SEED_USER_PASSWORD", "")
+if not SEED_ADMIN_PASSWORD or not SEED_USER_PASSWORD:
+    raise RuntimeError(
+        "Defina SEED_ADMIN_PASSWORD e SEED_USER_PASSWORD antes de executar o seed."
+    )
 
 
 def limpar():
@@ -69,28 +75,28 @@ def criar_usuarios():
         Usuario(
             nome="Renato C.",
             email="renato@bpo.com",
-            senha_hash=hash_senha("admin123"),
+            senha_hash=hash_senha(SEED_ADMIN_PASSWORD),
             perfil=PerfilUsuario.coordenador,
             ativo=True,
         ),
         Usuario(
             nome="Ana S.",
             email="ana@bpo.com",
-            senha_hash=hash_senha("123456"),
+            senha_hash=hash_senha(SEED_USER_PASSWORD),
             perfil=PerfilUsuario.funcionario,
             ativo=True,
         ),
         Usuario(
             nome="Marcos R.",
             email="marcos@bpo.com",
-            senha_hash=hash_senha("123456"),
+            senha_hash=hash_senha(SEED_USER_PASSWORD),
             perfil=PerfilUsuario.funcionario,
             ativo=True,
         ),
         Usuario(
             nome="Julia L.",
             email="julia@bpo.com",
-            senha_hash=hash_senha("123456"),
+            senha_hash=hash_senha(SEED_USER_PASSWORD),
             perfil=PerfilUsuario.funcionario,
             ativo=True,
         ),
@@ -954,8 +960,6 @@ if __name__ == "__main__":
     criar_fechamentos_exemplo(clientes, usuarios)
     criar_conciliacao_exemplo(clientes, usuarios)
     db.close()
-    print("\nSeed concluido. Acesse com:")
-    print("  Coordenador: renato@bpo.com / admin123")
-    print("  Funcionario: ana@bpo.com / 123456")
-    print("  Funcionario: marcos@bpo.com / 123456")
-    print("  Funcionario: julia@bpo.com / 123456")
+    print("\nSeed concluido. As senhas permanecem somente nas variaveis de ambiente.")
+    print("  Coordenador: renato@bpo.com")
+    print("  Funcionarios: ana@bpo.com, marcos@bpo.com, julia@bpo.com")

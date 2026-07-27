@@ -14,7 +14,7 @@ sys.path.insert(0, ".")
 from datetime import date, timedelta
 from decimal import Decimal
 
-from app.database import SessionLocal, criar_tabelas, migrar_schema
+from app.database import SessionLocal
 from app.models import (
     MovimentacaoBancaria,
     StatusMovimentacaoBancaria,
@@ -24,8 +24,6 @@ from app.models import (
     VendaCartao,
 )
 
-criar_tabelas()
-migrar_schema()
 db = SessionLocal()
 
 hoje = date.today()
