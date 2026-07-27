@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import uuid
 from datetime import date as date_type, timedelta
@@ -11,7 +12,7 @@ from app.jinja import templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
@@ -43,8 +44,11 @@ from app.services.conciliacao_service import (
     ler_arquivo_extrato,
 )
 from app.services.log_service import registrar as _log
+from app.errors import public_import_error
 
 router = APIRouter()
+require_conciliacao = require_permission(Permission.CONCILIACAO)
+logger = logging.getLogger(__name__)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
@@ -213,7 +217,7 @@ async def pagina_conciliacao_cartao(
     buscar_venda: Optional[int] = Query(default=None),
     termo: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     if usuario.perfil.value in ("secretaria", "medico"):
         return RedirectResponse(url="/", status_code=303)
@@ -234,7 +238,7 @@ async def importar_extrato_maquininha(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -257,8 +261,8 @@ async def importar_extrato_maquininha(
              usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
              detalhes=f"{total} linha(s) de '{nome_original}' importada(s) para revisão",
              ip=request.client.host if request.client else None)
-    except Exception as e:
-        flash_error = str(e)
+    except Exception:
+        flash_error = public_import_error(logger, "importar_extrato_maquininha")
     finally:
         try:
             if caminho:
@@ -278,7 +282,7 @@ async def importar_extrato_maquininha(
 async def conciliar_todos_prontos(
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -392,7 +396,7 @@ async def conciliar_venda(
     atendimento_id: int = Form(...),
     origem: str = Form("sugestao"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -424,7 +428,7 @@ async def editar_venda(
     at_taxa_cartao: str = Form(""),
     at_valor_liquido: str = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -470,7 +474,7 @@ async def reabrir_lote(
     lote_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -503,7 +507,7 @@ async def desvincular_venda(
     venda_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -534,7 +538,7 @@ async def criar_e_conciliar_venda(
     descricao_servico: str = Form(""),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -587,7 +591,7 @@ async def cancelar_venda(
     venda_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -604,7 +608,7 @@ async def fechar_lote(
     data_pagamento: str = Form(...),
     bandeira: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -622,8 +626,8 @@ async def fechar_lote(
             url=f"/conciliacao/banco?cliente_id={cliente_id}&lote_fechado={lote.id}",
             status_code=303,
         )
-    except Exception as e:
-        pass
+    except Exception:
+        logger.exception("fechar_lote_failed")
 
     return RedirectResponse(url=f"/conciliacao?cliente_id={cliente_id}", status_code=303)
 
@@ -632,7 +636,7 @@ async def _reabrir_lote_duplicado_removido(
     lote_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -743,7 +747,7 @@ async def pagina_lancamentos(
     cliente_id: Optional[int] = None,
     flash: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
@@ -770,7 +774,7 @@ async def importar_lancamentos_conciliacao(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -793,8 +797,8 @@ async def importar_lancamentos_conciliacao(
              usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
              detalhes=f"{total} linha(s) de '{nome_original}'",
              ip=request.client.host if request.client else None)
-    except Exception as e:
-        flash_error = str(e)
+    except Exception:
+        flash_error = public_import_error(logger, "importar_lancamentos_conciliacao")
     finally:
         try:
             if caminho:
@@ -840,7 +844,7 @@ async def criar_lancamento_manual_conciliacao(
     percentual_medico: str = Form(""),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]

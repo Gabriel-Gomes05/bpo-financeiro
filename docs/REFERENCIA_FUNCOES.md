@@ -8,96 +8,173 @@ o código e não substitui a leitura das regras de negócio e validações de ac
 
 ## `app/auth.py`
 
+Autenticação, sessão JWT e revogação compartilhada.
+
+### `normalizar_email(email: str) -> str`
+
+- Local: [normalizar_email](../app/auth.py#L32)
+- Responsabilidade: Função auxiliar que normaliza email.
+
+### `validar_senha_nova(senha: str) -> bool`
+
+- Local: [validar_senha_nova](../app/auth.py#L36)
+- Responsabilidade: Função auxiliar que valida senha nova.
+
 ### `hash_senha(senha: str) -> str`
 
-- Local: [hash_senha](../app/auth.py#L29)
-- Responsabilidade: Gera um hash bcrypt irreversível para armazenamento da senha.
+- Local: [hash_senha](../app/auth.py#L41)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “hash senha”.
 
 ### `verificar_senha(senha_plana: str, senha_hash: str) -> bool`
 
-- Local: [verificar_senha](../app/auth.py#L34)
-- Responsabilidade: Compara uma senha informada com o hash bcrypt persistido.
+- Local: [verificar_senha](../app/auth.py#L47)
+- Responsabilidade: Função auxiliar que verifica senha.
 
-### `criar_token(data: dict) -> str`
+### `verificar_senha_constante(senha_plana: str, senha_hash: str | None) -> bool`
 
-- Local: [criar_token](../app/auth.py#L39)
-- Responsabilidade: Cria um JWT assinado com expiração configurada para a sessão web.
+- Local: [verificar_senha_constante](../app/auth.py#L63)
+- Responsabilidade: Executa bcrypt mesmo quando o usuário não existe, reduzindo enumeração temporal.
+
+### `criar_token(data: dict, *, auth_version: int=0) -> str`
+
+- Local: [criar_token](../app/auth.py#L71)
+- Responsabilidade: Função auxiliar que cria token.
 
 ### `decodificar_token(token: str) -> Optional[dict]`
 
-- Local: [decodificar_token](../app/auth.py#L47)
-- Responsabilidade: Valida assinatura e expiração do JWT, retornando `None` se inválido.
+- Local: [decodificar_token](../app/auth.py#L87)
+- Responsabilidade: Função auxiliar que decodifica token.
 
-### `login_bloqueado(chave: str) -> bool`
+### `get_token_da_requisicao(request: Request) -> Optional[str]`
 
-- Local: [login_bloqueado](../app/auth.py#L55)
-- Responsabilidade: Informa se IP/e-mail excedeu o limite de tentativas na janela atual.
+- Local: [get_token_da_requisicao](../app/auth.py#L104)
+- Responsabilidade: Função auxiliar que obtém token da requisicao.
 
-### `registrar_tentativa_login(chave: str) -> None`
+### `_revocation_key(jti: str) -> str`
 
-- Local: [registrar_tentativa_login](../app/auth.py#L66)
-- Responsabilidade: Registra uma falha de autenticação para controle de força bruta.
+- Local: [_revocation_key](../app/auth.py#L113)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “revocation key”.
 
-### `limpar_tentativas_login(chave: str) -> None`
+### `token_revogado(jti: str) -> bool`
 
-- Local: [limpar_tentativas_login](../app/auth.py#L77)
-- Responsabilidade: Remove falhas acumuladas após uma autenticação bem-sucedida.
+- Local: [token_revogado](../app/auth.py#L117)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “token revogado”.
 
-### `get_token_do_cookie(request: Request) -> Optional[str]`
+### `token_revogado_async(jti: str) -> bool`
 
-- Local: [get_token_do_cookie](../app/auth.py#L86)
-- Responsabilidade: Obtém o token JWT do cookie HttpOnly da requisição.
+- Local: [token_revogado_async](../app/auth.py#L125)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “token revogado async”.
+
+### `revogar_token(payload: dict) -> None`
+
+- Local: [revogar_token](../app/auth.py#L133)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “revogar token”.
 
 ### `get_usuario_atual(request: Request, db: Session=Depends(get_db)) -> Usuario`
 
-- Local: [get_usuario_atual](../app/auth.py#L91)
-- Responsabilidade: Lê o JWT do cookie. Se inválido ou ausente, redireciona para /login. Use como Depends() em qualquer rota protegida.
+- Local: [get_usuario_atual](../app/auth.py#L141)
+- Responsabilidade: Função auxiliar que obtém usuario atual.
 
 ### `requer_coordenador(usuario: Usuario=Depends(get_usuario_atual)) -> Usuario`
 
-- Local: [requer_coordenador](../app/auth.py#L134)
-- Responsabilidade: Autoriza somente coordenadores e responde 403 para os demais perfis.
+- Local: [requer_coordenador](../app/auth.py#L176)
+- Responsabilidade: Função auxiliar que valida a permissão necessária para coordenador.
 
 ### `tem_acesso_geral(usuario: Usuario) -> bool`
 
-- Local: [tem_acesso_geral](../app/auth.py#L142)
-- Responsabilidade: Informa se o perfil pode operar todos os clientes da organização.
+- Local: [tem_acesso_geral](../app/auth.py#L182)
+- Responsabilidade: Função auxiliar que informa se existe permissão ou condição para acesso geral.
 
 ### `__init__(self, app)`
 
-- Local: [AuthMiddleware.__init__](../app/auth.py#L160)
+- Local: [AuthMiddleware.__init__](../app/auth.py#L192)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “init”.
 
 ### `__call__(self, scope, receive, send)`
 
-- Local: [AuthMiddleware.__call__](../app/auth.py#L163)
+- Local: [AuthMiddleware.__call__](../app/auth.py#L195)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “call”.
+
+## `app/authorization.py`
+
+Matriz central de permissões e dependências de autorização.
+
+### `has_permission(usuario: Usuario, permission: Permission) -> bool`
+
+- Local: [has_permission](../app/authorization.py#L56)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “has permission”.
+
+### `require_permission(permission: Permission) -> Callable`
+
+- Local: [require_permission](../app/authorization.py#L60)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “require permission”.
+
+### `dependency(usuario: Usuario=Depends(get_usuario_atual)) -> Usuario`
+
+- Local: [require_permission.dependency](../app/authorization.py#L61)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “dependency”.
 
 ## `app/config.py`
 
-Configurações da aplicação lidas do arquivo .env. Todos os módulos importam daqui — nunca leem os.getenv diretamente.
+Configuração centralizada e validada da aplicação.
 
-### `_validar_configuracao_sensivel() -> None`
+### `_required(name: str) -> str`
 
-- Local: [_validar_configuracao_sensivel](../app/config.py#L46)
-- Responsabilidade: Interrompe o startup quando segredos ou controles críticos são inseguros.
+- Local: [_required](../app/config.py#L14)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “required”.
+
+### `_int(name: str, default: int, *, minimum: int=0, maximum: int | None=None) -> int`
+
+- Local: [_int](../app/config.py#L21)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “int”.
+
+### `_bool(name: str, default: bool=False) -> bool`
+
+- Local: [_bool](../app/config.py#L31)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “bool”.
+
+### `_csv(name: str) -> list[str]`
+
+- Local: [_csv](../app/config.py#L38)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “csv”.
+
+### `_decode_key(name: str, encoded: str) -> bytes`
+
+- Local: [_decode_key](../app/config.py#L108)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “decode key”.
+
+### `_validar_origens() -> None`
+
+- Local: [_validar_origens](../app/config.py#L118)
+- Responsabilidade: Função auxiliar que valida origens.
+
+### `_validar_configuracao() -> None`
+
+- Local: [_validar_configuracao](../app/config.py#L136)
+- Responsabilidade: Função auxiliar que valida configuracao.
 
 ## `app/database.py`
 
+Engine e sessões de runtime; migrations são executadas somente pelo Alembic.
+
+### `_preencher_auditoria(session: Session, _flush_context, _instances) -> None`
+
+- Local: [_preencher_auditoria](../app/database.py#L47)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “preencher auditoria”.
+
 ### `get_db()`
 
-- Local: [get_db](../app/database.py#L40)
-- Responsabilidade: Dependência do FastAPI — fornece sessão do banco e garante fechamento.
+- Local: [get_db](../app/database.py#L70)
+- Responsabilidade: Função auxiliar que obtém db.
 
-### `criar_tabelas()`
+## `app/errors.py`
 
-- Local: [criar_tabelas](../app/database.py#L49)
-- Responsabilidade: Cria todas as tabelas no banco se ainda não existirem.
+Mensagens públicas estáveis para falhas inesperadas.
 
-### `migrar_schema()`
+### `public_import_error(logger: logging.Logger, operation: str) -> str`
 
-- Local: [migrar_schema](../app/database.py#L55)
-- Responsabilidade: Adiciona colunas novas em tabelas existentes (idempotente).
+- Local: [public_import_error](../app/errors.py#L7)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “public import error”.
 
 ## `app/field_encryption.py`
 
@@ -105,162 +182,269 @@ Criptografia autenticada para campos sensiveis persistidos pelo SQLAlchemy.
 
 ### `_key() -> bytes`
 
-- Local: [_key](../app/field_encryption.py#L76)
+- Local: [_key](../app/field_encryption.py#L80)
 - Responsabilidade: Carrega e valida a chave de 64 bytes, mantendo-a em cache no processo.
 
 ### `is_encrypted(value: object) -> bool`
 
-- Local: [is_encrypted](../app/field_encryption.py#L93)
+- Local: [is_encrypted](../app/field_encryption.py#L97)
 - Responsabilidade: Informa se o valor usa o envelope versionado de criptografia do projeto.
 
 ### `encrypt_value(value: object, context: str, deterministic: bool=False) -> str | None`
 
-- Local: [encrypt_value](../app/field_encryption.py#L98)
+- Local: [encrypt_value](../app/field_encryption.py#L102)
 - Responsabilidade: Cifra um valor com contexto autenticado e retorna texto seguro para persistência.
 
 ### `decrypt_value(value: object, context: str) -> str | None`
 
-- Local: [decrypt_value](../app/field_encryption.py#L118)
+- Local: [decrypt_value](../app/field_encryption.py#L122)
 - Responsabilidade: Valida e decifra um valor; aceita plaintext somente para migração de legado.
 
 ### `__init__(self, context: str, *, deterministic: bool=False, **kwargs)`
 
-- Local: [EncryptedText.__init__](../app/field_encryption.py#L145)
+- Local: [EncryptedText.__init__](../app/field_encryption.py#L149)
 - Responsabilidade: Configura o contexto da coluna e se ela precisa permitir comparação exata.
 
 ### `process_bind_param(self, value, dialect)`
 
-- Local: [EncryptedText.process_bind_param](../app/field_encryption.py#L151)
+- Local: [EncryptedText.process_bind_param](../app/field_encryption.py#L155)
 - Responsabilidade: Cifra valores automaticamente antes de enviá-los ao banco.
 
 ### `process_result_value(self, value, dialect)`
 
-- Local: [EncryptedText.process_result_value](../app/field_encryption.py#L155)
+- Local: [EncryptedText.process_result_value](../app/field_encryption.py#L159)
 - Responsabilidade: Decifra valores automaticamente ao materializar um objeto ORM.
 
 ## `app/jinja.py`
 
 Instância única de Jinja2Templates compartilhada por todos os routers. Registra T (strings) e now como globais — disponíveis em qualquer template sem precisar passar como contexto.
 
+### `TemplateResponse(self, *args, **kwargs)`
+
+- Local: [ApplicationTemplates.TemplateResponse](../app/jinja.py#L15)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “TemplateResponse”.
+
 ### `strftime(self, fmt: str) -> str`
 
-- Local: [_Today.strftime](../app/jinja.py#L14)
+- Local: [_Today.strftime](../app/jinja.py#L33)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “strftime”.
 
 ### `__bool__(self) -> bool`
 
-- Local: [_Today.__bool__](../app/jinja.py#L16)
+- Local: [_Today.__bool__](../app/jinja.py#L35)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “bool”.
 
 ### `__str__(self) -> str`
 
-- Local: [_Today.__str__](../app/jinja.py#L18)
+- Local: [_Today.__str__](../app/jinja.py#L37)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “str”.
+
+## `app/logging_config.py`
+
+Logging JSON estruturado para aplicação e containers.
+
+### `format(self, record: logging.LogRecord) -> str`
+
+- Local: [JsonFormatter.format](../app/logging_config.py#L42)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “format”.
+
+### `configure_logging() -> None`
+
+- Local: [configure_logging](../app/logging_config.py#L60)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “configure logging”.
+
+### `dispatch(self, request: Request, call_next)`
+
+- Local: [RequestLoggingMiddleware.dispatch](../app/logging_config.py#L71)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “dispatch”.
 
 ## `app/main.py`
 
-### `startup()`
+Bootstrap HTTP da aplicação FLIC.
 
-- Local: [startup](../app/main.py#L51)
-- Responsabilidade: Cria tabelas e aplica migrações.
+### `lifespan(_: FastAPI)`
+
+- Local: [lifespan](../app/main.py#L44)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “lifespan”.
+
+### `health()`
+
+- Local: [health](../app/main.py#L94)
+- Rota: `GET /health`
+- Responsabilidade: Endpoint que executa o fluxo health e devolve a resposta HTTP correspondente.
+
+### `ready()`
+
+- Local: [ready](../app/main.py#L99)
+- Rota: `GET /ready`
+- Responsabilidade: Endpoint que executa o fluxo ready e devolve a resposta HTTP correspondente.
+
+### `version()`
+
+- Local: [version](../app/main.py#L118)
+- Rota: `GET /version`
+- Responsabilidade: Endpoint que executa o fluxo version e devolve a resposta HTTP correspondente.
+
+### `_wants_json(request: Request) -> bool`
+
+- Local: [_wants_json](../app/main.py#L126)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “wants json”.
+
+### `validation_error_handler(request: Request, _: RequestValidationError)`
+
+- Local: [validation_error_handler](../app/main.py#L131)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “validation error handler”.
+
+### `unhandled_error_handler(request: Request, exc: Exception)`
+
+- Local: [unhandled_error_handler](../app/main.py#L155)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “unhandled error handler”.
 
 ## `app/models.py`
 
+### `created_by(cls)`
+
+- Local: [AuditMixin.created_by](../app/models.py#L118)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “created by”.
+
+### `updated_by(cls)`
+
+- Local: [AuditMixin.updated_by](../app/models.py#L122)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “updated by”.
+
 ### `valor_pago_total(self)`
 
-- Local: [ContaPagar.valor_pago_total](../app/models.py#L251)
+- Local: [ContaPagar.valor_pago_total](../app/models.py#L275)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “valor pago total”.
 
 ### `saldo_pendente(self)`
 
-- Local: [ContaPagar.saldo_pendente](../app/models.py#L255)
+- Local: [ContaPagar.saldo_pendente](../app/models.py#L279)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “saldo pendente”.
+
+## `app/rate_limit.py`
+
+Rate limiting distribuído com janela fixa atômica no Redis.
+
+### `opaque_key(value: str) -> str`
+
+- Local: [opaque_key](../app/rate_limit.py#L21)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “opaque key”.
+
+### `consume(key: str, limit: int, window_seconds: int) -> tuple[bool, int, int]`
+
+- Local: [consume](../app/rate_limit.py#L29)
+- Responsabilidade: Retorna permitido, tentativas restantes e segundos até liberar.
+
+### `inspect_limit(key: str, limit: int) -> tuple[bool, int]`
+
+- Local: [inspect_limit](../app/rate_limit.py#L42)
+- Responsabilidade: Consulta um limite sem registrar uma nova tentativa.
+
+### `clear(key: str) -> None`
+
+- Local: [clear](../app/rate_limit.py#L53)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “clear”.
+
+## `app/redis_client.py`
+
+Clientes Redis compartilhados por rate limit e revogação.
+
+### `redis_sync() -> redis.Redis`
+
+- Local: [redis_sync](../app/redis_client.py#L13)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “redis sync”.
+
+### `redis_async() -> async_redis.Redis`
+
+- Local: [redis_async](../app/redis_client.py#L24)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “redis async”.
 
 ## `app/routers/admin.py`
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/admin.py#L31)
+- Local: [clientes_do_usuario](../app/routers/admin.py#L38)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `pode_acessar_cliente(db: Session, usuario: Usuario, cliente_id: int) -> bool`
 
-- Local: [pode_acessar_cliente](../app/routers/admin.py#L40)
+- Local: [pode_acessar_cliente](../app/routers/admin.py#L47)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “pode acessar cliente”.
 
 ### `_url_retorno_maquininha(cliente_id: int, origem: str | None, maquininha_id: int | None=None) -> str`
 
-- Local: [_url_retorno_maquininha](../app/routers/admin.py#L50)
+- Local: [_url_retorno_maquininha](../app/routers/admin.py#L57)
 - Responsabilidade: Monta apenas destinos internos conhecidos após gerenciar uma maquininha.
 
 ### `_float_opcional(valor: str | None) -> Optional[float]`
 
-- Local: [_float_opcional](../app/routers/admin.py#L66)
+- Local: [_float_opcional](../app/routers/admin.py#L73)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “float opcional”.
 
 ### `pagina_equipe(usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_equipe](../app/routers/admin.py#L73)
+- Local: [pagina_equipe](../app/routers/admin.py#L80)
 - Rota: `GET /admin/equipe`
 - Responsabilidade: Endpoint que renderiza a página de equipe e devolve a resposta HTTP correspondente.
 
 ### `pagina_clientes(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_clientes](../app/routers/admin.py#L80)
+- Local: [pagina_clientes](../app/routers/admin.py#L87)
 - Rota: `GET /admin/clientes`
 - Responsabilidade: Endpoint que renderiza a página de clientes e devolve a resposta HTTP correspondente.
 
 ### `pagina_funcionarios(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(requer_coordenador))`
 
-- Local: [pagina_funcionarios](../app/routers/admin.py#L104)
+- Local: [pagina_funcionarios](../app/routers/admin.py#L111)
 - Rota: `GET /admin/funcionarios`
 - Responsabilidade: Endpoint que renderiza a página de funcionarios e devolve a resposta HTTP correspondente.
 
 ### `pagina_anotacoes_clientes(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_anotacoes_clientes](../app/routers/admin.py#L119)
+- Local: [pagina_anotacoes_clientes](../app/routers/admin.py#L126)
 - Rota: `GET /admin/anotacoes-clientes`
 - Responsabilidade: Endpoint que renderiza a página de anotacoes clientes e devolve a resposta HTTP correspondente.
 
 ### `pagina_anotacoes_cliente(cliente_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_anotacoes_cliente](../app/routers/admin.py#L133)
+- Local: [pagina_anotacoes_cliente](../app/routers/admin.py#L140)
 - Rota: `GET /admin/anotacoes-clientes/{cliente_id}`
 - Responsabilidade: Endpoint que renderiza a página de anotacoes cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_anotacao_cliente(cliente_id: int, categoria: str=Form('procedimento'), titulo: str=Form(...), conteudo: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_anotacao_cliente](../app/routers/admin.py#L157)
+- Local: [criar_anotacao_cliente](../app/routers/admin.py#L164)
 - Rota: `POST /admin/anotacoes-clientes/{cliente_id}/nova`
 - Responsabilidade: Endpoint que cria anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `editar_anotacao_cliente(anotacao_id: int, categoria: str=Form('procedimento'), titulo: str=Form(...), conteudo: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_anotacao_cliente](../app/routers/admin.py#L186)
+- Local: [editar_anotacao_cliente](../app/routers/admin.py#L193)
 - Rota: `POST /admin/anotacoes-clientes/anotacao/{anotacao_id}/editar`
 - Responsabilidade: Endpoint que edita anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `excluir_anotacao_cliente(anotacao_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [excluir_anotacao_cliente](../app/routers/admin.py#L208)
+- Local: [excluir_anotacao_cliente](../app/routers/admin.py#L215)
 - Rota: `POST /admin/anotacoes-clientes/anotacao/{anotacao_id}/excluir`
 - Responsabilidade: Endpoint que exclui anotacao cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_usuario(nome: str=Form(...), email: str=Form(...), senha: str=Form(...), perfil: str=Form('funcionario'), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [criar_usuario](../app/routers/admin.py#L226)
+- Local: [criar_usuario](../app/routers/admin.py#L233)
 - Rota: `POST /admin/equipe/usuario`
 - Responsabilidade: Endpoint que cria usuario e devolve a resposta HTTP correspondente.
 
 ### `editar_usuario(usuario_id: int, nome: str=Form(...), email: str=Form(...), perfil: str=Form(...), senha: Optional[str]=Form(None), db: Session=Depends(get_db), coordenador: Usuario=Depends(requer_coordenador))`
 
-- Local: [editar_usuario](../app/routers/admin.py#L257)
+- Local: [editar_usuario](../app/routers/admin.py#L269)
 - Rota: `POST /admin/funcionarios/usuario/{usuario_id}/editar`
 - Responsabilidade: Endpoint que edita usuario e devolve a resposta HTTP correspondente.
 
 ### `excluir_usuario(usuario_id: int, db: Session=Depends(get_db), coordenador: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_usuario](../app/routers/admin.py#L300)
+- Local: [excluir_usuario](../app/routers/admin.py#L313)
 - Rota: `POST /admin/funcionarios/usuario/{usuario_id}/excluir`
 - Responsabilidade: Endpoint que exclui usuario e devolve a resposta HTTP correspondente.
 
@@ -272,127 +456,127 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `criar_cliente(nome: str=Form(...), razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), bandeira: List[str]=Form(default=[]), taxa_percentual: List[str]=Form(default=[]), funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_cliente](../app/routers/admin.py#L360)
+- Local: [criar_cliente](../app/routers/admin.py#L362)
 - Rota: `POST /admin/equipe/cliente`
 - Responsabilidade: Endpoint que cria cliente e devolve a resposta HTTP correspondente.
 
 ### `atribuir_cliente(cliente_id: int, funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [atribuir_cliente](../app/routers/admin.py#L409)
+- Local: [atribuir_cliente](../app/routers/admin.py#L411)
 - Rota: `POST /admin/equipe/cliente/{cliente_id}/atribuir`
 - Responsabilidade: Endpoint que executa o fluxo atribuir cliente e devolve a resposta HTTP correspondente.
 
 ### `atualizar_cliente(cliente_id: int, razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [atualizar_cliente](../app/routers/admin.py#L423)
+- Local: [atualizar_cliente](../app/routers/admin.py#L425)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/atualizar`
 - Responsabilidade: Endpoint que atualiza cliente e devolve a resposta HTTP correspondente.
 
 ### `pagina_editar_cliente(cliente_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_editar_cliente](../app/routers/admin.py#L448)
+- Local: [pagina_editar_cliente](../app/routers/admin.py#L450)
 - Rota: `GET /admin/clientes/cliente/{cliente_id}/editar`
 - Responsabilidade: Endpoint que renderiza a página de editar cliente e devolve a resposta HTTP correspondente.
 
 ### `editar_cliente_completo(cliente_id: int, nome: str=Form(...), razao_social: Optional[str]=Form(None), cnpj: Optional[str]=Form(None), especialidade: Optional[str]=Form(None), regime_tributario: Optional[str]=Form(None), banco: Optional[str]=Form(None), agencia: Optional[str]=Form(None), conta: Optional[str]=Form(None), tem_maquininha: str=Form('nao'), rede_maquininha: Optional[str]=Form(None), antecipa: str=Form('nao'), funcionario_id: Optional[int]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_cliente_completo](../app/routers/admin.py#L476)
+- Local: [editar_cliente_completo](../app/routers/admin.py#L478)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/editar`
 - Responsabilidade: Endpoint que edita cliente completo e devolve a resposta HTTP correspondente.
 
 ### `excluir_cliente(cliente_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_cliente](../app/routers/admin.py#L538)
+- Local: [excluir_cliente](../app/routers/admin.py#L540)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/excluir`
 - Responsabilidade: Endpoint que exclui cliente e devolve a resposta HTTP correspondente.
 
 ### `pagina_taxas_cartao(request: Request, cliente_id: Optional[int]=None, maquininha_id: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_taxas_cartao](../app/routers/admin.py#L575)
+- Local: [pagina_taxas_cartao](../app/routers/admin.py#L578)
 - Rota: `GET /admin/taxas-cartao`
 - Responsabilidade: Endpoint que renderiza a página de taxas cartao e devolve a resposta HTTP correspondente.
 
 ### `criar_taxa(cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), bandeira: str=Form(...), faixa_parcelamento: str=Form('avista_credito'), parcela_inicial: Optional[int]=Form(None), parcela_final: Optional[int]=Form(None), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa](../app/routers/admin.py#L634)
+- Local: [criar_taxa](../app/routers/admin.py#L637)
 - Rota: `POST /admin/taxas-cartao`
 - Responsabilidade: Endpoint que cria taxa e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa(taxa_id: int, cliente_id: int=Form(...), maquininha_id: Optional[int]=Form(None), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa](../app/routers/admin.py#L716)
+- Local: [excluir_taxa](../app/routers/admin.py#L719)
 - Rota: `POST /admin/taxas-cartao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa e devolve a resposta HTTP correspondente.
 
 ### `adicionar_maquininha(cliente_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [adicionar_maquininha](../app/routers/admin.py#L738)
+- Local: [adicionar_maquininha](../app/routers/admin.py#L741)
 - Rota: `POST /admin/clientes/cliente/{cliente_id}/maquininha/adicionar`
 - Responsabilidade: Endpoint que adiciona maquininha e devolve a resposta HTTP correspondente.
 
 ### `editar_maquininha(maquininha_id: int, rede: str=Form(...), apelido: Optional[str]=Form(None), antecipa: str=Form('nao'), origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_maquininha](../app/routers/admin.py#L787)
+- Local: [editar_maquininha](../app/routers/admin.py#L790)
 - Rota: `POST /admin/maquininha/{maquininha_id}/editar`
 - Responsabilidade: Endpoint que edita maquininha e devolve a resposta HTTP correspondente.
 
 ### `toggle_antecipa_cliente(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L824)
+- Local: [toggle_antecipa_cliente](../app/routers/admin.py#L827)
 - Rota: `POST /admin/taxas-cartao/toggle-antecipa`
 - Responsabilidade: Endpoint que alterna o estado de antecipa cliente e devolve a resposta HTTP correspondente.
 
 ### `criar_taxa_antecipacao(cliente_id: int=Form(...), bandeira: str=Form(...), descricao: str=Form(...), taxa_percentual: float=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L843)
+- Local: [criar_taxa_antecipacao](../app/routers/admin.py#L846)
 - Rota: `POST /admin/taxas-antecipacao`
 - Responsabilidade: Endpoint que cria taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `selecionar_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L871)
+- Local: [selecionar_taxa_antecipacao](../app/routers/admin.py#L874)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/selecionar`
 - Responsabilidade: Endpoint que seleciona taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `toggle_ativo_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L896)
+- Local: [toggle_ativo_antecipacao](../app/routers/admin.py#L899)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/toggle-ativo`
 - Responsabilidade: Endpoint que alterna o estado de ativo antecipacao e devolve a resposta HTTP correspondente.
 
 ### `excluir_taxa_antecipacao(taxa_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), _: Usuario=Depends(requer_coordenador))`
 
-- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L917)
+- Local: [excluir_taxa_antecipacao](../app/routers/admin.py#L920)
 - Rota: `POST /admin/taxas-antecipacao/{taxa_id}/excluir`
 - Responsabilidade: Endpoint que exclui taxa antecipacao e devolve a resposta HTTP correspondente.
 
 ### `pagina_centros_custo(request: Request, cliente_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [pagina_centros_custo](../app/routers/admin.py#L934)
+- Local: [pagina_centros_custo](../app/routers/admin.py#L937)
 - Rota: `GET /admin/centros-custo`
 - Responsabilidade: Endpoint que renderiza a página de centros custo e devolve a resposta HTTP correspondente.
 
 ### `criar_centro_custo(cliente_id: int=Form(...), codigo: str=Form(...), nome: str=Form(...), is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [criar_centro_custo](../app/routers/admin.py#L956)
+- Local: [criar_centro_custo](../app/routers/admin.py#L959)
 - Rota: `POST /admin/centros-custo`
 - Responsabilidade: Endpoint que cria centro custo e devolve a resposta HTTP correspondente.
 
 ### `excluir_centro_custo(cc_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [excluir_centro_custo](../app/routers/admin.py#L980)
+- Local: [excluir_centro_custo](../app/routers/admin.py#L983)
 - Rota: `POST /admin/centros-custo/{cc_id}/excluir`
 - Responsabilidade: Endpoint que exclui centro custo e devolve a resposta HTTP correspondente.
 
 ### `editar_centro_custo(cc_id: int, is_medico: bool=Form(False), especialidade: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [editar_centro_custo](../app/routers/admin.py#L994)
+- Local: [editar_centro_custo](../app/routers/admin.py#L997)
 - Rota: `POST /admin/centros-custo/{cc_id}/editar`
 - Responsabilidade: Endpoint que edita centro custo e devolve a resposta HTTP correspondente.
 
 ### `remover_maquininha(maquininha_id: int, origem: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [remover_maquininha](../app/routers/admin.py#L1011)
+- Local: [remover_maquininha](../app/routers/admin.py#L1014)
 - Rota: `POST /admin/maquininha/{maquininha_id}/remover`
 - Responsabilidade: Endpoint que executa o fluxo remover maquininha e devolve a resposta HTTP correspondente.
 
@@ -400,27 +584,27 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `pagina_login(request: Request)`
 
-- Local: [pagina_login](../app/routers/auth.py#L23)
+- Local: [pagina_login](../app/routers/auth.py#L37)
 - Rota: `GET /login`
 - Responsabilidade: Endpoint que renderiza a página de login e devolve a resposta HTTP correspondente.
 
-### `fazer_login(request: Request, email: str=Form(...), senha: str=Form(...), db: Session=Depends(get_db))`
+### `fazer_login(request: Request, email: str=Form(..., max_length=320), senha: str=Form(..., max_length=256), db: Session=Depends(get_db))`
 
-- Local: [fazer_login](../app/routers/auth.py#L28)
+- Local: [fazer_login](../app/routers/auth.py#L42)
 - Rota: `POST /login`
 - Responsabilidade: Endpoint que executa login e devolve a resposta HTTP correspondente.
 
 ### `logout(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [logout](../app/routers/auth.py#L75)
+- Local: [logout](../app/routers/auth.py#L136)
 - Rota: `POST /logout`
 - Responsabilidade: Endpoint que executa o fluxo logout e devolve a resposta HTTP correspondente.
 
 ## `app/routers/cliente_ativo.py`
 
-### `selecionar_cliente(request: Request, cliente_id: Optional[str]=Form(None))`
+### `selecionar_cliente(request: Request, cliente_id: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [selecionar_cliente](../app/routers/cliente_ativo.py#L13)
+- Local: [selecionar_cliente](../app/routers/cliente_ativo.py#L17)
 - Rota: `POST /cliente/selecionar`
 - Responsabilidade: Endpoint que seleciona cliente e devolve a resposta HTTP correspondente.
 
@@ -428,169 +612,169 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/conciliacao.py#L50)
+- Local: [clientes_do_usuario](../app/routers/conciliacao.py#L54)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_carregar_vendas_a_conciliar(db: Session, cliente_id: int)`
 
-- Local: [_carregar_vendas_a_conciliar](../app/routers/conciliacao.py#L59)
+- Local: [_carregar_vendas_a_conciliar](../app/routers/conciliacao.py#L63)
 - Responsabilidade: Vendas pendentes (sem atendimento vinculado).
 
 ### `_carregar_vendas_conciliadas(db: Session, cliente_id: int)`
 
-- Local: [_carregar_vendas_conciliadas](../app/routers/conciliacao.py#L72)
+- Local: [_carregar_vendas_conciliadas](../app/routers/conciliacao.py#L76)
 - Responsabilidade: Vendas já conciliadas com atendimento mas ainda não fechadas em lote.
 
 ### `_carregar_atendimentos_pendentes(db: Session, cliente_id: int)`
 
-- Local: [_carregar_atendimentos_pendentes](../app/routers/conciliacao.py#L85)
+- Local: [_carregar_atendimentos_pendentes](../app/routers/conciliacao.py#L89)
 - Responsabilidade: Função auxiliar que carrega atendimentos pendentes.
 
 ### `_buscar_atendimentos(db: Session, cliente_id: int, venda: VendaCartao, termo: str | None)`
 
-- Local: [_buscar_atendimentos](../app/routers/conciliacao.py#L101)
+- Local: [_buscar_atendimentos](../app/routers/conciliacao.py#L105)
 - Responsabilidade: Função auxiliar que busca atendimentos.
 
 ### `_montar_painel(db, cliente_id, vendas, atendimentos, busca_venda_id=None, busca_termo=None)`
 
-- Local: [_montar_painel](../app/routers/conciliacao.py#L120)
+- Local: [_montar_painel](../app/routers/conciliacao.py#L124)
 - Responsabilidade: Função auxiliar que monta painel.
 
 ### `_agrupar_conciliadas(vendas_conciliadas: list) -> list`
 
-- Local: [_agrupar_conciliadas](../app/routers/conciliacao.py#L156)
+- Local: [_agrupar_conciliadas](../app/routers/conciliacao.py#L160)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “agrupar conciliadas”.
 
 ### `_carregar_lotes_recentes(db: Session, cliente_id: int)`
 
-- Local: [_carregar_lotes_recentes](../app/routers/conciliacao.py#L177)
+- Local: [_carregar_lotes_recentes](../app/routers/conciliacao.py#L181)
 - Responsabilidade: Função auxiliar que carrega lotes recentes.
 
 ### `_ctx(db, usuario, cliente_id, busca_venda_id=None, busca_termo=None)`
 
-- Local: [_ctx](../app/routers/conciliacao.py#L187)
+- Local: [_ctx](../app/routers/conciliacao.py#L191)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “ctx”.
 
-### `pagina_conciliacao_cartao(request: Request, cliente_id: Optional[int]=None, buscar_venda: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_conciliacao_cartao(request: Request, cliente_id: Optional[int]=None, buscar_venda: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [pagina_conciliacao_cartao](../app/routers/conciliacao.py#L210)
+- Local: [pagina_conciliacao_cartao](../app/routers/conciliacao.py#L214)
 - Rota: `GET /conciliacao`
 - Responsabilidade: Endpoint que renderiza a página de conciliacao cartao e devolve a resposta HTTP correspondente.
 
-### `importar_extrato_maquininha(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_extrato_maquininha(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_extrato_maquininha](../app/routers/conciliacao.py#L232)
+- Local: [importar_extrato_maquininha](../app/routers/conciliacao.py#L236)
 - Rota: `POST /conciliacao/importar`
 - Responsabilidade: Endpoint que importa extrato maquininha e devolve a resposta HTTP correspondente.
 
-### `conciliar_todos_prontos(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_todos_prontos(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_todos_prontos](../app/routers/conciliacao.py#L278)
+- Local: [conciliar_todos_prontos](../app/routers/conciliacao.py#L282)
 - Rota: `POST /conciliacao/conciliar-todos-prontos`
 - Responsabilidade: Endpoint que concilia todos prontos e devolve a resposta HTTP correspondente.
 
 ### `_aplicar_conciliacao(db: Session, venda: VendaCartao, at: Atendimento)`
 
-- Local: [_aplicar_conciliacao](../app/routers/conciliacao.py#L294)
+- Local: [_aplicar_conciliacao](../app/routers/conciliacao.py#L298)
 - Responsabilidade: Função auxiliar que aplica conciliacao.
 
 ### `_conciliar_vendas_prontas(db: Session, cliente_id: int, usuario: Usuario | None=None) -> int`
 
-- Local: [_conciliar_vendas_prontas](../app/routers/conciliacao.py#L307)
+- Local: [_conciliar_vendas_prontas](../app/routers/conciliacao.py#L311)
 - Responsabilidade: Função auxiliar que concilia vendas prontas.
 
 ### `_conciliar_pix_ted_prontos(db: Session, cliente_id: int, usuario: Usuario | None=None) -> int`
 
-- Local: [_conciliar_pix_ted_prontos](../app/routers/conciliacao.py#L331)
+- Local: [_conciliar_pix_ted_prontos](../app/routers/conciliacao.py#L335)
 - Responsabilidade: Função auxiliar que concilia pix ted prontos.
 
-### `conciliar_venda(venda_id: int, cliente_id: int=Form(...), atendimento_id: int=Form(...), origem: str=Form('sugestao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_venda(venda_id: int, cliente_id: int=Form(...), atendimento_id: int=Form(...), origem: str=Form('sugestao'), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_venda](../app/routers/conciliacao.py#L389)
+- Local: [conciliar_venda](../app/routers/conciliacao.py#L393)
 - Rota: `POST /conciliacao/venda/{venda_id}/conciliar`
 - Responsabilidade: Endpoint que concilia venda e devolve a resposta HTTP correspondente.
 
-### `editar_venda(venda_id: int, cliente_id: int=Form(...), atendimento_id: Optional[int]=Form(default=None), valor_bruto: str=Form(...), taxa_percentual: str=Form(''), valor_liquido: str=Form(...), at_valor_servico: str=Form(...), at_taxa_cartao: str=Form(''), at_valor_liquido: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `editar_venda(venda_id: int, cliente_id: int=Form(...), atendimento_id: Optional[int]=Form(default=None), valor_bruto: str=Form(...), taxa_percentual: str=Form(''), valor_liquido: str=Form(...), at_valor_servico: str=Form(...), at_taxa_cartao: str=Form(''), at_valor_liquido: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [editar_venda](../app/routers/conciliacao.py#L416)
+- Local: [editar_venda](../app/routers/conciliacao.py#L420)
 - Rota: `POST /conciliacao/venda/{venda_id}/editar`
 - Responsabilidade: Endpoint que edita venda e devolve a resposta HTTP correspondente.
 
-### `reabrir_lote(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `reabrir_lote(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [reabrir_lote](../app/routers/conciliacao.py#L469)
+- Local: [reabrir_lote](../app/routers/conciliacao.py#L473)
 - Rota: `POST /conciliacao/lote/{lote_id}/reabrir`
 - Responsabilidade: Endpoint que executa o fluxo reabrir lote e devolve a resposta HTTP correspondente.
 
-### `desvincular_venda(venda_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `desvincular_venda(venda_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [desvincular_venda](../app/routers/conciliacao.py#L502)
+- Local: [desvincular_venda](../app/routers/conciliacao.py#L506)
 - Rota: `POST /conciliacao/venda/{venda_id}/desvincular`
 - Responsabilidade: Endpoint que executa o fluxo desvincular venda e devolve a resposta HTTP correspondente.
 
-### `criar_e_conciliar_venda(venda_id: int, cliente_id: int=Form(...), data_atendimento: str=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), medico: str=Form(''), especialidade: str=Form(''), tipo_servico: str=Form(''), descricao_servico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_e_conciliar_venda(venda_id: int, cliente_id: int=Form(...), data_atendimento: str=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), medico: str=Form(''), especialidade: str=Form(''), tipo_servico: str=Form(''), descricao_servico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_e_conciliar_venda](../app/routers/conciliacao.py#L525)
+- Local: [criar_e_conciliar_venda](../app/routers/conciliacao.py#L529)
 - Rota: `POST /conciliacao/venda/{venda_id}/criar-e-conciliar`
 - Responsabilidade: Endpoint que cria e conciliar venda e devolve a resposta HTTP correspondente.
 
-### `cancelar_venda(venda_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `cancelar_venda(venda_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [cancelar_venda](../app/routers/conciliacao.py#L586)
+- Local: [cancelar_venda](../app/routers/conciliacao.py#L590)
 - Rota: `POST /conciliacao/venda/{venda_id}/cancelar`
 - Responsabilidade: Endpoint que executa o fluxo cancelar venda e devolve a resposta HTTP correspondente.
 
-### `fechar_lote(cliente_id: int=Form(...), data_pagamento: str=Form(...), bandeira: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `fechar_lote(cliente_id: int=Form(...), data_pagamento: str=Form(...), bandeira: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [fechar_lote](../app/routers/conciliacao.py#L602)
+- Local: [fechar_lote](../app/routers/conciliacao.py#L606)
 - Rota: `POST /conciliacao/fechar-lote`
 - Responsabilidade: Endpoint que fecha lote e devolve a resposta HTTP correspondente.
 
-### `_reabrir_lote_duplicado_removido(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `_reabrir_lote_duplicado_removido(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [_reabrir_lote_duplicado_removido](../app/routers/conciliacao.py#L631)
+- Local: [_reabrir_lote_duplicado_removido](../app/routers/conciliacao.py#L635)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “reabrir lote duplicado removido”.
 
 ### `_carregar_lancamentos(db: Session, cliente_id: int)`
 
-- Local: [_carregar_lancamentos](../app/routers/conciliacao.py#L659)
+- Local: [_carregar_lancamentos](../app/routers/conciliacao.py#L663)
 - Responsabilidade: Função auxiliar que carrega lancamentos.
 
 ### `_decimal_form(valor: str) -> Decimal | None`
 
-- Local: [_decimal_form](../app/routers/conciliacao.py#L674)
+- Local: [_decimal_form](../app/routers/conciliacao.py#L678)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “decimal form”.
 
 ### `_calcular_intervalos_lancamento(forma_pagamento: str, parcela_total: int, recorrencia: str | None)`
 
-- Local: [_calcular_intervalos_lancamento](../app/routers/conciliacao.py#L681)
+- Local: [_calcular_intervalos_lancamento](../app/routers/conciliacao.py#L685)
 - Responsabilidade: Função auxiliar que calcula intervalos lancamento.
 
 ### `_taxa_cartao_cliente(db: Session, cliente_id: int, bandeira: str | None) -> Decimal | None`
 
-- Local: [_taxa_cartao_cliente](../app/routers/conciliacao.py#L692)
+- Local: [_taxa_cartao_cliente](../app/routers/conciliacao.py#L696)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “taxa cartao cliente”.
 
 ### `_rateios_lancamento_manual(raw: str, centros: dict[int, CentroCusto]) -> list[dict]`
 
-- Local: [_rateios_lancamento_manual](../app/routers/conciliacao.py#L713)
+- Local: [_rateios_lancamento_manual](../app/routers/conciliacao.py#L717)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “rateios lancamento manual”.
 
-### `pagina_lancamentos(request: Request, cliente_id: Optional[int]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_lancamentos(request: Request, cliente_id: Optional[int]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [pagina_lancamentos](../app/routers/conciliacao.py#L741)
+- Local: [pagina_lancamentos](../app/routers/conciliacao.py#L745)
 - Rota: `GET /conciliacao/lancamentos`
 - Responsabilidade: Endpoint que renderiza a página de lancamentos e devolve a resposta HTTP correspondente.
 
-### `importar_lancamentos_conciliacao(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_lancamentos_conciliacao(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_lancamentos_conciliacao](../app/routers/conciliacao.py#L768)
+- Local: [importar_lancamentos_conciliacao](../app/routers/conciliacao.py#L772)
 - Rota: `POST /conciliacao/lancamentos/importar`
 - Responsabilidade: Endpoint que importa lancamentos conciliacao e devolve a resposta HTTP correspondente.
 
-### `criar_lancamento_manual_conciliacao(request: Request, cliente_id: int=Form(...), data_atendimento: date_type=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), centro_custo_id: str=Form(''), rateios_json: str=Form('[]'), especialidade: str=Form(''), descricao_servico: str=Form(''), valor_servico: str=Form(...), forma_pagamento: str=Form(''), condicao_pagamento: str=Form('avista'), parcela_total: int=Form(1), recorrencia: str=Form(''), ultimos_digitos_cartao: str=Form(''), bandeira_cartao: str=Form(''), percentual_medico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_lancamento_manual_conciliacao(request: Request, cliente_id: int=Form(...), data_atendimento: date_type=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), centro_custo_id: str=Form(''), rateios_json: str=Form('[]'), especialidade: str=Form(''), descricao_servico: str=Form(''), valor_servico: str=Form(...), forma_pagamento: str=Form(''), condicao_pagamento: str=Form('avista'), parcela_total: int=Form(1), recorrencia: str=Form(''), ultimos_digitos_cartao: str=Form(''), bandeira_cartao: str=Form(''), percentual_medico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_lancamento_manual_conciliacao](../app/routers/conciliacao.py#L823)
+- Local: [criar_lancamento_manual_conciliacao](../app/routers/conciliacao.py#L827)
 - Rota: `POST /conciliacao/lancamentos/manual`
 - Responsabilidade: Endpoint que cria lancamento manual conciliacao e devolve a resposta HTTP correspondente.
 
@@ -598,276 +782,276 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `_chave_centro_custo(cc: CentroCusto) -> str`
 
-- Local: [_chave_centro_custo](../app/routers/conciliacao_banco.py#L57)
+- Local: [_chave_centro_custo](../app/routers/conciliacao_banco.py#L61)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “chave centro custo”.
 
 ### `_montar_rateios_banco(db: Session, cliente_id: int, valor_total: Decimal, rateios_json: str) -> list[dict]`
 
-- Local: [_montar_rateios_banco](../app/routers/conciliacao_banco.py#L61)
+- Local: [_montar_rateios_banco](../app/routers/conciliacao_banco.py#L65)
 - Responsabilidade: Função auxiliar que monta rateios banco.
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/conciliacao_banco.py#L93)
+- Local: [clientes_do_usuario](../app/routers/conciliacao_banco.py#L97)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_total_pago_conta(db: Session, conta_id: int) -> Decimal`
 
-- Local: [_total_pago_conta](../app/routers/conciliacao_banco.py#L102)
+- Local: [_total_pago_conta](../app/routers/conciliacao_banco.py#L106)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “total pago conta”.
 
 ### `_registrar_pagamento_conta(db: Session, conta: ContaPagar, valor: Decimal, data_pagamento: date, usuario_id: int | None, movimentacao_id: int | None=None, observacao: str | None=None) -> bool`
 
-- Local: [_registrar_pagamento_conta](../app/routers/conciliacao_banco.py#L109)
+- Local: [_registrar_pagamento_conta](../app/routers/conciliacao_banco.py#L113)
 - Responsabilidade: Função auxiliar que registra pagamento conta.
 
 ### `_carregar_movimentacoes(db: Session, cliente_id: int)`
 
-- Local: [_carregar_movimentacoes](../app/routers/conciliacao_banco.py#L141)
+- Local: [_carregar_movimentacoes](../app/routers/conciliacao_banco.py#L145)
 - Responsabilidade: Retorna pix_ted pendentes que NÃO estão vinculados a lote de cartão.
 
 ### `_carregar_lancamentos_pendentes(db: Session, cliente_id: int)`
 
-- Local: [_carregar_lancamentos_pendentes](../app/routers/conciliacao_banco.py#L162)
+- Local: [_carregar_lancamentos_pendentes](../app/routers/conciliacao_banco.py#L166)
 - Responsabilidade: Função auxiliar que carrega lancamentos pendentes.
 
 ### `_buscar_no_sistema(db: Session, cliente_id: int, mov: MovimentacaoBancaria, termo: str | None)`
 
-- Local: [_buscar_no_sistema](../app/routers/conciliacao_banco.py#L179)
+- Local: [_buscar_no_sistema](../app/routers/conciliacao_banco.py#L183)
 - Responsabilidade: Função auxiliar que busca no sistema.
 
 ### `_montar_painel(db: Session, cliente_id: int, lancamentos: list, movimentacoes: list, busca_mov_id: Optional[int]=None, busca_termo: Optional[str]=None)`
 
-- Local: [_montar_painel](../app/routers/conciliacao_banco.py#L206)
+- Local: [_montar_painel](../app/routers/conciliacao_banco.py#L210)
 - Responsabilidade: Função auxiliar que monta painel.
 
 ### `_aplicar_conciliacao(db: Session, mov: MovimentacaoBancaria, at: Atendimento)`
 
-- Local: [_aplicar_conciliacao](../app/routers/conciliacao_banco.py#L252)
+- Local: [_aplicar_conciliacao](../app/routers/conciliacao_banco.py#L256)
 - Responsabilidade: Função auxiliar que aplica conciliacao.
 
 ### `_conciliar_pix_ted_prontos(db: Session, cliente_id: int, usuario: Usuario | None=None) -> int`
 
-- Local: [_conciliar_pix_ted_prontos](../app/routers/conciliacao_banco.py#L261)
+- Local: [_conciliar_pix_ted_prontos](../app/routers/conciliacao_banco.py#L265)
 - Responsabilidade: Função auxiliar que concilia pix ted prontos.
 
 ### `_auto_match_lotes(db: Session, cliente_id: int, usuario: Usuario | None=None) -> int`
 
-- Local: [_auto_match_lotes](../app/routers/conciliacao_banco.py#L285)
+- Local: [_auto_match_lotes](../app/routers/conciliacao_banco.py#L289)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “auto match lotes”.
 
 ### `_carregar_saidas_banco(db: Session, cliente_id: int)`
 
-- Local: [_carregar_saidas_banco](../app/routers/conciliacao_banco.py#L322)
+- Local: [_carregar_saidas_banco](../app/routers/conciliacao_banco.py#L326)
 - Responsabilidade: Saídas bancárias ainda não vinculadas a uma conta a pagar.
 
 ### `_carregar_contas_agendadas(db: Session, cliente_id: int)`
 
-- Local: [_carregar_contas_agendadas](../app/routers/conciliacao_banco.py#L342)
+- Local: [_carregar_contas_agendadas](../app/routers/conciliacao_banco.py#L346)
 - Responsabilidade: Contas a pagar com status agendado aguardando conciliação bancária.
 
 ### `_carregar_lotes_cartao(db: Session, cliente_id: int)`
 
-- Local: [_carregar_lotes_cartao](../app/routers/conciliacao_banco.py#L356)
+- Local: [_carregar_lotes_cartao](../app/routers/conciliacao_banco.py#L360)
 - Responsabilidade: Função auxiliar que carrega lotes cartao.
 
 ### `_carregar_creditos_banco_para_lote(db: Session, cliente_id: int)`
 
-- Local: [_carregar_creditos_banco_para_lote](../app/routers/conciliacao_banco.py#L365)
+- Local: [_carregar_creditos_banco_para_lote](../app/routers/conciliacao_banco.py#L369)
 - Responsabilidade: MovimentacaoBancaria pix_ted ainda não vinculadas a lote de cartão (disponíveis para match).
 
 ### `_carregar_pix_conciliados(db: Session, cliente_id: int)`
 
-- Local: [_carregar_pix_conciliados](../app/routers/conciliacao_banco.py#L387)
+- Local: [_carregar_pix_conciliados](../app/routers/conciliacao_banco.py#L391)
 - Responsabilidade: PIX/TED já conciliados com atendimento — para exibir com opção de desvincular.
 
 ### `_resumo_periodo_movimentacoes(movimentacoes: list) -> str`
 
-- Local: [_resumo_periodo_movimentacoes](../app/routers/conciliacao_banco.py#L406)
+- Local: [_resumo_periodo_movimentacoes](../app/routers/conciliacao_banco.py#L410)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “resumo periodo movimentacoes”.
 
 ### `_opcoes_mes_movimentacoes(movimentacoes: list) -> list[dict]`
 
-- Local: [_opcoes_mes_movimentacoes](../app/routers/conciliacao_banco.py#L419)
+- Local: [_opcoes_mes_movimentacoes](../app/routers/conciliacao_banco.py#L423)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “opcoes mes movimentacoes”.
 
 ### `_carregar_saidas_conciliadas(db: Session, cliente_id: int)`
 
-- Local: [_carregar_saidas_conciliadas](../app/routers/conciliacao_banco.py#L436)
+- Local: [_carregar_saidas_conciliadas](../app/routers/conciliacao_banco.py#L440)
 - Responsabilidade: Saídas bancárias já conciliadas com conta a pagar — para exibir com opção de desvincular.
 
 ### `_carregar_arquivados(db: Session, cliente_id: int)`
 
-- Local: [_carregar_arquivados](../app/routers/conciliacao_banco.py#L453)
+- Local: [_carregar_arquivados](../app/routers/conciliacao_banco.py#L457)
 - Responsabilidade: Função auxiliar que carrega arquivados.
 
 ### `_conta_bancaria_do_ofx(db: Session, cliente_id: int, df) -> ContaBancaria`
 
-- Local: [_conta_bancaria_do_ofx](../app/routers/conciliacao_banco.py#L484)
+- Local: [_conta_bancaria_do_ofx](../app/routers/conciliacao_banco.py#L488)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “conta bancaria do ofx”.
 
 ### `_resumo_saldos_bancarios(db: Session, cliente_id: int | None) -> list[dict]`
 
-- Local: [_resumo_saldos_bancarios](../app/routers/conciliacao_banco.py#L510)
+- Local: [_resumo_saldos_bancarios](../app/routers/conciliacao_banco.py#L514)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “resumo saldos bancarios”.
 
 ### `_movimentacoes_do_extrato(db: Session, cliente_id: int | None)`
 
-- Local: [_movimentacoes_do_extrato](../app/routers/conciliacao_banco.py#L540)
+- Local: [_movimentacoes_do_extrato](../app/routers/conciliacao_banco.py#L544)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “movimentacoes do extrato”.
 
 ### `_ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, mes_conciliado=None)`
 
-- Local: [_ctx_padrao](../app/routers/conciliacao_banco.py#L550)
+- Local: [_ctx_padrao](../app/routers/conciliacao_banco.py#L554)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “ctx padrao”.
 
-### `pagina_banco(request: Request, cliente_id: Optional[int]=None, buscar_mov: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), lote_fechado: Optional[int]=Query(default=None), mes_conciliado: Optional[str]=Query(default=None), arquivados: bool=Query(default=False), manual_criado: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_banco(request: Request, cliente_id: Optional[int]=None, buscar_mov: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), lote_fechado: Optional[int]=Query(default=None), mes_conciliado: Optional[str]=Query(default=None), arquivados: bool=Query(default=False), manual_criado: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [pagina_banco](../app/routers/conciliacao_banco.py#L603)
+- Local: [pagina_banco](../app/routers/conciliacao_banco.py#L607)
 - Rota: `GET /conciliacao/banco`
 - Responsabilidade: Endpoint que renderiza a página de banco e devolve a resposta HTTP correspondente.
 
-### `criar_receita_manual_banco(request: Request, cliente_id: int=Form(...), descricao: str=Form(...), nome_pagador: str=Form(''), valor: Decimal=Form(...), data_recebimento: date=Form(...), forma_pagamento: str=Form('pix'), observacao: str=Form(''), rateios_json: str=Form('[]'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_receita_manual_banco(request: Request, cliente_id: int=Form(...), descricao: str=Form(...), nome_pagador: str=Form(''), valor: Decimal=Form(...), data_recebimento: date=Form(...), forma_pagamento: str=Form('pix'), observacao: str=Form(''), rateios_json: str=Form('[]'), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_receita_manual_banco](../app/routers/conciliacao_banco.py#L659)
+- Local: [criar_receita_manual_banco](../app/routers/conciliacao_banco.py#L663)
 - Rota: `POST /conciliacao/banco/manual/receita`
 - Responsabilidade: Endpoint que cria receita manual banco e devolve a resposta HTTP correspondente.
 
-### `criar_movimentacao_manual_banco(request: Request, cliente_id: int=Form(...), conta_bancaria_id: Optional[int]=Form(None), banco: str=Form(''), conta_numero: str=Form(''), sentido: str=Form(...), data_movimento: date=Form(...), valor: Decimal=Form(...), descricao: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_movimentacao_manual_banco(request: Request, cliente_id: int=Form(...), conta_bancaria_id: Optional[int]=Form(None), banco: str=Form(''), conta_numero: str=Form(''), sentido: str=Form(...), data_movimento: date=Form(...), valor: Decimal=Form(...), descricao: str=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_movimentacao_manual_banco](../app/routers/conciliacao_banco.py#L718)
+- Local: [criar_movimentacao_manual_banco](../app/routers/conciliacao_banco.py#L722)
 - Rota: `POST /conciliacao/banco/manual/movimentacao`
 - Responsabilidade: Endpoint que cria movimentacao manual banco e devolve a resposta HTTP correspondente.
 
-### `criar_despesa_manual_banco(request: Request, cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: str=Form(''), valor: Decimal=Form(...), vencimento: date=Form(...), observacao: str=Form(''), rateios_json: str=Form('[]'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_despesa_manual_banco(request: Request, cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: str=Form(''), valor: Decimal=Form(...), vencimento: date=Form(...), observacao: str=Form(''), rateios_json: str=Form('[]'), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_despesa_manual_banco](../app/routers/conciliacao_banco.py#L790)
+- Local: [criar_despesa_manual_banco](../app/routers/conciliacao_banco.py#L794)
 - Rota: `POST /conciliacao/banco/manual/despesa`
 - Responsabilidade: Endpoint que cria despesa manual banco e devolve a resposta HTTP correspondente.
 
-### `criar_pagamento_parcial_banco(request: Request, cliente_id: int=Form(...), conta_id: int=Form(...), valor: Decimal=Form(...), data_pagamento: date=Form(...), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_pagamento_parcial_banco(request: Request, cliente_id: int=Form(...), conta_id: int=Form(...), valor: Decimal=Form(...), data_pagamento: date=Form(...), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_pagamento_parcial_banco](../app/routers/conciliacao_banco.py#L842)
+- Local: [criar_pagamento_parcial_banco](../app/routers/conciliacao_banco.py#L846)
 - Rota: `POST /conciliacao/banco/manual/pagamento-parcial`
 - Responsabilidade: Endpoint que cria pagamento parcial banco e devolve a resposta HTTP correspondente.
 
-### `importar_lancamentos_banco(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_lancamentos_banco(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_lancamentos_banco](../app/routers/conciliacao_banco.py#L882)
+- Local: [importar_lancamentos_banco](../app/routers/conciliacao_banco.py#L886)
 - Rota: `POST /conciliacao/banco/importar-lancamentos`
 - Responsabilidade: Endpoint que importa lancamentos banco e devolve a resposta HTTP correspondente.
 
-### `importar_extrato_banco(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_extrato_banco(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_extrato_banco](../app/routers/conciliacao_banco.py#L925)
+- Local: [importar_extrato_banco](../app/routers/conciliacao_banco.py#L929)
 - Rota: `POST /conciliacao/banco/importar-extrato`
 - Responsabilidade: Endpoint que importa extrato banco e devolve a resposta HTTP correspondente.
 
-### `conciliar_todos_prontos(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_todos_prontos(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_todos_prontos](../app/routers/conciliacao_banco.py#L981)
+- Local: [conciliar_todos_prontos](../app/routers/conciliacao_banco.py#L985)
 - Rota: `POST /conciliacao/banco/conciliar-todos-prontos`
 - Responsabilidade: Endpoint que concilia todos prontos e devolve a resposta HTTP correspondente.
 
-### `conciliar_movimentacao(mov_id: int, cliente_id: int=Form(...), atendimento_id: int=Form(...), origem: str=Form('sugestao'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_movimentacao(mov_id: int, cliente_id: int=Form(...), atendimento_id: int=Form(...), origem: str=Form('sugestao'), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_movimentacao](../app/routers/conciliacao_banco.py#L996)
+- Local: [conciliar_movimentacao](../app/routers/conciliacao_banco.py#L1000)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/conciliar`
 - Responsabilidade: Endpoint que concilia movimentacao e devolve a resposta HTTP correspondente.
 
-### `revisar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `revisar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [revisar_movimentacao](../app/routers/conciliacao_banco.py#L1019)
+- Local: [revisar_movimentacao](../app/routers/conciliacao_banco.py#L1023)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/revisar`
 - Responsabilidade: Endpoint que executa o fluxo revisar movimentacao e devolve a resposta HTTP correspondente.
 
-### `arquivar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `arquivar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [arquivar_movimentacao](../app/routers/conciliacao_banco.py#L1037)
+- Local: [arquivar_movimentacao](../app/routers/conciliacao_banco.py#L1041)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/arquivar`
 - Responsabilidade: Endpoint que arquiva movimentacao e devolve a resposta HTTP correspondente.
 
-### `restaurar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `restaurar_movimentacao(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [restaurar_movimentacao](../app/routers/conciliacao_banco.py#L1055)
+- Local: [restaurar_movimentacao](../app/routers/conciliacao_banco.py#L1059)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/restaurar`
 - Responsabilidade: Endpoint que restaura movimentacao e devolve a resposta HTTP correspondente.
 
-### `arquivar_lancamento_sistema(atendimento_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `arquivar_lancamento_sistema(atendimento_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [arquivar_lancamento_sistema](../app/routers/conciliacao_banco.py#L1070)
+- Local: [arquivar_lancamento_sistema](../app/routers/conciliacao_banco.py#L1074)
 - Rota: `POST /conciliacao/banco/lancamento/{atendimento_id}/arquivar`
 - Responsabilidade: Endpoint que arquiva lancamento sistema e devolve a resposta HTTP correspondente.
 
-### `restaurar_lancamento_sistema(atendimento_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `restaurar_lancamento_sistema(atendimento_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [restaurar_lancamento_sistema](../app/routers/conciliacao_banco.py#L1088)
+- Local: [restaurar_lancamento_sistema](../app/routers/conciliacao_banco.py#L1092)
 - Rota: `POST /conciliacao/banco/lancamento/{atendimento_id}/restaurar`
 - Responsabilidade: Endpoint que restaura lancamento sistema e devolve a resposta HTTP correspondente.
 
-### `arquivar_conta_sistema(conta_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `arquivar_conta_sistema(conta_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [arquivar_conta_sistema](../app/routers/conciliacao_banco.py#L1103)
+- Local: [arquivar_conta_sistema](../app/routers/conciliacao_banco.py#L1107)
 - Rota: `POST /conciliacao/banco/conta/{conta_id}/arquivar`
 - Responsabilidade: Endpoint que arquiva conta sistema e devolve a resposta HTTP correspondente.
 
-### `restaurar_conta_sistema(conta_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `restaurar_conta_sistema(conta_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [restaurar_conta_sistema](../app/routers/conciliacao_banco.py#L1121)
+- Local: [restaurar_conta_sistema](../app/routers/conciliacao_banco.py#L1125)
 - Rota: `POST /conciliacao/banco/conta/{conta_id}/restaurar`
 - Responsabilidade: Endpoint que restaura conta sistema e devolve a resposta HTTP correspondente.
 
-### `desvincular_movimentacao_pix(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `desvincular_movimentacao_pix(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [desvincular_movimentacao_pix](../app/routers/conciliacao_banco.py#L1136)
+- Local: [desvincular_movimentacao_pix](../app/routers/conciliacao_banco.py#L1140)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/desvincular`
 - Responsabilidade: Endpoint que executa o fluxo desvincular movimentacao pix e devolve a resposta HTTP correspondente.
 
-### `criar_e_conciliar(mov_id: int, cliente_id: int=Form(...), data_atendimento: str=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), medico: str=Form(''), especialidade: str=Form(''), tipo_servico: str=Form(''), descricao_servico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_e_conciliar(mov_id: int, cliente_id: int=Form(...), data_atendimento: str=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), medico: str=Form(''), especialidade: str=Form(''), tipo_servico: str=Form(''), descricao_servico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [criar_e_conciliar](../app/routers/conciliacao_banco.py#L1163)
+- Local: [criar_e_conciliar](../app/routers/conciliacao_banco.py#L1167)
 - Rota: `POST /conciliacao/banco/movimentacao/{mov_id}/criar-e-conciliar`
 - Responsabilidade: Endpoint que cria e conciliar e devolve a resposta HTTP correspondente.
 
-### `importar_conta_corrente(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_conta_corrente(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_conta_corrente](../app/routers/conciliacao_banco.py#L1224)
+- Local: [importar_conta_corrente](../app/routers/conciliacao_banco.py#L1228)
 - Rota: `POST /conciliacao/banco/conta-corrente/importar`
 - Responsabilidade: Endpoint que importa conta corrente e devolve a resposta HTTP correspondente.
 
-### `conciliar_lote_com_banco(lote_id: int, cliente_id: int=Form(...), mov_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_lote_com_banco(lote_id: int, cliente_id: int=Form(...), mov_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_lote_com_banco](../app/routers/conciliacao_banco.py#L1266)
+- Local: [conciliar_lote_com_banco](../app/routers/conciliacao_banco.py#L1270)
 - Rota: `POST /conciliacao/banco/lote/{lote_id}/conciliar`
 - Responsabilidade: Endpoint que concilia lote com banco e devolve a resposta HTTP correspondente.
 
-### `auto_match_lotes(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `auto_match_lotes(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [auto_match_lotes](../app/routers/conciliacao_banco.py#L1291)
+- Local: [auto_match_lotes](../app/routers/conciliacao_banco.py#L1295)
 - Rota: `POST /conciliacao/banco/lote/auto-match`
 - Responsabilidade: Auto-concilia lotes pendentes com MovimentacaoBancaria de valor exato.
 
-### `desvincular_lote(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `desvincular_lote(lote_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [desvincular_lote](../app/routers/conciliacao_banco.py#L1306)
+- Local: [desvincular_lote](../app/routers/conciliacao_banco.py#L1310)
 - Rota: `POST /conciliacao/banco/lote/{lote_id}/desvincular`
 - Responsabilidade: Endpoint que executa o fluxo desvincular lote e devolve a resposta HTTP correspondente.
 
-### `conciliar_saida_com_conta(mov_id: int, cliente_id: int=Form(...), conta_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_saida_com_conta(mov_id: int, cliente_id: int=Form(...), conta_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_saida_com_conta](../app/routers/conciliacao_banco.py#L1333)
+- Local: [conciliar_saida_com_conta](../app/routers/conciliacao_banco.py#L1337)
 - Rota: `POST /conciliacao/banco/saida/{mov_id}/conciliar`
 - Responsabilidade: Endpoint que concilia saida com conta e devolve a resposta HTTP correspondente.
 
-### `desvincular_saida(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `desvincular_saida(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [desvincular_saida](../app/routers/conciliacao_banco.py#L1362)
+- Local: [desvincular_saida](../app/routers/conciliacao_banco.py#L1366)
 - Rota: `POST /conciliacao/banco/saida/{mov_id}/desvincular`
 - Responsabilidade: Endpoint que executa o fluxo desvincular saida e devolve a resposta HTTP correspondente.
 
-### `auto_match_saidas(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `auto_match_saidas(cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [auto_match_saidas](../app/routers/conciliacao_banco.py#L1396)
+- Local: [auto_match_saidas](../app/routers/conciliacao_banco.py#L1400)
 - Rota: `POST /conciliacao/banco/saida/auto-match`
 - Responsabilidade: Concilia em lote, por acao do usuario, saidas com contas de valor exato.
 
@@ -875,92 +1059,92 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/contas_pagar.py#L29)
+- Local: [clientes_do_usuario](../app/routers/contas_pagar.py#L33)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_ids_clientes_do_usuario(db: Session, usuario: Usuario) -> list[int]`
 
-- Local: [_ids_clientes_do_usuario](../app/routers/contas_pagar.py#L38)
+- Local: [_ids_clientes_do_usuario](../app/routers/contas_pagar.py#L42)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “ids clientes do usuario”.
 
 ### `_key_centro_custo(cc: CentroCusto) -> str`
 
-- Local: [_key_centro_custo](../app/routers/contas_pagar.py#L42)
+- Local: [_key_centro_custo](../app/routers/contas_pagar.py#L46)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “key centro custo”.
 
 ### `_centros_custo_por_cliente(db: Session, cliente_ids: list[int]) -> dict[int, list[dict]]`
 
-- Local: [_centros_custo_por_cliente](../app/routers/contas_pagar.py#L47)
+- Local: [_centros_custo_por_cliente](../app/routers/contas_pagar.py#L51)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “centros custo por cliente”.
 
 ### `_categoria_nome_com_centros(centros_por_cliente: dict[int, list[dict]]) -> dict[str, str]`
 
-- Local: [_categoria_nome_com_centros](../app/routers/contas_pagar.py#L66)
+- Local: [_categoria_nome_com_centros](../app/routers/contas_pagar.py#L70)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “categoria nome com centros”.
 
 ### `_categoria_dre_valida(db: Session, cliente_id: int, categoria_dre: Optional[str]) -> str | None`
 
-- Local: [_categoria_dre_valida](../app/routers/contas_pagar.py#L75)
+- Local: [_categoria_dre_valida](../app/routers/contas_pagar.py#L79)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “categoria dre valida”.
 
 ### `_decimal_rateio(valor: str) -> Decimal | None`
 
-- Local: [_decimal_rateio](../app/routers/contas_pagar.py#L88)
+- Local: [_decimal_rateio](../app/routers/contas_pagar.py#L92)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “decimal rateio”.
 
 ### `_centro_por_key(db: Session, cliente_id: int, key: str) -> CentroCusto | None`
 
-- Local: [_centro_por_key](../app/routers/contas_pagar.py#L95)
+- Local: [_centro_por_key](../app/routers/contas_pagar.py#L99)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “centro por key”.
 
 ### `_montar_rateios_conta(db: Session, cliente_id: int, valor_total: Decimal, categorias: List[str], percentuais: List[str]) -> list[dict]`
 
-- Local: [_montar_rateios_conta](../app/routers/contas_pagar.py#L106)
+- Local: [_montar_rateios_conta](../app/routers/contas_pagar.py#L110)
 - Responsabilidade: Função auxiliar que monta rateios conta.
 
-### `listar_contas(request: Request, cliente_id: Optional[int]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `listar_contas(request: Request, cliente_id: Optional[int]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [listar_contas](../app/routers/contas_pagar.py#L140)
+- Local: [listar_contas](../app/routers/contas_pagar.py#L144)
 - Rota: `GET /contas-pagar`
 - Responsabilidade: Endpoint que lista contas e devolve a resposta HTTP correspondente.
 
-### `baixar_documento_conta(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `baixar_documento_conta(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [baixar_documento_conta](../app/routers/contas_pagar.py#L176)
+- Local: [baixar_documento_conta](../app/routers/contas_pagar.py#L180)
 - Rota: `GET /contas-pagar/{conta_id}/documento`
 - Responsabilidade: Endpoint que executa o fluxo baixar documento conta e devolve a resposta HTTP correspondente.
 
-### `criar_conta(cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: Optional[str]=Form(None), tipo: str=Form('pontual'), valor: Decimal=Form(...), vencimento: date=Form(...), categoria_dre: Optional[str]=Form(None), rateio_centro_custo_key: List[str]=Form(default=[]), rateio_percentual: List[str]=Form(default=[]), especialidade: Optional[str]=Form(None), observacao: Optional[str]=Form(None), documento: Optional[UploadFile]=File(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_conta(cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: Optional[str]=Form(None), tipo: str=Form('pontual'), valor: Decimal=Form(...), vencimento: date=Form(...), categoria_dre: Optional[str]=Form(None), rateio_centro_custo_key: List[str]=Form(default=[]), rateio_percentual: List[str]=Form(default=[]), especialidade: Optional[str]=Form(None), observacao: Optional[str]=Form(None), documento: Optional[UploadFile]=File(None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [criar_conta](../app/routers/contas_pagar.py#L200)
+- Local: [criar_conta](../app/routers/contas_pagar.py#L204)
 - Rota: `POST /contas-pagar`
 - Responsabilidade: Endpoint que cria conta e devolve a resposta HTTP correspondente.
 
-### `importar_contas(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_contas(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [importar_contas](../app/routers/contas_pagar.py#L277)
+- Local: [importar_contas](../app/routers/contas_pagar.py#L281)
 - Rota: `POST /contas-pagar/importar`
 - Responsabilidade: Endpoint que importa contas e devolve a resposta HTTP correspondente.
 
 ### `_norm(nome: str) -> str`
 
-- Local: [importar_contas._norm](../app/routers/contas_pagar.py#L288)
+- Local: [importar_contas._norm](../app/routers/contas_pagar.py#L292)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “norm”.
 
 ### `_col(df, opcoes)`
 
-- Local: [importar_contas._col](../app/routers/contas_pagar.py#L293)
+- Local: [importar_contas._col](../app/routers/contas_pagar.py#L297)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “col”.
 
-### `agendar_pagamento(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `agendar_pagamento(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [agendar_pagamento](../app/routers/contas_pagar.py#L407)
+- Local: [agendar_pagamento](../app/routers/contas_pagar.py#L411)
 - Rota: `POST /contas-pagar/{conta_id}/agendar`
 - Responsabilidade: Endpoint que executa o fluxo agendar pagamento e devolve a resposta HTTP correspondente.
 
-### `cancelar_conta(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `cancelar_conta(conta_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_contas_pagar))`
 
-- Local: [cancelar_conta](../app/routers/contas_pagar.py#L432)
+- Local: [cancelar_conta](../app/routers/contas_pagar.py#L436)
 - Rota: `POST /contas-pagar/{conta_id}/cancelar`
 - Responsabilidade: Endpoint que executa o fluxo cancelar conta e devolve a resposta HTTP correspondente.
 
@@ -968,74 +1152,74 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/contas_pagar_conciliacao.py#L32)
+- Local: [clientes_do_usuario](../app/routers/contas_pagar_conciliacao.py#L36)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_contas_pendentes(db: Session, cliente_id: int)`
 
-- Local: [_contas_pendentes](../app/routers/contas_pagar_conciliacao.py#L41)
+- Local: [_contas_pendentes](../app/routers/contas_pagar_conciliacao.py#L45)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “contas pendentes”.
 
 ### `_sugestao_conta(valor_banco: Decimal, data_banco, contas: list)`
 
-- Local: [_sugestao_conta](../app/routers/contas_pagar_conciliacao.py#L53)
+- Local: [_sugestao_conta](../app/routers/contas_pagar_conciliacao.py#L57)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “sugestao conta”.
 
-### `pagina_conciliacao_cartao_pagar(request: Request, cliente_id: Optional[int]=None, buscar_mov: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_conciliacao_cartao_pagar(request: Request, cliente_id: Optional[int]=None, buscar_mov: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [pagina_conciliacao_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L73)
+- Local: [pagina_conciliacao_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L77)
 - Rota: `GET /contas-pagar/conciliacao-cartao`
 - Responsabilidade: Endpoint que renderiza a página de conciliacao cartao pagar e devolve a resposta HTTP correspondente.
 
-### `importar_cartao_pagar(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_cartao_pagar(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L143)
+- Local: [importar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L147)
 - Rota: `POST /contas-pagar/conciliacao-cartao/processar`
 - Responsabilidade: Endpoint que importa cartao pagar e devolve a resposta HTTP correspondente.
 
 ### `_col(names)`
 
-- Local: [importar_cartao_pagar._col](../app/routers/contas_pagar_conciliacao.py#L170)
+- Local: [importar_cartao_pagar._col](../app/routers/contas_pagar_conciliacao.py#L174)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “col”.
 
-### `conciliar_cartao_pagar(mov_id: int, cliente_id: int=Form(...), conta_pagar_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_cartao_pagar(mov_id: int, cliente_id: int=Form(...), conta_pagar_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L237)
+- Local: [conciliar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L241)
 - Rota: `POST /contas-pagar/conciliacao-cartao/mov/{mov_id}/conciliar`
 - Responsabilidade: Endpoint que concilia cartao pagar e devolve a resposta HTTP correspondente.
 
-### `ignorar_cartao_pagar(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `ignorar_cartao_pagar(mov_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [ignorar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L267)
+- Local: [ignorar_cartao_pagar](../app/routers/contas_pagar_conciliacao.py#L271)
 - Rota: `POST /contas-pagar/conciliacao-cartao/mov/{mov_id}/ignorar`
 - Responsabilidade: Endpoint que ignora cartao pagar e devolve a resposta HTTP correspondente.
 
-### `pagina_conciliacao_banco_pagar(request: Request, cliente_id: Optional[int]=None, buscar_linha: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_conciliacao_banco_pagar(request: Request, cliente_id: Optional[int]=None, buscar_linha: Optional[int]=Query(default=None), termo: Optional[str]=Query(default=None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [pagina_conciliacao_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L289)
+- Local: [pagina_conciliacao_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L293)
 - Rota: `GET /contas-pagar/conciliacao-banco`
 - Responsabilidade: Endpoint que renderiza a página de conciliacao banco pagar e devolve a resposta HTTP correspondente.
 
-### `importar_banco_pagar(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), col_data: str=Form('data'), col_descricao: str=Form('descricao'), col_valor: str=Form('valor'), col_tipo: str=Form('tipo'), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `importar_banco_pagar(request: Request, cliente_id: int=Form(...), arquivo: UploadFile=File(...), col_data: str=Form('data'), col_descricao: str=Form('descricao'), col_valor: str=Form('valor'), col_tipo: str=Form('tipo'), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [importar_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L356)
+- Local: [importar_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L360)
 - Rota: `POST /contas-pagar/conciliacao-banco/importar`
 - Responsabilidade: Endpoint que importa banco pagar e devolve a resposta HTTP correspondente.
 
 ### `_col(names)`
 
-- Local: [importar_banco_pagar._col](../app/routers/contas_pagar_conciliacao.py#L387)
+- Local: [importar_banco_pagar._col](../app/routers/contas_pagar_conciliacao.py#L391)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “col”.
 
-### `conciliar_linha_banco_pagar(linha_id: int, cliente_id: int=Form(...), conta_pagar_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `conciliar_linha_banco_pagar(linha_id: int, cliente_id: int=Form(...), conta_pagar_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [conciliar_linha_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L445)
+- Local: [conciliar_linha_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L449)
 - Rota: `POST /contas-pagar/conciliacao-banco/linha/{linha_id}/conciliar`
 - Responsabilidade: Endpoint que concilia linha banco pagar e devolve a resposta HTTP correspondente.
 
-### `ignorar_linha_banco_pagar(linha_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `ignorar_linha_banco_pagar(linha_id: int, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_conciliacao))`
 
-- Local: [ignorar_linha_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L475)
+- Local: [ignorar_linha_banco_pagar](../app/routers/contas_pagar_conciliacao.py#L479)
 - Rota: `POST /contas-pagar/conciliacao-banco/linha/{linha_id}/ignorar`
 - Responsabilidade: Endpoint que ignora linha banco pagar e devolve a resposta HTTP correspondente.
 
@@ -1066,54 +1250,54 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/fechamento.py#L45)
+- Local: [clientes_do_usuario](../app/routers/fechamento.py#L46)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `formatar_brl(valor: Decimal) -> str`
 
-- Local: [formatar_brl](../app/routers/fechamento.py#L54)
+- Local: [formatar_brl](../app/routers/fechamento.py#L55)
 - Responsabilidade: Função auxiliar que formata brl.
 
 ### `_parse_data_aprovacao(data: Optional[str]) -> tuple[date, str]`
 
-- Local: [_parse_data_aprovacao](../app/routers/fechamento.py#L58)
+- Local: [_parse_data_aprovacao](../app/routers/fechamento.py#L59)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “parse data aprovacao”.
 
 ### `_parse_saldo(saldo: Optional[str]) -> Decimal`
 
-- Local: [_parse_saldo](../app/routers/fechamento.py#L68)
+- Local: [_parse_saldo](../app/routers/fechamento.py#L69)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “parse saldo”.
 
 ### `_contas_para_aprovacao(db: Session, cliente_id: int, data_obj: date) -> list[ContaPagar]`
 
-- Local: [_contas_para_aprovacao](../app/routers/fechamento.py#L77)
+- Local: [_contas_para_aprovacao](../app/routers/fechamento.py#L78)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “contas para aprovacao”.
 
 ### `_p(texto) -> str`
 
-- Local: [_p](../app/routers/fechamento.py#L90)
+- Local: [_p](../app/routers/fechamento.py#L91)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “p”.
 
 ### `_gerar_pdf_aprovacao(cliente: ClienteBPO, contas: list[ContaPagar], data_obj: date, saldo_conta: Decimal, total_despesas: Decimal, saldo_final: Decimal, usuario: Usuario) -> bytes`
 
-- Local: [_gerar_pdf_aprovacao](../app/routers/fechamento.py#L94)
+- Local: [_gerar_pdf_aprovacao](../app/routers/fechamento.py#L95)
 - Responsabilidade: Função auxiliar que gera pdf aprovacao.
 
-### `pagina_fechamento(request: Request, cliente_id: Optional[int]=None, data: Optional[str]=None, saldo: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pagina_fechamento(request: Request, cliente_id: Optional[int]=None, data: Optional[str]=None, saldo: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [pagina_fechamento](../app/routers/fechamento.py#L263)
+- Local: [pagina_fechamento](../app/routers/fechamento.py#L264)
 - Rota: `GET /fechamento`
 - Responsabilidade: Endpoint que renderiza a página de fechamento e devolve a resposta HTTP correspondente.
 
-### `pdf_aprovacao(request: Request, cliente_id: int, data: Optional[str]=None, saldo: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `pdf_aprovacao(request: Request, cliente_id: int, data: Optional[str]=None, saldo: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [pdf_aprovacao](../app/routers/fechamento.py#L337)
+- Local: [pdf_aprovacao](../app/routers/fechamento.py#L338)
 - Rota: `GET /fechamento/aprovacao.pdf`
 - Responsabilidade: Endpoint que executa o fluxo pdf aprovacao e devolve a resposta HTTP correspondente.
 
-### `fechamento_mensal(request: Request, cliente_id: Optional[int]=None, data_inicio: Optional[str]=None, data_fim: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `fechamento_mensal(request: Request, cliente_id: Optional[int]=None, data_inicio: Optional[str]=None, data_fim: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [fechamento_mensal](../app/routers/fechamento.py#L381)
+- Local: [fechamento_mensal](../app/routers/fechamento.py#L382)
 - Rota: `GET /fechamento/mensal`
 - Responsabilidade: Endpoint que executa o fluxo fechamento mensal e devolve a resposta HTTP correspondente.
 
@@ -1121,102 +1305,102 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/gestao.py#L23)
+- Local: [clientes_do_usuario](../app/routers/gestao.py#L24)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_brl(v) -> str`
 
-- Local: [_brl](../app/routers/gestao.py#L32)
+- Local: [_brl](../app/routers/gestao.py#L33)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “brl”.
 
 ### `_pct(valor, base) -> Decimal`
 
-- Local: [_pct](../app/routers/gestao.py#L36)
+- Local: [_pct](../app/routers/gestao.py#L37)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “pct”.
 
 ### `_retroceder_mes(mes: int, ano: int, quantidade: int=1) -> tuple[int, int]`
 
-- Local: [_retroceder_mes](../app/routers/gestao.py#L44)
+- Local: [_retroceder_mes](../app/routers/gestao.py#L45)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “retroceder mes”.
 
 ### `_meses_no_intervalo(inicio: date, fim: date) -> list[tuple[int, int]]`
 
-- Local: [_meses_no_intervalo](../app/routers/gestao.py#L54)
+- Local: [_meses_no_intervalo](../app/routers/gestao.py#L55)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “meses no intervalo”.
 
 ### `_resolver_periodo(periodo: str, mes: int, ano: int, hoje: date) -> tuple[date, date, str]`
 
-- Local: [_resolver_periodo](../app/routers/gestao.py#L68)
+- Local: [_resolver_periodo](../app/routers/gestao.py#L69)
 - Responsabilidade: Função auxiliar que resolve periodo.
 
 ### `_key_centro_custo(cc: CentroCusto | None) -> str | None`
 
-- Local: [_key_centro_custo](../app/routers/gestao.py#L83)
+- Local: [_key_centro_custo](../app/routers/gestao.py#L84)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “key centro custo”.
 
 ### `_grupos_dre_cliente(db: Session, cliente_id: int | None) -> list[dict]`
 
-- Local: [_grupos_dre_cliente](../app/routers/gestao.py#L90)
+- Local: [_grupos_dre_cliente](../app/routers/gestao.py#L91)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “grupos dre cliente”.
 
 ### `_carregar_dre_periodo(db: Session, cliente_id: int, mes: int, ano: int, inicio: date | None=None, fim: date | None=None) -> dict`
 
-- Local: [_carregar_dre_periodo](../app/routers/gestao.py#L132)
+- Local: [_carregar_dre_periodo](../app/routers/gestao.py#L133)
 - Responsabilidade: Função auxiliar que carrega dre periodo.
 
 ### `_saldo_atual(db: Session, cliente_id: int, fim: date) -> dict | None`
 
-- Local: [_saldo_atual](../app/routers/gestao.py#L320)
+- Local: [_saldo_atual](../app/routers/gestao.py#L321)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “saldo atual”.
 
 ### `_proximos_vencimentos(db: Session, cliente_id: int, hoje: date) -> dict`
 
-- Local: [_proximos_vencimentos](../app/routers/gestao.py#L338)
+- Local: [_proximos_vencimentos](../app/routers/gestao.py#L339)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “proximos vencimentos”.
 
 ### `resumo(lista)`
 
-- Local: [_proximos_vencimentos.resumo](../app/routers/gestao.py#L359)
+- Local: [_proximos_vencimentos.resumo](../app/routers/gestao.py#L360)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “resumo”.
 
 ### `_insights_dre(dre_atual: dict, comparativo: dict, vencimentos: dict | None=None) -> list[dict]`
 
-- Local: [_insights_dre](../app/routers/gestao.py#L374)
+- Local: [_insights_dre](../app/routers/gestao.py#L375)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “insights dre”.
 
-### `gestao_receitas(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `gestao_receitas(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [gestao_receitas](../app/routers/gestao.py#L443)
+- Local: [gestao_receitas](../app/routers/gestao.py#L444)
 - Rota: `GET /gestao/receitas`
 - Responsabilidade: Endpoint que executa o fluxo gestao receitas e devolve a resposta HTTP correspondente.
 
-### `gestao_despesas(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `gestao_despesas(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [gestao_despesas](../app/routers/gestao.py#L495)
+- Local: [gestao_despesas](../app/routers/gestao.py#L496)
 - Rota: `GET /gestao/despesas`
 - Responsabilidade: Endpoint que executa o fluxo gestao despesas e devolve a resposta HTTP correspondente.
 
-### `gestao_orcamento(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `gestao_orcamento(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [gestao_orcamento](../app/routers/gestao.py#L545)
+- Local: [gestao_orcamento](../app/routers/gestao.py#L546)
 - Rota: `GET /gestao/orcamento`
 - Responsabilidade: Endpoint que executa o fluxo gestao orcamento e devolve a resposta HTTP correspondente.
 
-### `salvar_orcamento(request: Request, cliente_id: int=Form(...), mes: int=Form(...), ano: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `salvar_orcamento(request: Request, cliente_id: int=Form(...), mes: int=Form(...), ano: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [salvar_orcamento](../app/routers/gestao.py#L622)
+- Local: [salvar_orcamento](../app/routers/gestao.py#L624)
 - Rota: `POST /gestao/orcamento`
 - Responsabilidade: Endpoint que salva orcamento e devolve a resposta HTTP correspondente.
 
-### `gestao_dre_apresentacao(request: Request, cliente_id: int, mes: Optional[int]=None, ano: Optional[int]=None, periodo: str='mes', db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `gestao_dre_apresentacao(request: Request, cliente_id: int, mes: Optional[int]=None, ano: Optional[int]=None, periodo: str='mes', db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [gestao_dre_apresentacao](../app/routers/gestao.py#L677)
+- Local: [gestao_dre_apresentacao](../app/routers/gestao.py#L679)
 - Rota: `GET /gestao/dre/apresentacao`
 - Responsabilidade: Endpoint que executa o fluxo gestao dre apresentacao e devolve a resposta HTTP correspondente.
 
-### `gestao_dre(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, periodo: str='mes', visao: str='simples', db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `gestao_dre(request: Request, cliente_id: Optional[int]=None, mes: Optional[int]=None, ano: Optional[int]=None, periodo: str='mes', visao: str='simples', db: Session=Depends(get_db), usuario: Usuario=Depends(require_gestao))`
 
-- Local: [gestao_dre](../app/routers/gestao.py#L738)
+- Local: [gestao_dre](../app/routers/gestao.py#L740)
 - Rota: `GET /gestao/dre`
 - Responsabilidade: Endpoint que executa o fluxo gestao dre e devolve a resposta HTTP correspondente.
 
@@ -1229,66 +1413,66 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/lancamentos.py#L27)
+- Local: [clientes_do_usuario](../app/routers/lancamentos.py#L28)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
 ### `_calcular_intervalos(forma_pagamento: str, parcela_total: int, recorrencia: Optional[str])`
 
-- Local: [_calcular_intervalos](../app/routers/lancamentos.py#L36)
+- Local: [_calcular_intervalos](../app/routers/lancamentos.py#L37)
 - Responsabilidade: Função auxiliar que calcula intervalos.
 
 ### `_str(lst: List[str], i: int) -> str`
 
-- Local: [_str](../app/routers/lancamentos.py#L50)
+- Local: [_str](../app/routers/lancamentos.py#L51)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “str”.
 
 ### `_decimal(lst: List[str], i: int) -> Optional[Decimal]`
 
-- Local: [_decimal](../app/routers/lancamentos.py#L54)
+- Local: [_decimal](../app/routers/lancamentos.py#L55)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “decimal”.
 
 ### `_parse_rateios_json(raw: str, centros_validos: dict[int, CentroCusto], valor: Decimal) -> list[dict]`
 
-- Local: [_parse_rateios_json](../app/routers/lancamentos.py#L62)
+- Local: [_parse_rateios_json](../app/routers/lancamentos.py#L63)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “parse rateios json”.
 
 ### `_int(lst: List[str], i: int, default: int=1) -> int`
 
-- Local: [_int](../app/routers/lancamentos.py#L99)
+- Local: [_int](../app/routers/lancamentos.py#L100)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “int”.
 
 ### `_taxa_cartao(db: Session, cliente_id: int, bandeira: str) -> Optional[Decimal]`
 
-- Local: [_taxa_cartao](../app/routers/lancamentos.py#L107)
+- Local: [_taxa_cartao](../app/routers/lancamentos.py#L108)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “taxa cartao”.
 
-### `listar_lancamentos(request: Request, cliente_id: Optional[int]=None, data_inicio: Optional[str]=None, data_fim: Optional[str]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `listar_lancamentos(request: Request, cliente_id: Optional[int]=None, data_inicio: Optional[str]=None, data_fim: Optional[str]=None, flash: Optional[str]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_lancamentos))`
 
-- Local: [listar_lancamentos](../app/routers/lancamentos.py#L131)
+- Local: [listar_lancamentos](../app/routers/lancamentos.py#L132)
 - Rota: `GET /lancamentos`
 - Responsabilidade: Endpoint que lista lancamentos e devolve a resposta HTTP correspondente.
 
-### `criar_lancamentos(request: Request, cliente_id: int=Form(...), data_atendimento: date=Form(...), nome_paciente: List[str]=Form(default=[]), cpf_paciente: List[str]=Form(default=[]), centro_custo_id: List[str]=Form(default=[]), rateios_json: List[str]=Form(default=[]), especialidade: List[str]=Form(default=[]), descricao_servico: List[str]=Form(default=[]), valor_servico: List[str]=Form(default=[]), forma_pagamento: List[str]=Form(default=[]), condicao_pagamento: List[str]=Form(default=[]), parcela_total: List[str]=Form(default=[]), recorrencia: List[str]=Form(default=[]), ultimos_digitos_cartao: List[str]=Form(default=[]), bandeira_cartao: List[str]=Form(default=[]), percentual_medico: List[str]=Form(default=[]), observacao: List[str]=Form(default=[]), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_lancamentos(request: Request, cliente_id: int=Form(...), data_atendimento: date=Form(...), nome_paciente: List[str]=Form(default=[]), cpf_paciente: List[str]=Form(default=[]), centro_custo_id: List[str]=Form(default=[]), rateios_json: List[str]=Form(default=[]), especialidade: List[str]=Form(default=[]), descricao_servico: List[str]=Form(default=[]), valor_servico: List[str]=Form(default=[]), forma_pagamento: List[str]=Form(default=[]), condicao_pagamento: List[str]=Form(default=[]), parcela_total: List[str]=Form(default=[]), recorrencia: List[str]=Form(default=[]), ultimos_digitos_cartao: List[str]=Form(default=[]), bandeira_cartao: List[str]=Form(default=[]), percentual_medico: List[str]=Form(default=[]), observacao: List[str]=Form(default=[]), db: Session=Depends(get_db), usuario: Usuario=Depends(require_lancamentos))`
 
-- Local: [criar_lancamentos](../app/routers/lancamentos.py#L191)
+- Local: [criar_lancamentos](../app/routers/lancamentos.py#L192)
 - Rota: `POST /lancamentos`
 - Responsabilidade: Endpoint que cria lancamentos e devolve a resposta HTTP correspondente.
 
-### `form_editar_lancamento(at_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `form_editar_lancamento(at_id: int, request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(require_lancamentos))`
 
-- Local: [form_editar_lancamento](../app/routers/lancamentos.py#L340)
+- Local: [form_editar_lancamento](../app/routers/lancamentos.py#L341)
 - Rota: `GET /lancamentos/{at_id}/editar`
 - Responsabilidade: Endpoint que executa o fluxo form editar lancamento e devolve a resposta HTTP correspondente.
 
-### `salvar_edicao_lancamento(at_id: int, request: Request, data_atendimento: date=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), centro_custo_id: str=Form(''), especialidade: str=Form(''), descricao_servico: str=Form(''), valor_servico: str=Form(...), forma_pagamento: str=Form(''), condicao_pagamento: str=Form('avista'), parcela_numero: int=Form(1), parcela_total: int=Form(1), ultimos_digitos_cartao: str=Form(''), bandeira_cartao: str=Form(''), percentual_medico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `salvar_edicao_lancamento(at_id: int, request: Request, data_atendimento: date=Form(...), nome_paciente: str=Form(''), cpf_paciente: str=Form(''), centro_custo_id: str=Form(''), especialidade: str=Form(''), descricao_servico: str=Form(''), valor_servico: str=Form(...), forma_pagamento: str=Form(''), condicao_pagamento: str=Form('avista'), parcela_numero: int=Form(1), parcela_total: int=Form(1), ultimos_digitos_cartao: str=Form(''), bandeira_cartao: str=Form(''), percentual_medico: str=Form(''), observacao: str=Form(''), db: Session=Depends(get_db), usuario: Usuario=Depends(require_lancamentos))`
 
-- Local: [salvar_edicao_lancamento](../app/routers/lancamentos.py#L367)
+- Local: [salvar_edicao_lancamento](../app/routers/lancamentos.py#L368)
 - Rota: `POST /lancamentos/{at_id}/editar`
 - Responsabilidade: Endpoint que salva edicao lancamento e devolve a resposta HTTP correspondente.
 
-### `excluir_lancamento(at_id: int, request: Request, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `excluir_lancamento(at_id: int, request: Request, cliente_id: int=Form(...), db: Session=Depends(get_db), usuario: Usuario=Depends(require_lancamentos))`
 
-- Local: [excluir_lancamento](../app/routers/lancamentos.py#L465)
+- Local: [excluir_lancamento](../app/routers/lancamentos.py#L475)
 - Rota: `POST /lancamentos/{at_id}/excluir`
 - Responsabilidade: Endpoint que exclui lancamento e devolve a resposta HTTP correspondente.
 
@@ -1304,72 +1488,99 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `_render_li(tarefa: TarefaRotina, pode_reverter: bool) -> str`
 
-- Local: [_render_li](../app/routers/rotinas.py#L75)
+- Local: [_render_li](../app/routers/rotinas.py#L77)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “render li”.
 
 ### `clientes_do_usuario(db: Session, usuario: Usuario)`
 
-- Local: [clientes_do_usuario](../app/routers/rotinas.py#L111)
+- Local: [clientes_do_usuario](../app/routers/rotinas.py#L115)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “clientes do usuario”.
 
-### `listar_rotinas(request: Request, cliente_id: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `listar_rotinas(request: Request, cliente_id: Optional[int]=None, db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [listar_rotinas](../app/routers/rotinas.py#L125)
+- Local: [listar_rotinas](../app/routers/rotinas.py#L129)
 - Rota: `GET /rotinas`
 - Responsabilidade: Endpoint que lista rotinas e devolve a resposta HTTP correspondente.
 
-### `criar_rotina(cliente_id: int=Form(...), funcionario_id: int=Form(...), data: date=Form(...), descricao: str=Form(...), horario_previsto: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_rotina(cliente_id: int=Form(...), funcionario_id: int=Form(...), data: date=Form(...), descricao: str=Form(...), horario_previsto: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [criar_rotina](../app/routers/rotinas.py#L212)
+- Local: [criar_rotina](../app/routers/rotinas.py#L216)
 - Rota: `POST /rotinas`
 - Responsabilidade: Endpoint que cria rotina e devolve a resposta HTTP correspondente.
 
-### `toggle_tarefa(tarefa_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `toggle_tarefa(tarefa_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [toggle_tarefa](../app/routers/rotinas.py#L237)
+- Local: [toggle_tarefa](../app/routers/rotinas.py#L241)
 - Rota: `POST /rotinas/{tarefa_id}/toggle`
 - Responsabilidade: Endpoint que alterna o estado de tarefa e devolve a resposta HTTP correspondente.
 
-### `excluir_tarefa(tarefa_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `excluir_tarefa(tarefa_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [excluir_tarefa](../app/routers/rotinas.py#L265)
+- Local: [excluir_tarefa](../app/routers/rotinas.py#L269)
 - Rota: `POST /rotinas/{tarefa_id}/excluir`
 - Responsabilidade: Endpoint que exclui tarefa e devolve a resposta HTTP correspondente.
 
-### `criar_recorrente(cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: Optional[str]=Form(None), valor: Optional[str]=Form(None), dia_vencimento: int=Form(...), dias_antecedencia: int=Form(3), email_destino: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `criar_recorrente(cliente_id: int=Form(...), descricao: str=Form(...), fornecedor: Optional[str]=Form(None), valor: Optional[str]=Form(None), dia_vencimento: int=Form(...), dias_antecedencia: int=Form(3), email_destino: Optional[str]=Form(None), db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [criar_recorrente](../app/routers/rotinas.py#L287)
+- Local: [criar_recorrente](../app/routers/rotinas.py#L291)
 - Rota: `POST /rotinas/recorrentes`
 - Responsabilidade: Endpoint que cria recorrente e devolve a resposta HTTP correspondente.
 
-### `excluir_recorrente(rec_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `excluir_recorrente(rec_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [excluir_recorrente](../app/routers/rotinas.py#L323)
+- Local: [excluir_recorrente](../app/routers/rotinas.py#L327)
 - Rota: `POST /rotinas/recorrentes/{rec_id}/excluir`
 - Responsabilidade: Endpoint que exclui recorrente e devolve a resposta HTTP correspondente.
 
-### `toggle_recorrente(rec_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
+### `toggle_recorrente(rec_id: int, db: Session=Depends(get_db), usuario: Usuario=Depends(require_rotinas))`
 
-- Local: [toggle_recorrente](../app/routers/rotinas.py#L338)
+- Local: [toggle_recorrente](../app/routers/rotinas.py#L342)
 - Rota: `POST /rotinas/recorrentes/{rec_id}/toggle`
 - Responsabilidade: Endpoint que alterna o estado de recorrente e devolve a resposta HTTP correspondente.
 
 ## `app/security.py`
 
-### `dispatch(self, request: Request, call_next) -> Response`
-
-- Local: [SecurityHeadersMiddleware.dispatch](../app/security.py#L30)
-- Responsabilidade: Valida a origem de mutações e aplica headers defensivos à resposta.
-
-### `_origem_permitida(request: Request) -> bool`
-
-- Local: [_origem_permitida](../app/security.py#L58)
-- Responsabilidade: Compara Origin/Referer com a lista explícita de origens autorizadas.
+Middlewares HTTP defensivos, proxy confiável e limites de requisição.
 
 ### `_normalizar_origem(valor: str) -> str`
 
-- Local: [_normalizar_origem](../app/security.py#L72)
-- Responsabilidade: Reduz uma URL a esquema, hostname e porta para comparação segura.
+- Local: [_normalizar_origem](../app/security.py#L29)
+- Responsabilidade: Função auxiliar que normaliza origem.
+
+### `_is_trusted_proxy(host: str) -> bool`
+
+- Local: [_is_trusted_proxy](../app/security.py#L41)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “is trusted proxy”.
+
+### `client_ip(request: Request) -> str`
+
+- Local: [client_ip](../app/security.py#L49)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “client ip”.
+
+### `_origem_permitida(request: Request) -> bool`
+
+- Local: [_origem_permitida](../app/security.py#L65)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “origem permitida”.
+
+### `__init__(self, app)`
+
+- Local: [MaxBodySizeMiddleware.__init__](../app/security.py#L77)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “init”.
+
+### `__call__(self, scope, receive, send)`
+
+- Local: [MaxBodySizeMiddleware.__call__](../app/security.py#L80)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “call”.
+
+### `limited_receive()`
+
+- Local: [MaxBodySizeMiddleware.__call__.limited_receive](../app/security.py#L99)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “limited receive”.
+
+### `dispatch(self, request: Request, call_next) -> Response`
+
+- Local: [SecurityMiddleware.dispatch](../app/security.py#L128)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “dispatch”.
 
 ## `app/seed_massivo.py`
 
@@ -1640,7 +1851,7 @@ Instância única de Jinja2Templates compartilhada por todos os routers. Registr
 
 ### `registrar(db: Session, acao: str, modulo: str, usuario_id: int | None=None, usuario_nome: str='', cliente_id: int | None=None, cliente_nome: str | None=None, detalhes: str | None=None, ip: str | None=None) -> None`
 
-- Local: [registrar](../app/services/log_service.py#L6)
+- Local: [registrar](../app/services/log_service.py#L10)
 - Responsabilidade: Função auxiliar que registra .
 
 ## `app/utils.py`
@@ -1753,16 +1964,26 @@ Audita conexao, schema, FKs, ORM/criptografia e telas GET principais.
 
 ## `scripts/backup_crypto.py`
 
-Cifra/decifra backups locais com a chave de campos da aplicacao.
+Cifra/decifra backups em streaming com uma chave exclusiva.
+
+### `_backup_key() -> bytes`
+
+- Local: [_backup_key](../scripts/backup_crypto.py#L23)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “backup key”.
+
+### `_temporary_target(target: Path)`
+
+- Local: [_temporary_target](../scripts/backup_crypto.py#L32)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “temporary target”.
 
 ### `encrypt(source: Path, target: Path) -> None`
 
-- Local: [encrypt](../scripts/backup_crypto.py#L18)
+- Local: [encrypt](../scripts/backup_crypto.py#L42)
 - Responsabilidade: Função auxiliar que cifra .
 
 ### `decrypt(source: Path, target: Path) -> None`
 
-- Local: [decrypt](../scripts/backup_crypto.py#L24)
+- Local: [decrypt](../scripts/backup_crypto.py#L62)
 - Responsabilidade: Função auxiliar que decifra .
 
 ## `scripts/generate_function_reference.py`
@@ -1829,6 +2050,15 @@ Gera uma referência navegável de todas as funções Python mantidas no projeto
 - Local: [main](../scripts/generate_function_reference.py#L210)
 - Responsabilidade: Gera o arquivo ou valida se a versão commitada está atualizada.
 
+## `scripts/setup_local_env.py`
+
+Cria um .env local consistente sem exibir segredos no terminal.
+
+### `_key() -> str`
+
+- Local: [_key](../scripts/setup_local_env.py#L15)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “key”.
+
 ## `scripts/verify_maquininha_flow.py`
 
 Valida adicionar, editar e desativar maquininha sem deixar dados de teste.
@@ -1844,42 +2074,42 @@ Script de seed com dados de exemplo. Execute da raiz do projeto: docker-compose 
 
 ### `limpar()`
 
-- Local: [limpar](../seed.py#L49)
+- Local: [limpar](../seed.py#L55)
 - Responsabilidade: Remove dados existentes para recomeçar do zero.
 
 ### `criar_usuarios()`
 
-- Local: [criar_usuarios](../seed.py#L67)
+- Local: [criar_usuarios](../seed.py#L73)
 - Responsabilidade: Função auxiliar que cria usuarios.
 
 ### `criar_clientes(usuarios)`
 
-- Local: [criar_clientes](../seed.py#L104)
+- Local: [criar_clientes](../seed.py#L110)
 - Responsabilidade: Função auxiliar que cria clientes.
 
 ### `criar_rotinas_hoje(clientes)`
 
-- Local: [criar_rotinas_hoje](../seed.py#L190)
+- Local: [criar_rotinas_hoje](../seed.py#L196)
 - Responsabilidade: Função auxiliar que cria rotinas hoje.
 
 ### `criar_contas_pagar_exemplo(clientes)`
 
-- Local: [criar_contas_pagar_exemplo](../seed.py#L221)
+- Local: [criar_contas_pagar_exemplo](../seed.py#L227)
 - Responsabilidade: Função auxiliar que cria contas pagar exemplo.
 
 ### `criar_cadastros_financeiros_exemplo(clientes)`
 
-- Local: [criar_cadastros_financeiros_exemplo](../seed.py#L296)
+- Local: [criar_cadastros_financeiros_exemplo](../seed.py#L302)
 - Responsabilidade: Função auxiliar que cria cadastros financeiros exemplo.
 
 ### `criar_fechamentos_exemplo(clientes, usuarios)`
 
-- Local: [criar_fechamentos_exemplo](../seed.py#L368)
+- Local: [criar_fechamentos_exemplo](../seed.py#L374)
 - Responsabilidade: Função auxiliar que cria fechamentos exemplo.
 
 ### `criar_conciliacao_exemplo(clientes, usuarios)`
 
-- Local: [criar_conciliacao_exemplo](../seed.py#L394)
+- Local: [criar_conciliacao_exemplo](../seed.py#L400)
 - Responsabilidade: Cria um cenario visual rico para a tela de conciliacao.
 
 ## `seed_bioma.py`
@@ -1927,22 +2157,22 @@ Seed: dados de teste para Conciliação Cartão + Conciliação Banco. Cria para
 
 ### `liquido(bruto: Decimal, bandeira: str) -> Decimal`
 
-- Local: [liquido](../seed_conciliacao_cartao.py#L57)
+- Local: [liquido](../seed_conciliacao_cartao.py#L55)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “liquido”.
 
 ### `add_venda(cliente_id, data_venda, data_pagamento, portador, digitos, bandeira, bruto, status=StatusVendaCartao.pendente, lote_id=None, origem='seed_teste.csv')`
 
-- Local: [add_venda](../seed_conciliacao_cartao.py#L61)
+- Local: [add_venda](../seed_conciliacao_cartao.py#L59)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “add venda”.
 
 ### `add_lote(cliente_id, data, bandeira, vendas)`
 
-- Local: [add_lote](../seed_conciliacao_cartao.py#L84)
+- Local: [add_lote](../seed_conciliacao_cartao.py#L82)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “add lote”.
 
 ### `add_credito_banco(cliente_id, data, valor, descricao, lote_id=None)`
 
-- Local: [add_credito_banco](../seed_conciliacao_cartao.py#L104)
+- Local: [add_credito_banco](../seed_conciliacao_cartao.py#L102)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “add credito banco”.
 
 ## `seed_exemplos_conciliacao.py`
@@ -1951,13 +2181,77 @@ Seed: exemplos completos para testar a Conciliação de Cartão. Cria Atendiment
 
 ### `liquido(bruto: Decimal, taxa_pct: Decimal) -> Decimal`
 
-- Local: [liquido](../seed_exemplos_conciliacao.py#L47)
+- Local: [liquido](../seed_exemplos_conciliacao.py#L45)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “liquido”.
 
 ### `add_at(cliente_id, data_atend, nome, bandeira, digitos, valor, data_prev, taxa=None, obs=None)`
 
-- Local: [add_at](../seed_exemplos_conciliacao.py#L54)
+- Local: [add_at](../seed_exemplos_conciliacao.py#L52)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “add at”.
+
+## `tests/test_field_classification.py`
+
+### `test_basic_registration_fields_are_plaintext() -> None`
+
+- Local: [test_basic_registration_fields_are_plaintext](../tests/test_field_classification.py#L13)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test basic registration fields are plaintext”.
+
+### `test_clinical_banking_and_financial_fields_remain_encrypted() -> None`
+
+- Local: [test_clinical_banking_and_financial_fields_remain_encrypted](../tests/test_field_classification.py#L32)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test clinical banking and financial fields remain encrypted”.
+
+## `tests/test_security.py`
+
+### `_request(*, path: str='/', client: tuple[str, int]=('127.0.0.1', 50000), headers: list[tuple[bytes, bytes]] | None=None) -> Request`
+
+- Local: [_request](../tests/test_security.py#L23)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “request”.
+
+### `test_password_hash_and_policy()`
+
+- Local: [test_password_hash_and_policy](../tests/test_security.py#L44)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test password hash and policy”.
+
+### `test_jwt_has_lifecycle_claims_and_does_not_accept_url_token()`
+
+- Local: [test_jwt_has_lifecycle_claims_and_does_not_accept_url_token](../tests/test_security.py#L54)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test jwt has lifecycle claims and does not accept url token”.
+
+### `test_bearer_header_takes_precedence_over_cookie()`
+
+- Local: [test_bearer_header_takes_precedence_over_cookie](../tests/test_security.py#L66)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test bearer header takes precedence over cookie”.
+
+### `test_permission_matrix_is_centralized()`
+
+- Local: [test_permission_matrix_is_centralized](../tests/test_security.py#L76)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test permission matrix is centralized”.
+
+### `test_proxy_headers_are_only_trusted_from_configured_network()`
+
+- Local: [test_proxy_headers_are_only_trusted_from_configured_network](../tests/test_security.py#L85)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test proxy headers are only trusted from configured network”.
+
+### `test_origin_allowlist_is_exact()`
+
+- Local: [test_origin_allowlist_is_exact](../tests/test_security.py#L98)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test origin allowlist is exact”.
+
+### `test_rotina_partial_escapes_user_controlled_html()`
+
+- Local: [test_rotina_partial_escapes_user_controlled_html](../tests/test_security.py#L107)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test rotina partial escapes user controlled html”.
+
+### `test_public_endpoints_and_security_headers()`
+
+- Local: [test_public_endpoints_and_security_headers](../tests/test_security.py#L123)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test public endpoints and security headers”.
+
+### `test_login_rate_limit_is_per_account_and_message_is_generic()`
+
+- Local: [test_login_rate_limit_is_per_account_and_message_is_generic](../tests/test_security.py#L140)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test login rate limit is per account and message is generic”.
 
 ## `tests/test_taxas_cartao.py`
 
@@ -1990,4 +2284,4 @@ Testes da seleção automática de taxa por faixa de parcelamento.
 
 ---
 
-Total documentado: **354 funções e métodos**.
+Total documentado: **405 funções e métodos**.

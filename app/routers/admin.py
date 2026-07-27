@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -5,7 +6,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual, hash_senha, requer_coordenador, tem_acesso_geral
+from app.auth import (
+    get_usuario_atual,
+    hash_senha,
+    requer_coordenador,
+    tem_acesso_geral,
+    validar_senha_nova,
+)
 from app.database import get_db
 from app.models import (
     AnotacaoCliente, Atendimento, CentroCusto, ClienteBPO, ContaPagar, FechamentoDiario,
@@ -233,8 +240,13 @@ async def criar_usuario(
 ):
     nome = nome.strip()
     email = email.strip().lower()
-    if perfil not in PERFIS_USUARIO:
-        return RedirectResponse(url="/admin/funcionarios?erro=perfil_invalido", status_code=303)
+    if (
+        not nome
+        or not email
+        or perfil not in PERFIS_USUARIO
+        or not validar_senha_nova(senha)
+    ):
+        return RedirectResponse(url="/admin/funcionarios?erro=dados_invalidos", status_code=303)
 
     existente = db.query(Usuario).filter(Usuario.email == email).first()
     if existente:
@@ -272,7 +284,7 @@ async def editar_usuario(
     senha = (senha or "").strip()
     if not nome or not email or perfil not in PERFIS_USUARIO:
         return RedirectResponse(url="/admin/funcionarios?erro=dados_invalidos", status_code=303)
-    if senha and len(senha) < 6:
+    if senha and not validar_senha_nova(senha):
         return RedirectResponse(url=f"/admin/funcionarios?erro=senha_curta&editar={usuario_id}", status_code=303)
     if usuario_id == coordenador.id and perfil != PerfilUsuario.coordenador.value:
         return RedirectResponse(url="/admin/funcionarios?erro=perfil_proprio", status_code=303)
@@ -289,6 +301,7 @@ async def editar_usuario(
     alvo.perfil = perfil
     if senha:
         alvo.senha_hash = hash_senha(senha)
+        alvo.auth_version += 1
     db.commit()
     _log(db, "Usuário editado", "admin", usuario_id=coordenador.id,
          usuario_nome=coordenador.nome,
@@ -310,25 +323,12 @@ async def excluir_usuario(
         return RedirectResponse(url="/admin/funcionarios?erro=usuario_nao_encontrado", status_code=303)
 
     nome_alvo, email_alvo = alvo.nome, alvo.email
-    # Preserva o histórico financeiro, removendo somente o vínculo com a conta.
+    # Soft delete preserva autoria e auditoria dos registros financeiros.
     db.query(ClienteBPO).filter(ClienteBPO.funcionario_id == usuario_id).update(
         {ClienteBPO.funcionario_id: None}, synchronize_session=False)
-    db.query(Atendimento).filter(Atendimento.lancado_por_id == usuario_id).update(
-        {Atendimento.lancado_por_id: None}, synchronize_session=False)
-    db.query(ContaPagar).filter(ContaPagar.lancado_por_id == usuario_id).update(
-        {ContaPagar.lancado_por_id: None}, synchronize_session=False)
-    db.query(PagamentoParcialContaPagar).filter(
-        PagamentoParcialContaPagar.criado_por_id == usuario_id
-    ).update({PagamentoParcialContaPagar.criado_por_id: None}, synchronize_session=False)
-    db.query(FechamentoDiario).filter(FechamentoDiario.gerado_por_id == usuario_id).update(
-        {FechamentoDiario.gerado_por_id: None}, synchronize_session=False)
-    db.query(LogAuditoria).filter(LogAuditoria.usuario_id == usuario_id).update(
-        {LogAuditoria.usuario_id: None}, synchronize_session=False)
-    db.query(AnotacaoCliente).filter(AnotacaoCliente.autor_id == usuario_id).update(
-        {AnotacaoCliente.autor_id: None}, synchronize_session=False)
-    db.query(TarefaRotina).filter(TarefaRotina.funcionario_id == usuario_id).delete(
-        synchronize_session=False)
-    db.delete(alvo)
+    alvo.ativo = False
+    alvo.deleted_at = datetime.now(timezone.utc)
+    alvo.auth_version += 1
     db.commit()
     _log(db, "Usuário excluído", "admin", usuario_id=coordenador.id,
          usuario_nome=coordenador.nome, detalhes=f"{nome_alvo} — {email_alvo}")
@@ -349,6 +349,8 @@ async def toggle_usuario(
     alvo = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if alvo:
         alvo.ativo = not alvo.ativo
+        if not alvo.ativo:
+            alvo.auth_version += 1
         db.commit()
         acao = "Usuário ativado" if alvo.ativo else "Usuário desativado"
         _log(db, acao, "admin", usuario_id=coordenador.id, usuario_nome=coordenador.nome, detalhes=alvo.nome)
@@ -547,6 +549,7 @@ async def excluir_cliente(
     # Exclusão lógica: retira o cliente da operação sem apagar histórico financeiro.
     cliente.ativo = False
     cliente.funcionario_id = None
+    cliente.deleted_at = datetime.now(timezone.utc)
     db.commit()
     _log(db, "Cliente excluído", "admin", usuario_id=usuario.id,
          usuario_nome=usuario.nome, cliente_id=cliente.id,

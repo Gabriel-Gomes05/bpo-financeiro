@@ -16,7 +16,7 @@
     {% if erro == 'email_duplicado' %}Este e-mail já está cadastrado.
     {% elif erro == 'excluir_proprio' %}Você não pode excluir a própria conta.
     {% elif erro == 'perfil_proprio' %}Você não pode retirar o perfil de coordenador da própria conta.
-    {% elif erro == 'senha_curta' %}A nova senha deve ter pelo menos 6 caracteres.
+    {% elif erro == 'senha_curta' %}A nova senha deve ter entre 12 e 72 caracteres.
     {% else %}Não foi possível concluir a operação. Confira os dados e tente novamente.{% endif %}
   </div>
   {% endif %}
@@ -42,7 +42,7 @@
       </div>
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha *</label>
-        <input type="password" name="senha" required minlength="6"
+        <input type="password" name="senha" required minlength="12" maxlength="72"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
@@ -107,7 +107,7 @@
           <select name="perfil" aria-label="Perfil" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
             {% for valor, rotulo in [('funcionario', 'Funcionário'), ('editor', 'Editor'), ('coordenador', 'Coordenador'), ('secretaria', 'Secretaria'), ('medico', 'Médico')] %}<option value="{{ valor }}" {% if u.perfil.value == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
           </select>
-          <input type="password" name="senha" minlength="6" placeholder="Nova senha (opcional)" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <input type="password" name="senha" minlength="12" maxlength="72" placeholder="Nova senha (opcional)" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
           <button type="submit" class="w-full rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white">Salvar alterações</button>
         </form>
       </article>

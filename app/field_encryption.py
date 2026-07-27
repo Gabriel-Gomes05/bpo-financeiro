@@ -15,15 +15,9 @@ PREFIX = "enc:v1:"
 # Campos que devem existir apenas cifrados no PostgreSQL. O booleano final
 # indica criptografia deterministica, reservada a igualdade/UNIQUE.
 SENSITIVE_FIELDS = (
-    ("usuarios", "nome", "usuarios.nome", False),
-    ("usuarios", "email", "usuarios.email", True),
-    ("clientes_bpo", "nome", "clientes_bpo.nome", False),
-    ("clientes_bpo", "razao_social", "clientes_bpo.razao_social", False),
-    ("clientes_bpo", "cnpj", "clientes_bpo.cnpj", True),
     ("clientes_bpo", "banco", "clientes_bpo.banco", False),
     ("clientes_bpo", "agencia", "clientes_bpo.agencia", False),
     ("clientes_bpo", "conta", "clientes_bpo.conta", False),
-    ("centros_custo", "nome", "centros_custo.nome", False),
     ("atendimentos", "nome_paciente", "atendimentos.nome_paciente", False),
     ("atendimentos", "cpf_paciente", "atendimentos.cpf_paciente", True),
     ("atendimentos", "medico", "atendimentos.medico", False),
@@ -37,7 +31,6 @@ SENSITIVE_FIELDS = (
     ("contas_pagar", "observacao", "contas_pagar.observacao", False),
     ("pagamentos_parciais_contas_pagar", "observacao", "pagamentos_parciais_contas_pagar.observacao", False),
     ("fechamentos_diarios", "observacao", "fechamentos_diarios.observacao", False),
-    ("tarefas_rotina", "descricao", "tarefas_rotina.descricao", False),
     ("divergencias_conciliacao", "motivo", "divergencias_conciliacao.motivo", False),
     ("movimentacoes_bancarias", "identificador_externo", "movimentacoes_bancarias.identificador_externo", True),
     ("movimentacoes_bancarias", "descricao", "movimentacoes_bancarias.descricao", False),
@@ -57,12 +50,23 @@ SENSITIVE_FIELDS = (
     ("vendas_cartao", "nome_portador", "vendas_cartao.nome_portador", False),
     ("vendas_cartao", "descricao", "vendas_cartao.descricao", False),
     ("vendas_cartao", "origem_arquivo", "vendas_cartao.origem_arquivo", False),
-    ("logs_auditoria", "usuario_nome", "logs_auditoria.usuario_nome", False),
-    ("logs_auditoria", "cliente_nome", "logs_auditoria.cliente_nome", False),
     ("logs_auditoria", "detalhes", "logs_auditoria.detalhes", False),
     ("logs_auditoria", "ip", "logs_auditoria.ip", False),
     ("anotacoes_clientes", "titulo", "anotacoes_clientes.titulo", False),
     ("anotacoes_clientes", "conteudo", "anotacoes_clientes.conteudo", False),
+)
+
+# Campos cadastrais deliberadamente legiveis para relatorios e integracoes.
+BASIC_PLAINTEXT_FIELDS = (
+    ("usuarios", "nome"),
+    ("usuarios", "email"),
+    ("clientes_bpo", "nome"),
+    ("clientes_bpo", "razao_social"),
+    ("clientes_bpo", "cnpj"),
+    ("centros_custo", "nome"),
+    ("tarefas_rotina", "descricao"),
+    ("logs_auditoria", "usuario_nome"),
+    ("logs_auditoria", "cliente_nome"),
 )
 
 

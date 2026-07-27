@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.database import get_db
 from app.utils import cliente_ativo as _ca
 from app.models import (
@@ -22,6 +22,7 @@ from app.models import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+require_gestao = require_permission(Permission.GESTAO)
 REPORTLAB_PATH = ROOT / ".tools" / "reportlab"
 if REPORTLAB_PATH.exists():
     sys.path.insert(0, str(REPORTLAB_PATH))
@@ -266,7 +267,7 @@ async def pagina_fechamento(
     data: Optional[str] = None,
     saldo: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
@@ -340,7 +341,7 @@ async def pdf_aprovacao(
     data: Optional[str] = None,
     saldo: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id_cookie = _ca(request, cliente_id)
     cliente_id = cliente_id_cookie or cliente_id
@@ -384,7 +385,7 @@ async def fechamento_mensal(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()

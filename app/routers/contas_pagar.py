@@ -1,4 +1,5 @@
 import os
+import logging
 import re
 import unicodedata
 import uuid
@@ -14,15 +15,18 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
 from app.database import get_db
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
 from app.models import CentroCusto, ClienteBPO, ContaPagar, ContaPagarCentroCustoRateio, StatusContaPagar, TipoContaPagar, Usuario, PerfilUsuario
 from app.services.log_service import registrar as _log
+from app.errors import public_import_error
 
 router = APIRouter()
+require_contas_pagar = require_permission(Permission.CONTAS_PAGAR)
+logger = logging.getLogger(__name__)
 
 
 
@@ -142,7 +146,7 @@ async def listar_contas(
     cliente_id: Optional[int] = None,
     flash: Optional[str] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
@@ -176,7 +180,7 @@ async def listar_contas(
 async def baixar_documento_conta(
     conta_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
@@ -211,7 +215,7 @@ async def criar_conta(
     observacao: Optional[str] = Form(None),
     documento: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -279,7 +283,7 @@ async def importar_contas(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -371,8 +375,8 @@ async def importar_contas(
             detalhes=f"{importadas} conta(s) de '{nome_original}'",
         )
 
-    except Exception as e:
-        flash_error = str(e)
+    except Exception:
+        flash_error = public_import_error(logger, "importar_contas_pagar")
     finally:
         try:
             if caminho:
@@ -407,7 +411,7 @@ async def importar_contas(
 async def agendar_pagamento(
     conta_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:
@@ -432,7 +436,7 @@ async def agendar_pagamento(
 async def cancelar_conta(
     conta_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:

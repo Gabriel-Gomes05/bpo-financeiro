@@ -1,6 +1,10 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models import LogAuditoria
+
+logger = logging.getLogger(__name__)
 
 
 def registrar(
@@ -29,3 +33,12 @@ def registrar(
         db.commit()
     except Exception:
         db.rollback()
+        logger.exception(
+            "audit_log_persistence_failed",
+            extra={
+                "action": acao,
+                "audit_module": modulo,
+                "actor_id": usuario_id,
+                "client_id": cliente_id,
+            },
+        )

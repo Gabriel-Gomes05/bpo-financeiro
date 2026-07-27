@@ -69,15 +69,17 @@ uma interface bonita que não aplica a regra no servidor.
 
 ## Evolução do banco
 
-O startup executa `criar_tabelas()` e `migrar_schema()`. As alterações de schema são
-idempotentes: devem poder rodar mais de uma vez sem perder dados. Antes de uma mudança:
+O schema é versionado pelo Alembic e nunca é alterado no startup da aplicação. O
+serviço `migrate` usa uma credencial própria e deve terminar com sucesso antes do
+serviço `web`. Antes de uma mudança:
 
-1. faça backup;
-2. adicione a alteração em `migrar_schema()`;
+1. faça e valide o backup;
+2. crie uma nova revision em `alembic/versions`;
 3. atualize o model;
-4. teste banco vazio e banco já populado;
-5. execute `scripts/audit_connections.py`.
+4. teste banco vazio e uma cópia do banco já populado;
+5. execute os testes e `scripts/audit_connections.py`;
+6. aplique a migration antes de substituir a imagem web.
 
-No futuro, com mais desenvolvedores ou múltiplos ambientes, recomenda-se migrar esse fluxo
-para Alembic, mantendo um histórico versionado de migrations.
+O usuário de runtime possui CRUD nas tabelas e uso das sequências, mas não pode
+criar ou alterar objetos do schema.
 

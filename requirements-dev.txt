@@ -1,4 +1,6 @@
 -r requirements.txt
 pytest>=8,<9
 ruff>=0.12,<1
+httpx2>=2.9,<3
+pip-audit>=2.9,<3
 
