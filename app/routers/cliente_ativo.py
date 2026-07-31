@@ -6,9 +6,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual, tem_acesso_geral
-from app.config import HTTPS_ONLY
 from app.database import get_db
 from app.models import ClienteBPO, Usuario
+from app.security import secure_cookie_for
 
 router = APIRouter()
 
@@ -47,7 +47,7 @@ async def selecionar_cliente(
             max_age=60 * 60 * 24 * 30,
             samesite="strict",
             httponly=True,
-            secure=HTTPS_ONLY,
+            secure=secure_cookie_for(request),
             path="/",
         )
     else:

@@ -16,7 +16,6 @@ from app.auth import (
 )
 from app.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    HTTPS_ONLY,
     LOGIN_RATE_LIMIT_ACCOUNT,
     LOGIN_RATE_LIMIT_IP,
     LOGIN_RATE_LIMIT_WINDOW_SECONDS,
@@ -25,7 +24,7 @@ from app.database import get_db
 from app.jinja import templates
 from app.models import Usuario
 from app.rate_limit import clear, consume, inspect_limit, opaque_key
-from app.security import client_ip
+from app.security import client_ip, secure_cookie_for
 from app.services.log_service import registrar as _log
 
 router = APIRouter()
@@ -125,7 +124,7 @@ async def fazer_login(
         value=token,
         httponly=True,
         samesite="strict",
-        secure=HTTPS_ONLY,
+        secure=secure_cookie_for(request),
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -155,7 +154,7 @@ async def logout(
         key="access_token",
         httponly=True,
         samesite="strict",
-        secure=HTTPS_ONLY,
+        secure=secure_cookie_for(request),
         path="/",
     )
     return response

@@ -140,17 +140,17 @@ Configuração centralizada e validada da aplicação.
 
 ### `_decode_key(name: str, encoded: str) -> bytes`
 
-- Local: [_decode_key](../app/config.py#L108)
+- Local: [_decode_key](../app/config.py#L113)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “decode key”.
 
 ### `_validar_origens() -> None`
 
-- Local: [_validar_origens](../app/config.py#L118)
+- Local: [_validar_origens](../app/config.py#L123)
 - Responsabilidade: Função auxiliar que valida origens.
 
 ### `_validar_configuracao() -> None`
 
-- Local: [_validar_configuracao](../app/config.py#L136)
+- Local: [_validar_configuracao](../app/config.py#L159)
 - Responsabilidade: Função auxiliar que valida configuracao.
 
 ## `app/database.py`
@@ -357,7 +357,7 @@ Clientes Redis compartilhados por rate limit e revogação.
 
 ### `redis_async() -> async_redis.Redis`
 
-- Local: [redis_async](../app/redis_client.py#L24)
+- Local: [redis_async](../app/redis_client.py#L23)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “redis async”.
 
 ## `app/routers/admin.py`
@@ -584,19 +584,19 @@ Clientes Redis compartilhados por rate limit e revogação.
 
 ### `pagina_login(request: Request)`
 
-- Local: [pagina_login](../app/routers/auth.py#L37)
+- Local: [pagina_login](../app/routers/auth.py#L36)
 - Rota: `GET /login`
 - Responsabilidade: Endpoint que renderiza a página de login e devolve a resposta HTTP correspondente.
 
 ### `fazer_login(request: Request, email: str=Form(..., max_length=320), senha: str=Form(..., max_length=256), db: Session=Depends(get_db))`
 
-- Local: [fazer_login](../app/routers/auth.py#L42)
+- Local: [fazer_login](../app/routers/auth.py#L41)
 - Rota: `POST /login`
 - Responsabilidade: Endpoint que executa login e devolve a resposta HTTP correspondente.
 
 ### `logout(request: Request, db: Session=Depends(get_db), usuario: Usuario=Depends(get_usuario_atual))`
 
-- Local: [logout](../app/routers/auth.py#L136)
+- Local: [logout](../app/routers/auth.py#L135)
 - Rota: `POST /logout`
 - Responsabilidade: Endpoint que executa o fluxo logout e devolve a resposta HTTP correspondente.
 
@@ -1544,42 +1544,47 @@ Middlewares HTTP defensivos, proxy confiável e limites de requisição.
 
 ### `_normalizar_origem(valor: str) -> str`
 
-- Local: [_normalizar_origem](../app/security.py#L29)
+- Local: [_normalizar_origem](../app/security.py#L30)
 - Responsabilidade: Função auxiliar que normaliza origem.
+
+### `secure_cookie_for(request: Request) -> bool`
+
+- Local: [secure_cookie_for](../app/security.py#L45)
+- Responsabilidade: Mantém Secure no domínio e permite cookie apenas no host HTTP privado explícito.
 
 ### `_is_trusted_proxy(host: str) -> bool`
 
-- Local: [_is_trusted_proxy](../app/security.py#L41)
+- Local: [_is_trusted_proxy](../app/security.py#L61)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “is trusted proxy”.
 
 ### `client_ip(request: Request) -> str`
 
-- Local: [client_ip](../app/security.py#L49)
+- Local: [client_ip](../app/security.py#L69)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “client ip”.
 
 ### `_origem_permitida(request: Request) -> bool`
 
-- Local: [_origem_permitida](../app/security.py#L65)
+- Local: [_origem_permitida](../app/security.py#L85)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “origem permitida”.
 
 ### `__init__(self, app)`
 
-- Local: [MaxBodySizeMiddleware.__init__](../app/security.py#L77)
+- Local: [MaxBodySizeMiddleware.__init__](../app/security.py#L97)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “init”.
 
 ### `__call__(self, scope, receive, send)`
 
-- Local: [MaxBodySizeMiddleware.__call__](../app/security.py#L80)
+- Local: [MaxBodySizeMiddleware.__call__](../app/security.py#L100)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “call”.
 
 ### `limited_receive()`
 
-- Local: [MaxBodySizeMiddleware.__call__.limited_receive](../app/security.py#L99)
+- Local: [MaxBodySizeMiddleware.__call__.limited_receive](../app/security.py#L119)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “limited receive”.
 
 ### `dispatch(self, request: Request, call_next) -> Response`
 
-- Local: [SecurityMiddleware.dispatch](../app/security.py#L128)
+- Local: [SecurityMiddleware.dispatch](../app/security.py#L148)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “dispatch”.
 
 ## `app/seed_massivo.py`
@@ -2205,52 +2210,57 @@ Seed: exemplos completos para testar a Conciliação de Cartão. Cria Atendiment
 
 ### `_request(*, path: str='/', client: tuple[str, int]=('127.0.0.1', 50000), headers: list[tuple[bytes, bytes]] | None=None) -> Request`
 
-- Local: [_request](../tests/test_security.py#L23)
+- Local: [_request](../tests/test_security.py#L25)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “request”.
 
 ### `test_password_hash_and_policy()`
 
-- Local: [test_password_hash_and_policy](../tests/test_security.py#L44)
+- Local: [test_password_hash_and_policy](../tests/test_security.py#L46)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test password hash and policy”.
 
 ### `test_jwt_has_lifecycle_claims_and_does_not_accept_url_token()`
 
-- Local: [test_jwt_has_lifecycle_claims_and_does_not_accept_url_token](../tests/test_security.py#L54)
+- Local: [test_jwt_has_lifecycle_claims_and_does_not_accept_url_token](../tests/test_security.py#L56)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test jwt has lifecycle claims and does not accept url token”.
 
 ### `test_bearer_header_takes_precedence_over_cookie()`
 
-- Local: [test_bearer_header_takes_precedence_over_cookie](../tests/test_security.py#L66)
+- Local: [test_bearer_header_takes_precedence_over_cookie](../tests/test_security.py#L68)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test bearer header takes precedence over cookie”.
 
 ### `test_permission_matrix_is_centralized()`
 
-- Local: [test_permission_matrix_is_centralized](../tests/test_security.py#L76)
+- Local: [test_permission_matrix_is_centralized](../tests/test_security.py#L78)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test permission matrix is centralized”.
 
 ### `test_proxy_headers_are_only_trusted_from_configured_network()`
 
-- Local: [test_proxy_headers_are_only_trusted_from_configured_network](../tests/test_security.py#L85)
+- Local: [test_proxy_headers_are_only_trusted_from_configured_network](../tests/test_security.py#L87)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test proxy headers are only trusted from configured network”.
 
 ### `test_origin_allowlist_is_exact()`
 
-- Local: [test_origin_allowlist_is_exact](../tests/test_security.py#L98)
+- Local: [test_origin_allowlist_is_exact](../tests/test_security.py#L100)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test origin allowlist is exact”.
+
+### `test_secure_cookie_is_disabled_only_for_explicit_private_host(monkeypatch)`
+
+- Local: [test_secure_cookie_is_disabled_only_for_explicit_private_host](../tests/test_security.py#L109)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test secure cookie is disabled only for explicit private host”.
 
 ### `test_rotina_partial_escapes_user_controlled_html()`
 
-- Local: [test_rotina_partial_escapes_user_controlled_html](../tests/test_security.py#L107)
+- Local: [test_rotina_partial_escapes_user_controlled_html](../tests/test_security.py#L140)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test rotina partial escapes user controlled html”.
 
 ### `test_public_endpoints_and_security_headers()`
 
-- Local: [test_public_endpoints_and_security_headers](../tests/test_security.py#L123)
+- Local: [test_public_endpoints_and_security_headers](../tests/test_security.py#L156)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test public endpoints and security headers”.
 
 ### `test_login_rate_limit_is_per_account_and_message_is_generic()`
 
-- Local: [test_login_rate_limit_is_per_account_and_message_is_generic](../tests/test_security.py#L140)
+- Local: [test_login_rate_limit_is_per_account_and_message_is_generic](../tests/test_security.py#L173)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test login rate limit is per account and message is generic”.
 
 ## `tests/test_taxas_cartao.py`
@@ -2284,4 +2294,4 @@ Testes da seleção automática de taxa por faixa de parcelamento.
 
 ---
 
-Total documentado: **405 funções e métodos**.
+Total documentado: **407 funções e métodos**.
