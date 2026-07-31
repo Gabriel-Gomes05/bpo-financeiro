@@ -92,6 +92,7 @@ As principais são:
 | `REDIS_URL` | Rate limit e revogação compartilhados. |
 | `APP_URL` | URL pública e origem principal da aplicação. |
 | `EXTRA_ALLOWED_ORIGINS` | Origens adicionais opcionais, como um Hub externo. |
+| `INSECURE_PRIVATE_ORIGINS` | Exceção HTTP temporária, limitada a IP privado e porta explícita. |
 | `TRUSTED_PROXY_CIDRS` | Redes autorizadas a enviar IP encaminhado. |
 | `DB_SSL_MODE` | TLS da conexão PostgreSQL. |
 | `DB_ALLOW_INSECURE_PRIVATE` | Exceção explícita para banco na rede Docker privada. |
@@ -177,6 +178,13 @@ do Caddy pertence à infraestrutura central e não fica neste repositório.
 `APP_ENV=production` ativa automaticamente cookies seguros e HSTS. `APP_URL`
 define automaticamente a origem principal aceita; use `EXTRA_ALLOWED_ORIGINS`
 apenas quando outro frontend, como o futuro Hub, precisar chamar a aplicação.
+
+Quando NAT loopback ou DNS interno ainda não estiver disponível, uma origem
+HTTP privada pode ser liberada explicitamente, por exemplo
+`INSECURE_PRIVATE_ORIGINS=http://192.168.0.102:8888`. A exceção só afeta o
+cookie emitido para esse host privado; o domínio público continua exigindo
+HTTPS. Remova a exceção assim que o acesso interno pelo domínio estiver
+resolvido.
 
 Use TLS para PostgreSQL externo. Quando o banco estiver exclusivamente na rede
 Docker privada da mesma VM, use `DB_SSL_MODE=disable` somente junto de

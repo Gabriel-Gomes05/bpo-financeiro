@@ -16,6 +16,7 @@ from app.config import (
     GLOBAL_RATE_LIMIT_REQUESTS,
     GLOBAL_RATE_LIMIT_WINDOW_SECONDS,
     HTTPS_ONLY,
+    INSECURE_PRIVATE_ORIGINS,
     MAX_REQUEST_BODY_BYTES,
     TRUSTED_PROXY_CIDRS,
 )
@@ -36,6 +37,25 @@ def _normalizar_origem(valor: str) -> str:
 
 
 _ALLOWED_NORMALIZED = frozenset(_normalizar_origem(item) for item in ALLOWED_ORIGINS)
+_INSECURE_PRIVATE_NORMALIZED = frozenset(
+    _normalizar_origem(item) for item in INSECURE_PRIVATE_ORIGINS
+)
+
+
+def secure_cookie_for(request: Request) -> bool:
+    """Mantém Secure no domínio e permite cookie apenas no host HTTP privado explícito."""
+    if not HTTPS_ONLY:
+        return False
+    host = request.headers.get("host", "").lower()
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    normalized_origin = _normalizar_origem(origin) if origin else ""
+    for private_origin in _INSECURE_PRIVATE_NORMALIZED:
+        private_host = urlparse(private_origin).netloc.lower()
+        if host == private_host and (
+            not normalized_origin or normalized_origin == private_origin
+        ):
+            return False
+    return True
 
 
 def _is_trusted_proxy(host: str) -> bool:

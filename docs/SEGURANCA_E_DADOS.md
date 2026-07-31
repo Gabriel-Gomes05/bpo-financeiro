@@ -42,6 +42,11 @@ DB_SSL_MODE=verify-full
 Em produção, HTTPS, cookies seguros e HSTS são ativados automaticamente por
 `APP_ENV`. A origem principal permitida é derivada de `APP_URL`.
 
+`INSECURE_PRIVATE_ORIGINS` permite, excepcionalmente, acesso HTTP a um IP
+privado com porta explícita. A aplicação mantém cookies `Secure` no domínio
+público e desativa esse atributo apenas quando `Host` e `Origin` correspondem
+exatamente à origem privada configurada. Essa exceção deve ser temporária.
+
 Use uma senha aleatória de banco com pelo menos 16 caracteres e chaves independentes. Execute
 o sistema com usuário PostgreSQL sem privilégios administrativos. O usuário de runtime deve
 ter apenas os privilégios necessários nas tabelas e sequências da aplicação.

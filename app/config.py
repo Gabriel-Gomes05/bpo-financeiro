@@ -90,7 +90,12 @@ GLOBAL_RATE_LIMIT_WINDOW_SECONDS = _int(
 # HTTP e proxy
 HTTPS_ONLY = APP_ENV == "production"
 EXTRA_ALLOWED_ORIGINS = _csv("EXTRA_ALLOWED_ORIGINS")
-ALLOWED_ORIGINS = list(dict.fromkeys([APP_URL, *EXTRA_ALLOWED_ORIGINS]))
+INSECURE_PRIVATE_ORIGINS = _csv("INSECURE_PRIVATE_ORIGINS")
+ALLOWED_ORIGINS = list(
+    dict.fromkeys(
+        [APP_URL, *EXTRA_ALLOWED_ORIGINS, *INSECURE_PRIVATE_ORIGINS]
+    )
+)
 TRUSTED_PROXY_CIDRS = _csv("TRUSTED_PROXY_CIDRS")
 MAX_REQUEST_BODY_BYTES = _int(
     "MAX_REQUEST_BODY_BYTES", 12 * 1024 * 1024, minimum=1024, maximum=100 * 1024 * 1024
@@ -130,7 +135,25 @@ def _validar_origens() -> None:
         ):
             raise RuntimeError(f"Origem CORS inválida: {origin}.")
         if APP_ENV == "production" and parsed.scheme != "https":
-            raise RuntimeError("Produção exige somente origens CORS HTTPS.")
+            if origin not in INSECURE_PRIVATE_ORIGINS:
+                raise RuntimeError(
+                    "Produção exige HTTPS, salvo origem HTTP privada explícita."
+                )
+            try:
+                private_address = ipaddress.ip_address(parsed.hostname).is_private
+            except ValueError:
+                private_address = False
+            if (
+                parsed.scheme != "http"
+                or not private_address
+                or parsed.port is None
+            ):
+                raise RuntimeError(
+                    "INSECURE_PRIVATE_ORIGINS aceita apenas IP privado HTTP "
+                    "com porta explícita."
+                )
+    if APP_ENV == "production" and urlparse(APP_URL).scheme != "https":
+        raise RuntimeError("APP_URL deve usar HTTPS em produção.")
 
 
 def _validar_configuracao() -> None:

@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.testclient import TestClient
 
+import app.security as security
 from app.auth import (
     criar_token,
     decodificar_token,
@@ -13,6 +14,7 @@ from app.auth import (
     verificar_senha,
 )
 from app.authorization import Permission, has_permission
+from app.config import APP_URL
 from app.main import app
 from app.models import PerfilUsuario
 from app.routers.rotinas import _render_li
@@ -96,12 +98,43 @@ def test_proxy_headers_are_only_trusted_from_configured_network():
 
 
 def test_origin_allowlist_is_exact():
-    allowed = _request(headers=[(b"origin", b"http://127.0.0.1:8888")])
+    allowed = _request(headers=[(b"origin", APP_URL.encode())])
     reflected_subdomain = _request(
-        headers=[(b"origin", b"http://127.0.0.1:8888.attacker.invalid")]
+        headers=[(b"origin", f"{APP_URL}.attacker.invalid".encode())]
     )
     assert _origem_permitida(allowed)
     assert not _origem_permitida(reflected_subdomain)
+
+
+def test_secure_cookie_is_disabled_only_for_explicit_private_host(monkeypatch):
+    monkeypatch.setattr(security, "HTTPS_ONLY", True)
+    monkeypatch.setattr(
+        security,
+        "_INSECURE_PRIVATE_NORMALIZED",
+        frozenset({"http://192.168.0.102:8888"}),
+    )
+    private = _request(
+        headers=[
+            (b"host", b"192.168.0.102:8888"),
+            (b"origin", b"http://192.168.0.102:8888"),
+        ]
+    )
+    public = _request(
+        headers=[
+            (b"host", b"flic.docconcierge.com.br"),
+            (b"origin", b"https://flic.docconcierge.com.br"),
+        ]
+    )
+    spoofed = _request(
+        headers=[
+            (b"host", b"flic.docconcierge.com.br"),
+            (b"origin", b"http://192.168.0.102:8888"),
+        ]
+    )
+
+    assert not security.secure_cookie_for(private)
+    assert security.secure_cookie_for(public)
+    assert security.secure_cookie_for(spoofed)
 
 
 def test_rotina_partial_escapes_user_controlled_html():
@@ -146,7 +179,7 @@ def test_login_rate_limit_is_per_account_and_message_is_generic():
             client.post(
                 "/login",
                 data={"email": email, "senha": "SenhaInvalida!2026"},
-                headers={"Origin": "http://127.0.0.1:8888"},
+                headers={"Origin": APP_URL},
             )
             for _ in range(6)
         ]
