@@ -594,6 +594,15 @@
           </svg>
           Funcionários
         </a>
+        <a href="/admin/plano-contas"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if request.url.path.startswith('/admin/plano-contas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if request.url.path.startswith('/admin/plano-contas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+          </svg>
+          Plano de Contas
+        </a>
         {% endif %}
       </div>
       {% endif %}

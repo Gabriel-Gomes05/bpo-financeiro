@@ -184,11 +184,13 @@ class Atendimento(Base):
     data_pagamento_medico = Column(Date)
     observacao = Column(EncryptedText("atendimentos.observacao"))
     centro_custo_id = Column(Integer, ForeignKey("centros_custo.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
     lancado_por_id = Column(Integer, ForeignKey("usuarios.id"))
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
     cliente = relationship("ClienteBPO", back_populates="atendimentos")
     centro_custo = relationship("CentroCusto", back_populates="atendimentos", foreign_keys="[Atendimento.centro_custo_id]")
+    plano_conta = relationship("PlanoConta", foreign_keys=[plano_conta_id])
     rateios_centro_custo = relationship("AtendimentoCentroCustoRateio", back_populates="atendimento", cascade="all, delete-orphan")
     lancado_por = relationship("Usuario", foreign_keys=[lancado_por_id])
 
@@ -207,6 +209,24 @@ class CentroCusto(Base):
 
     cliente = relationship("ClienteBPO", back_populates="centros_custo")
     atendimentos = relationship("Atendimento", back_populates="centro_custo", foreign_keys="[Atendimento.centro_custo_id]")
+
+
+class PlanoConta(Base):
+    """Plano de contas global (receita/despesa) — fallback quando o cliente não tem
+    centros de custo próprios cadastrados. Semeado a partir de GRUPOS_DRE."""
+    __tablename__ = "planos_conta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo = Column(String(10), nullable=False)          # "receita" ou "despesa"
+    grupo = Column(String(80), nullable=False)          # rótulo, ex: "DESPESAS FIXAS"
+    chave = Column(String(60), nullable=False)          # chave estável (ex: df_aluguel, pc_12)
+    codigo = Column(String(30), nullable=True)
+    nome = Column(String(150), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=True)  # reservado; não usado ainda (global)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+
+    cliente = relationship("ClienteBPO", foreign_keys=[cliente_id])
 
 
 class AtendimentoCentroCustoRateio(Base):
@@ -233,8 +253,14 @@ class ContaPagar(Base):
     valor = Column(Numeric(12, 2), nullable=False)
     vencimento = Column(Date, nullable=False)
     data_pagamento = Column(Date)            # null se ainda não pago
+    data_competencia = Column(Date, nullable=True)
+    forma_pagamento = Column(Enum(FormaPagamento), nullable=True)
     status = Column(Enum(StatusContaPagar), default=StatusContaPagar.pendente, nullable=False)
-    categoria_dre = Column(String(60))        # chave da categoria do DRE (ex: df_aluguel)
+    categoria_dre = Column(String(60))        # chave da categoria do DRE (ex: df_aluguel) — espelho de plano_conta.chave
+    plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
+    recorrencia_intervalo = Column(String(20), nullable=True)   # semanal | quinzenal | mensal | personalizado
+    recorrencia_dias = Column(Integer, nullable=True)           # usado quando recorrencia_intervalo == personalizado
+    recorrencia_grupo_id = Column(Integer, ForeignKey("contas_pagar.id"), nullable=True)
     especialidade = Column(String(100), nullable=True)
     documento_path = Column(EncryptedText("contas_pagar.documento_path"))
     observacao = Column(EncryptedText("contas_pagar.observacao"))
@@ -246,6 +272,7 @@ class ContaPagar(Base):
     rateios_centro_custo = relationship("ContaPagarCentroCustoRateio", back_populates="conta", cascade="all, delete-orphan")
     pagamentos_parciais = relationship("PagamentoParcialContaPagar", back_populates="conta", cascade="all, delete-orphan")
     lancado_por = relationship("Usuario", foreign_keys=[lancado_por_id])
+    plano_conta = relationship("PlanoConta", foreign_keys=[plano_conta_id])
 
     @property
     def valor_pago_total(self):

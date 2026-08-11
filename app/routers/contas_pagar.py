@@ -2,7 +2,8 @@ import os
 import re
 import unicodedata
 import uuid
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional, List
@@ -19,7 +20,7 @@ from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
 from app.database import get_db
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
-from app.models import CentroCusto, ClienteBPO, ContaPagar, ContaPagarCentroCustoRateio, StatusContaPagar, TipoContaPagar, Usuario, PerfilUsuario
+from app.models import CentroCusto, ClienteBPO, ContaPagar, ContaPagarCentroCustoRateio, FormaPagamento, StatusContaPagar, TipoContaPagar, Usuario, PerfilUsuario
 from app.services.log_service import registrar as _log
 
 router = APIRouter()
@@ -136,6 +137,65 @@ def _montar_rateios_conta(
     return rateios
 
 
+FREQUENCIAS_RECORRENCIA = {"semanal", "quinzenal", "mensal", "personalizado"}
+RECORRENCIA_QTD_MAXIMA = 60
+FORMAS_PAGAMENTO_VALIDAS = {f.value for f in FormaPagamento}
+
+# Matriz de transição manual de status — "pago" nunca aparece aqui: só é setado
+# via conciliação bancária, que também cuida do estorno (PagamentoParcialContaPagar).
+TRANSICOES_STATUS_CONTA_PAGAR: dict[StatusContaPagar, set[StatusContaPagar]] = {
+    StatusContaPagar.pendente: {StatusContaPagar.aguardando_aprovacao, StatusContaPagar.agendado, StatusContaPagar.cancelado},
+    StatusContaPagar.aguardando_aprovacao: {StatusContaPagar.pendente, StatusContaPagar.agendado, StatusContaPagar.cancelado},
+    StatusContaPagar.agendado: {StatusContaPagar.pendente, StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
+    StatusContaPagar.cancelado: {StatusContaPagar.pendente},
+    StatusContaPagar.pago: set(),
+}
+
+
+def _status_permitidos(atual: StatusContaPagar) -> list[StatusContaPagar]:
+    return sorted(TRANSICOES_STATUS_CONTA_PAGAR.get(atual, set()), key=lambda s: s.value)
+
+
+def _alterar_status_conta(
+    db: Session,
+    conta: ContaPagar,
+    novo_status: StatusContaPagar,
+    usuario: Usuario,
+) -> bool:
+    """Aplica a transição se permitida pela matriz. Retorna True se mudou algo."""
+    if novo_status not in TRANSICOES_STATUS_CONTA_PAGAR.get(conta.status, set()):
+        return False
+    status_anterior = conta.status
+    conta.status = novo_status
+    db.commit()
+    _log(
+        db, "Status da conta alterado", "contas_pagar",
+        usuario_id=usuario.id, usuario_nome=usuario.nome,
+        cliente_id=conta.cliente_id,
+        detalhes=f"{conta.descricao} — {status_anterior.value} → {novo_status.value}",
+    )
+    return True
+
+
+def _data_recorrencia(origem: date, intervalo: str, dias_personalizado: Optional[int], indice: int) -> date:
+    """Data da N-ésima ocorrência futura (indice=1,2,3...), sempre calculada a partir
+    da data de origem — evita que o dia do mês "derrape" (ex: 31 -> 28 -> 28 -> 28)
+    quando uma ocorrência intermediária cai num mês mais curto."""
+    if intervalo == "semanal":
+        return origem + timedelta(days=7 * indice)
+    if intervalo == "quinzenal":
+        return origem + timedelta(days=15 * indice)
+    if intervalo == "personalizado":
+        dias = dias_personalizado if dias_personalizado and dias_personalizado > 0 else 30
+        return origem + timedelta(days=dias * indice)
+    # mensal (padrão): mantém o dia original do mês, ajustado ao último dia do mês de destino
+    total_meses = origem.month - 1 + indice
+    ano = origem.year + total_meses // 12
+    mes = total_meses % 12 + 1
+    ultimo_dia = monthrange(ano, mes)[1]
+    return date(ano, mes, min(origem.day, ultimo_dia))
+
+
 @router.get("/contas-pagar", response_class=HTMLResponse)
 async def listar_contas(
     request: Request,
@@ -157,6 +217,7 @@ async def listar_contas(
     # Ordena: vencidas primeiro, depois por vencimento
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
     centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
+    status_permitidos_por_conta = {c.id: [s.value for s in _status_permitidos(c.status)] for c in contas}
 
     return templates.TemplateResponse("contas_pagar.html", {
         "request": request,
@@ -168,6 +229,7 @@ async def listar_contas(
         "categorias_despesa": CATEGORIAS_DESPESA,
         "centros_custo_por_cliente": centros_por_cliente,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
+        "status_permitidos_por_conta": status_permitidos_por_conta,
         "flash": flash,
     })
 
@@ -196,26 +258,102 @@ async def baixar_documento_conta(
     )
 
 
+@router.get("/contas-pagar/{conta_id}/editar", response_class=HTMLResponse)
+async def form_editar_conta(
+    conta_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+    if conta.status == StatusContaPagar.pago:
+        return RedirectResponse(
+            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
+            status_code=303,
+        )
+    centros_por_cliente = _centros_custo_por_cliente(db, [conta.cliente_id])
+    return templates.TemplateResponse("contas_pagar_editar.html", {
+        "request": request,
+        "usuario": usuario,
+        "conta": conta,
+        "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
+        "formas_pagamento": list(FormaPagamento),
+    })
+
+
+@router.post("/contas-pagar/{conta_id}/editar")
+async def salvar_edicao_conta(
+    conta_id: int,
+    descricao: str = Form(...),
+    fornecedor: Optional[str] = Form(None),
+    valor: Decimal = Form(...),
+    vencimento: date = Form(...),
+    data_competencia: Optional[date] = Form(None),
+    forma_pagamento: Optional[str] = Form(None),
+    observacao: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+    if conta.status == StatusContaPagar.pago:
+        return RedirectResponse(
+            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
+            status_code=303,
+        )
+
+    conta.descricao = descricao
+    conta.fornecedor = fornecedor or None
+    conta.valor = valor
+    conta.vencimento = vencimento
+    conta.data_competencia = data_competencia or vencimento
+    conta.forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
+    conta.observacao = observacao or None
+    db.commit()
+    _log(
+        db, "Conta a pagar editada", "contas_pagar",
+        usuario_id=usuario.id, usuario_nome=usuario.nome,
+        cliente_id=conta.cliente_id,
+        detalhes=f"Conta #{conta_id} editada",
+    )
+    return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+
+
 @router.post("/contas-pagar")
 async def criar_conta(
     cliente_id: int = Form(...),
     descricao: str = Form(...),
     fornecedor: Optional[str] = Form(None),
-    tipo: str = Form("pontual"),
     valor: Decimal = Form(...),
     vencimento: date = Form(...),
+    data_competencia: Optional[date] = Form(None),
+    forma_pagamento: Optional[str] = Form(None),
     categoria_dre: Optional[str] = Form(None),
     rateio_centro_custo_key: List[str] = Form(default=[]),
     rateio_percentual: List[str] = Form(default=[]),
     especialidade: Optional[str] = Form(None),
     observacao: Optional[str] = Form(None),
     documento: Optional[UploadFile] = File(None),
+    recorrente: bool = Form(False),
+    recorrencia_intervalo: str = Form("mensal"),
+    recorrencia_dias: Optional[int] = Form(None),
+    recorrencia_qtd: int = Form(1),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
         return RedirectResponse(url="/contas-pagar", status_code=303)
+
+    if recorrente and recorrencia_intervalo not in FREQUENCIAS_RECORRENCIA:
+        recorrencia_intervalo = "mensal"
+    qtd_ocorrencias = max(1, min(recorrencia_qtd or 1, RECORRENCIA_QTD_MAXIMA)) if recorrente else 1
+    tipo = TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual
+    forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
+    data_competencia = data_competencia or vencimento
 
     # Salva documento se enviado
     documento_path = None
@@ -245,15 +383,21 @@ async def criar_conta(
         tipo=tipo,
         valor=valor,
         vencimento=vencimento,
+        data_competencia=data_competencia,
+        forma_pagamento=forma_pagamento,
         categoria_dre=categoria_compat,
         especialidade=especialidade_valor,
         status=StatusContaPagar.pendente,
         documento_path=documento_path,
         observacao=observacao or None,
         lancado_por_id=usuario.id,
+        recorrencia_intervalo=recorrencia_intervalo if recorrente else None,
+        recorrencia_dias=recorrencia_dias if recorrente and recorrencia_intervalo == "personalizado" else None,
     )
     db.add(conta)
     db.flush()
+    if recorrente:
+        conta.recorrencia_grupo_id = conta.id
     for r in rateios:
         db.add(ContaPagarCentroCustoRateio(
             conta_pagar_id=conta.id,
@@ -262,13 +406,42 @@ async def criar_conta(
             percentual=r["percentual"],
             valor=r["valor"],
         ))
+
+    proximas_geradas = 0
+    if recorrente and qtd_ocorrencias > 1:
+        for indice in range(1, qtd_ocorrencias):
+            data_ocorrencia = _data_recorrencia(vencimento, recorrencia_intervalo, recorrencia_dias, indice)
+            data_competencia_ocorrencia = _data_recorrencia(data_competencia, recorrencia_intervalo, recorrencia_dias, indice)
+            db.add(ContaPagar(
+                cliente_id=cliente_id,
+                descricao=descricao,
+                fornecedor=fornecedor or None,
+                tipo=tipo,
+                valor=valor,
+                vencimento=data_ocorrencia,
+                data_competencia=data_competencia_ocorrencia,
+                forma_pagamento=forma_pagamento,
+                categoria_dre=categoria_compat,
+                especialidade=especialidade_valor,
+                status=StatusContaPagar.pendente,
+                observacao=observacao or None,
+                lancado_por_id=usuario.id,
+                recorrencia_intervalo=recorrencia_intervalo,
+                recorrencia_dias=recorrencia_dias if recorrencia_intervalo == "personalizado" else None,
+                recorrencia_grupo_id=conta.id,
+            ))
+            proximas_geradas += 1
+
     db.commit()
     cliente_obj = next((c for c in clientes_do_usuario(db, usuario) if c.id == cliente_id), None)
+    detalhes = f"{descricao} — R$ {valor} | venc. {vencimento.strftime('%d/%m/%Y')}"
+    if proximas_geradas:
+        detalhes += f" | + {proximas_geradas} ocorrência(s) futura(s) geradas ({recorrencia_intervalo})"
     _log(
         db, "Conta a pagar criada", "contas_pagar",
         usuario_id=usuario.id, usuario_nome=usuario.nome,
         cliente_id=cliente_id, cliente_nome=cliente_obj.nome if cliente_obj else None,
-        detalhes=f"{descricao} — R$ {valor} | venc. {vencimento.strftime('%d/%m/%Y')}",
+        detalhes=detalhes,
     )
     return RedirectResponse(url=f"/contas-pagar?cliente_id={cliente_id}", status_code=303)
 
@@ -387,6 +560,7 @@ async def importar_contas(
         query = query.filter(ContaPagar.cliente_id == cliente_id)
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
     centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
+    status_permitidos_por_conta = {c.id: [s.value for s in _status_permitidos(c.status)] for c in contas}
 
     return templates.TemplateResponse("contas_pagar.html", {
         "request": request,
@@ -400,12 +574,14 @@ async def importar_contas(
         "categorias_despesa": CATEGORIAS_DESPESA,
         "centros_custo_por_cliente": centros_por_cliente,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
+        "status_permitidos_por_conta": status_permitidos_por_conta,
     })
 
 
-@router.post("/contas-pagar/{conta_id}/agendar")
-async def agendar_pagamento(
+@router.post("/contas-pagar/{conta_id}/status")
+async def alterar_status_conta_rota(
     conta_id: int,
+    novo_status: str = Form(...),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
@@ -417,14 +593,33 @@ async def agendar_pagamento(
     if conta.cliente_id not in [c.id for c in clientes]:
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
-    conta.status = StatusContaPagar.agendado
-    db.commit()
-    _log(
-        db, "Pagamento agendado", "contas_pagar",
-        usuario_id=usuario.id, usuario_nome=usuario.nome,
-        cliente_id=conta.cliente_id,
-        detalhes=f"{conta.descricao} — R$ {conta.valor} | venc. {conta.vencimento.strftime('%d/%m/%Y')}",
-    )
+    try:
+        status_enum = StatusContaPagar(novo_status)
+    except ValueError:
+        return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+
+    if not _alterar_status_conta(db, conta, status_enum, usuario):
+        return RedirectResponse(
+            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Transi%C3%A7%C3%A3o+de+status+n%C3%A3o+permitida",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+
+
+@router.post("/contas-pagar/{conta_id}/agendar")
+async def agendar_pagamento(
+    conta_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    """Wrapper de compatibilidade — equivalente a status=agendado."""
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta:
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+    clientes = clientes_do_usuario(db, usuario)
+    if conta.cliente_id not in [c.id for c in clientes]:
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+    _alterar_status_conta(db, conta, StatusContaPagar.agendado, usuario)
     return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
 
 
@@ -434,21 +629,12 @@ async def cancelar_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
+    """Wrapper de compatibilidade — equivalente a status=cancelado."""
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:
         return RedirectResponse(url="/contas-pagar", status_code=303)
-
     clientes = clientes_do_usuario(db, usuario)
     if conta.cliente_id not in [c.id for c in clientes]:
         return RedirectResponse(url="/contas-pagar", status_code=303)
-
-    if conta.status != StatusContaPagar.pago:
-        conta.status = StatusContaPagar.cancelado
-        db.commit()
-        _log(
-            db, "Conta cancelada", "contas_pagar",
-            usuario_id=usuario.id, usuario_nome=usuario.nome,
-            cliente_id=conta.cliente_id,
-            detalhes=f"{conta.descricao} — R$ {conta.valor}",
-        )
+    _alterar_status_conta(db, conta, StatusContaPagar.cancelado, usuario)
     return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)

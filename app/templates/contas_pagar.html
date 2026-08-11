@@ -49,15 +49,6 @@
       </div>
 
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo</label>
-        <select name="tipo"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          <option value="pontual">Pontual</option>
-          <option value="fixa">Fixa (recorrente)</option>
-        </select>
-      </div>
-
-      <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Valor (R$) *</label>
         <input type="number" name="valor" required step="0.01" min="0" placeholder="0,00"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
@@ -65,8 +56,61 @@
 
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Vencimento *</label>
-        <input type="date" name="vencimento" required
+        <input type="date" name="vencimento" required onchange="document.querySelector('[name=data_competencia]').value = document.querySelector('[name=data_competencia]').value || this.value"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data de competência</label>
+        <input type="date" name="data_competencia"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        <p class="mt-1 text-[11px] text-gray-400">Se vazio, usa o vencimento.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Forma de pagamento</label>
+        <select name="forma_pagamento"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Não informada</option>
+          <option value="pix">Pix</option>
+          <option value="transferencia">Transferência</option>
+          <option value="cartao_credito">Cartão de crédito</option>
+          <option value="dinheiro">Dinheiro</option>
+        </select>
+      </div>
+
+      <div class="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" name="recorrente" value="true" onchange="alternarRecorrenciaConta(this)"
+                 class="h-4 w-4 rounded border-gray-300 text-[#5e93cc]">
+          <span>
+            <span class="block text-sm font-semibold text-gray-700">Conta recorrente</span>
+            <span class="block text-xs text-gray-400">Gera automaticamente as próximas ocorrências desta conta.</span>
+          </span>
+        </label>
+        <div id="campos-recorrencia-conta" class="hidden mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Frequência</label>
+            <select name="recorrencia_intervalo" onchange="alternarDiasPersonalizadosConta(this)"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+              <option value="semanal">Semanal (7 dias)</option>
+              <option value="quinzenal">Quinzenal (15 dias)</option>
+              <option value="mensal" selected>Mensal</option>
+              <option value="personalizado">Personalizada (dias)</option>
+            </select>
+          </div>
+          <div id="campo-recorrencia-dias" class="hidden">
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">A cada quantos dias</label>
+            <input type="number" name="recorrencia_dias" min="1" placeholder="Ex: 10"
+                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Quantas vezes</label>
+            <input type="number" name="recorrencia_qtd" min="1" max="60" value="3"
+                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+            <p class="mt-1 text-[11px] text-gray-400">Inclui esta conta + as ocorrências seguintes (máx. 60).</p>
+          </div>
+        </div>
       </div>
 
       <div class="lg:col-span-3">
@@ -238,20 +282,27 @@
             </td>
             {% if not somente_leitura %}
             <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
-              {% if conta.status in ['pendente', 'aguardando_aprovacao'] %}
-              <form method="post" action="/contas-pagar/{{ conta.id }}/agendar" style="display:inline">
-                <button type="submit"
-                        class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg transition-colors">
-                  Agendar pagamento
-                </button>
-              </form>
-              {% elif conta.status == 'agendado' %}
-                <span class="text-xs text-blue-500 font-medium">Aguardando conciliaÃ§Ã£o</span>
-              {% elif conta.status == 'pago' %}
+              <div class="flex items-center justify-center gap-2">
+                {% set opcoes = status_permitidos_por_conta.get(conta.id, []) %}
+                {% if opcoes %}
+                <form method="post" action="/contas-pagar/{{ conta.id }}/status" style="display:inline">
+                  <select name="novo_status" onchange="this.form.submit()"
+                          class="text-xs rounded-lg border border-gray-300 px-2 py-1 focus:border-[#5e93cc] outline-none">
+                    <option value="">Mudar status...</option>
+                    {% for opcao in opcoes %}
+                    <option value="{{ opcao }}">{{ opcao | replace('_',' ') | capitalize }}</option>
+                    {% endfor %}
+                  </select>
+                </form>
+                {% elif conta.status == 'pago' %}
                 <span class="text-xs text-green-600 font-medium">Conciliado</span>
-              {% else %}
-                <span class="text-gray-300">â€”</span>
-              {% endif %}
+                {% else %}
+                <span class="text-gray-300">—</span>
+                {% endif %}
+                {% if conta.status != 'pago' %}
+                <a href="/contas-pagar/{{ conta.id }}/editar" class="text-xs text-[#5e93cc] hover:underline">Editar</a>
+                {% endif %}
+              </div>
             </td>
             {% endif %}
           </tr>
@@ -379,6 +430,21 @@
 </div>
 
 <script>
+function alternarRecorrenciaConta(checkbox) {
+  const campos = document.getElementById('campos-recorrencia-conta');
+  campos.classList.toggle('hidden', !checkbox.checked);
+  if (!checkbox.checked) {
+    campos.querySelector('[name="recorrencia_dias"]').value = '';
+  }
+}
+function alternarDiasPersonalizadosConta(select) {
+  const campo = document.getElementById('campo-recorrencia-dias');
+  const mostrar = select.value === 'personalizado';
+  campo.classList.toggle('hidden', !mostrar);
+  campo.querySelector('input').required = mostrar;
+  if (!mostrar) campo.querySelector('input').value = '';
+}
+
 const centrosCustoPorCliente = {{ centros_custo_por_cliente|tojson }};
 
 function atualizarCentrosCustoConta() {

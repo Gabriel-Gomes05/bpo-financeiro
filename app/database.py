@@ -55,6 +55,7 @@ def criar_tabelas():
 def migrar_schema():
     """Adiciona colunas novas em tabelas existentes (idempotente)."""
     from sqlalchemy import text
+    from app.constants import GRUPOS_DRE
     from app.field_encryption import SENSITIVE_FIELDS, encrypt_value, is_encrypted
     with engine.connect() as conn:
         conn.execute(text("ALTER TYPE perfilusuario ADD VALUE IF NOT EXISTS 'editor'"))
@@ -278,6 +279,69 @@ def migrar_schema():
                     text(f'UPDATE "{tabela}" SET "{coluna}" = :valor WHERE id = :id'),
                     {"valor": cifrado, "id": registro_id},
                 )
+        # Plano de contas global (fallback quando o cliente nao tem centro de custo proprio)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS planos_conta (
+                id SERIAL PRIMARY KEY,
+                tipo VARCHAR(10) NOT NULL,
+                grupo VARCHAR(80) NOT NULL,
+                chave VARCHAR(60) NOT NULL,
+                codigo VARCHAR(30),
+                nome VARCHAR(150) NOT NULL,
+                cliente_id INTEGER REFERENCES clientes_bpo(id),
+                ativo BOOLEAN NOT NULL DEFAULT true,
+                criado_em TIMESTAMP DEFAULT now() NOT NULL
+            )
+        """))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_planos_conta_chave_global "
+            "ON planos_conta (chave) WHERE cliente_id IS NULL"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS plano_conta_id INTEGER REFERENCES planos_conta(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE atendimentos ADD COLUMN IF NOT EXISTS plano_conta_id INTEGER REFERENCES planos_conta(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS data_competencia DATE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS forma_pagamento formapagamento"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS recorrencia_intervalo VARCHAR(20)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS recorrencia_grupo_id INTEGER REFERENCES contas_pagar(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS recorrencia_dias INTEGER"
+        ))
+        # Semeia o plano de contas global a partir das categorias estaticas de GRUPOS_DRE
+        for grupo in GRUPOS_DRE:
+            for categoria in grupo["categorias"]:
+                conn.execute(text("""
+                    INSERT INTO planos_conta (tipo, grupo, chave, nome, ativo)
+                    SELECT :tipo, :grupo, :chave, :nome, true
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM planos_conta WHERE chave = :chave AND cliente_id IS NULL
+                    )
+                """), {
+                    "tipo": grupo["tipo"],
+                    "grupo": grupo["nome"],
+                    "chave": categoria["key"],
+                    "nome": categoria["nome"],
+                })
+        # Backfill: liga contas a pagar existentes ao plano de contas semeado, quando
+        # a categoria_dre bater com uma chave global (nao mexe em chaves de rateio,
+        # que sao codigos/ids de centro de custo, nao chaves de GRUPOS_DRE).
+        conn.execute(text("""
+            UPDATE contas_pagar cp SET plano_conta_id = pc.id
+            FROM planos_conta pc
+            WHERE pc.cliente_id IS NULL AND pc.chave = cp.categoria_dre
+              AND cp.plano_conta_id IS NULL
+        """))
         # Impede que novos papeis ganhem acesso implicito ao schema/banco.
         conn.execute(text("REVOKE CREATE ON SCHEMA public FROM PUBLIC"))
         conn.execute(text("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC"))
