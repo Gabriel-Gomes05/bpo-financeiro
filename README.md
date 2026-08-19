@@ -1,8 +1,8 @@
 # FLIC — Gestão financeira para BPO
 
 Aplicação web interna para operação financeira de clínicas e consultórios: receitas,
-contas a pagar, centros de custo, rateios, conciliação bancária e de cartões, orçamento,
-DRE, rotinas e fechamento.
+contas a pagar, plano de contas, centros de custo, rateios, importações, conciliação
+bancária e de cartões, orçamento, DRE, rotinas e fechamento.
 
 O projeto usa FastAPI, SQLAlchemy, PostgreSQL, Jinja2 e Docker. Foi estruturado como um
 monólito simples para facilitar manutenção, implantação e entendimento por desenvolvedores
@@ -10,12 +10,24 @@ em início de carreira.
 
 ## Estado atual
 
-- Banco PostgreSQL 15 com 24 tabelas e separação por cliente.
+- Banco PostgreSQL 15 com separação de dados por cliente.
 - Campos pessoais e bancários cifrados na aplicação.
 - Autenticação por JWT em cookie `HttpOnly`.
 - Perfis de coordenador, editor, funcionário, secretária e médico.
+- Cadastro de procedimentos e grupos administrativos.
+- Lançamentos e contas a pagar com criação, edição, recorrência e importação em lote.
+- Modelos de planilha versionados em `static/modelos/` para orientar as importações.
 - Auditorias automáticas de banco, ORM, relacionamentos, rotas e criptografia.
 - Aplicação local em `http://localhost:8888`.
+
+## Tecnologias
+
+- Python 3.11, FastAPI e Uvicorn;
+- SQLAlchemy e PostgreSQL 15;
+- Jinja2, HTML, CSS e JavaScript;
+- pandas e openpyxl para importações;
+- Docker Compose para o ambiente local;
+- Ruff e Pytest para qualidade e testes.
 
 ## Documentação
 
@@ -41,6 +53,8 @@ Não é necessário instalar PostgreSQL localmente.
 No PowerShell:
 
 ```powershell
+git clone https://github.com/Gabriel-Gomes05/bpo-financeiro.git
+Set-Location bpo-financeiro
 Copy-Item .env.example .env
 python scripts/setup_encryption_key.py
 ```
@@ -112,6 +126,9 @@ Não use `docker compose down -v` sem um backup validado: `-v` remove o volume d
 ## Validação antes de publicar
 
 ```powershell
+python -m pip install -r requirements-dev.txt
+ruff check app scripts tests
+pytest
 python -m compileall app scripts
 python scripts/generate_function_reference.py --check
 
@@ -124,6 +141,19 @@ curl.exe --max-time 10 -o NUL -w "HTTP=%{http_code}" http://localhost:8888/login
 O auditor de conexões verifica tabelas, chaves estrangeiras, models, relacionamentos ORM e
 as principais telas autenticadas. O verificador de criptografia confirma que não restou
 texto legado nos campos protegidos.
+
+## Boas práticas
+
+- Crie uma branch por mudança e mantenha commits pequenos e objetivos.
+- Use mensagens de commit no padrão `feat:`, `fix:`, `docs:`, `refactor:` ou `chore:`.
+- Preserve o filtro por `cliente_id` em consultas para evitar acesso entre clientes.
+- Valide autorização no servidor; controles visuais não substituem essa validação.
+- Não registre senhas, tokens, chaves, dados bancários ou conteúdo de documentos nos logs.
+- Nunca versione `.env`, uploads, dumps, backups ou dados reais de clientes.
+- Atualize testes e documentação junto com mudanças de comportamento.
+- Execute Ruff, Pytest, compilação e auditorias antes de publicar.
+
+O fluxo completo para contribuições está em [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Backup seguro
 
@@ -160,6 +190,8 @@ bpo-financeiro/
 |- docs/                   # arquitetura, segurança e manuais
 |- scripts/                # auditoria, chaves, backup e documentação
 |- static/                 # JavaScript e imagens
+|  `- modelos/             # planilhas-modelo sem dados reais
+|- tests/                  # testes automatizados
 |- docker-compose.yml      # aplicação e PostgreSQL
 |- Dockerfile
 `- requirements.txt
@@ -187,4 +219,3 @@ Antes de usar dados reais:
 
 Este repositório é privado. Ainda assim, trate qualquer commit como potencialmente público:
 segredos e dados de clientes nunca devem entrar no histórico Git.
-
