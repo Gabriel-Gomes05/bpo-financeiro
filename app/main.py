@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.auth import AuthMiddleware
 from app.database import criar_tabelas, migrar_schema
 from app.jinja import templates  # garante que T e now ficam registrados no startup
-from app.routers import auth, dashboard, lancamentos, conciliacao, conciliacao_banco, contas_pagar, contas_pagar_conciliacao, fechamento, rotinas, admin, gestao, cliente_ativo, logs, plano_contas
+from app.routers import auth, dashboard, lancamentos, conciliacao, conciliacao_banco, contas_pagar, contas_pagar_conciliacao, fechamento, rotinas, admin, gestao, cliente_ativo, logs, plano_contas, procedimentos, importacoes
 from app.config import ALLOWED_ORIGINS
 from app.security import SecurityHeadersMiddleware
 
@@ -47,6 +47,8 @@ app.include_router(cliente_ativo.router)
 app.include_router(admin.router)
 app.include_router(logs.router)
 app.include_router(plano_contas.router)
+app.include_router(procedimentos.router)
+app.include_router(importacoes.router)
 
 @app.on_event("startup")
 async def startup():

@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual
@@ -497,6 +498,7 @@ async def gestao_despesas(
     cliente_id: Optional[int] = None,
     mes: Optional[int] = None,
     ano: Optional[int] = None,
+    regime: str = "vencimento",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
@@ -504,6 +506,8 @@ async def gestao_despesas(
     hoje = date.today()
     mes = mes or hoje.month
     ano = ano or hoje.year
+    if regime not in ("vencimento", "caixa", "competencia"):
+        regime = "vencimento"
     clientes = clientes_do_usuario(db, usuario)
     ids = [c.id for c in clientes]
 
@@ -516,14 +520,21 @@ async def gestao_despesas(
         inicio = date(ano, mes, 1)
         fim = date(ano, mes, ultimo)
 
+        if regime == "competencia":
+            data_filtro = func.coalesce(ContaPagar.data_competencia, ContaPagar.vencimento)
+        elif regime == "caixa":
+            data_filtro = ContaPagar.data_pagamento
+        else:
+            data_filtro = ContaPagar.vencimento
+
         contas = (
             db.query(ContaPagar)
             .filter(
                 ContaPagar.cliente_id == cliente_id,
-                ContaPagar.vencimento >= inicio,
-                ContaPagar.vencimento <= fim,
+                data_filtro >= inicio,
+                data_filtro <= fim,
             )
-            .order_by(ContaPagar.vencimento.desc())
+            .order_by(data_filtro.desc())
             .all()
         )
         total = sum((c.valor or Decimal("0")) for c in contas)
@@ -531,7 +542,7 @@ async def gestao_despesas(
     return templates.TemplateResponse("gestao_despesas.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_id,
-        "mes": mes, "ano": ano,
+        "mes": mes, "ano": ano, "regime": regime,
         "contas": contas,
         "total": total, "brl": _brl,
     })

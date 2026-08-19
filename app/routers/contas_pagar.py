@@ -200,6 +200,10 @@ def _data_recorrencia(origem: date, intervalo: str, dias_personalizado: Optional
 async def listar_contas(
     request: Request,
     cliente_id: Optional[int] = None,
+    status: Optional[str] = None,
+    forma_pagamento: Optional[str] = None,
+    vencimento_inicio: Optional[str] = None,
+    vencimento_fim: Optional[str] = None,
     flash: Optional[str] = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
@@ -208,11 +212,30 @@ async def listar_contas(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
+    status = status if status in {s.value for s in StatusContaPagar} else None
+    forma_pagamento = forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None
+    try:
+        venc_inicio = date.fromisoformat(vencimento_inicio) if vencimento_inicio else None
+    except ValueError:
+        venc_inicio = None
+    try:
+        venc_fim = date.fromisoformat(vencimento_fim) if vencimento_fim else None
+    except ValueError:
+        venc_fim = None
+
     query = db.query(ContaPagar).filter(
         ContaPagar.cliente_id.in_(ids_permitidos)
     )
     if cliente_id and cliente_id in ids_permitidos:
         query = query.filter(ContaPagar.cliente_id == cliente_id)
+    if status:
+        query = query.filter(ContaPagar.status == status)
+    if forma_pagamento:
+        query = query.filter(ContaPagar.forma_pagamento == forma_pagamento)
+    if venc_inicio:
+        query = query.filter(ContaPagar.vencimento >= venc_inicio)
+    if venc_fim:
+        query = query.filter(ContaPagar.vencimento <= venc_fim)
 
     # Ordena: vencidas primeiro, depois por vencimento
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
@@ -226,11 +249,35 @@ async def listar_contas(
         "contas": contas,
         "hoje": date.today(),
         "cliente_selecionado": cliente_id,
+        "status_selecionado": status,
+        "forma_pagamento_selecionada": forma_pagamento,
+        "vencimento_inicio": vencimento_inicio or "",
+        "vencimento_fim": vencimento_fim or "",
         "categorias_despesa": CATEGORIAS_DESPESA,
-        "centros_custo_por_cliente": centros_por_cliente,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "status_permitidos_por_conta": status_permitidos_por_conta,
         "flash": flash,
+    })
+
+
+@router.get("/contas-pagar/novo", response_class=HTMLResponse)
+async def pagina_nova_conta(
+    request: Request,
+    cliente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    cliente_id = _ca(request, cliente_id)
+    clientes = clientes_do_usuario(db, usuario)
+    ids_permitidos = [c.id for c in clientes]
+    centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
+
+    return templates.TemplateResponse("contas_pagar_novo.html", {
+        "request": request,
+        "usuario": usuario,
+        "clientes": clientes,
+        "cliente_selecionado": cliente_id if cliente_id in ids_permitidos else None,
+        "centros_custo_por_cliente": centros_por_cliente,
     })
 
 
@@ -572,7 +619,6 @@ async def importar_contas(
         "flash_success": flash_success,
         "flash_error": flash_error,
         "categorias_despesa": CATEGORIAS_DESPESA,
-        "centros_custo_por_cliente": centros_por_cliente,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "status_permitidos_por_conta": status_permitidos_por_conta,
     })

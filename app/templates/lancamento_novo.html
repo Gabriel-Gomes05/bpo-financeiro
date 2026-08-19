@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Novo Lançamento — FLIC{% endblock %}
+{% block page_title %}Novo Lançamento{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <a href="/lancamentos" class="text-sm text-[#5e93cc] hover:underline">← Voltar para Lançamentos</a>
+
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div class="px-6 py-4 border-b border-gray-100">
+      <h3 class="font-semibold text-gray-700">Novo lançamento</h3>
+    </div>
+
+    <form id="form-lancamento" method="post" action="/lancamentos" class="p-6 space-y-5" novalidate>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente *</label>
+          <select name="cliente_id" required onchange="onClienteChange(this.value)"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+            <option value="">Selecione...</option>
+            {% for c in clientes %}
+            <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data do atendimento *</label>
+          <input type="date" name="data_atendimento" required value="{{ hoje }}"
+                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        </div>
+        <div class="flex items-end">
+          <button type="button" onclick="adicionarLinha()"
+                  class="w-full rounded-lg border border-dashed border-[#5e93cc]/40 px-4 py-2 text-sm font-semibold text-[#5e93cc] hover:bg-[#5e93cc]/5 transition">
+            + Adicionar serviço
+          </button>
+        </div>
+      </div>
+
+      <div id="linhas-container" class="space-y-3"></div>
+
+      <div class="flex items-center justify-between pt-2">
+        <button type="button" onclick="adicionarLinha()"
+                class="text-sm text-[#5e93cc] hover:underline">+ Adicionar mais um serviço</button>
+        <button type="submit" id="btn-salvar"
+                class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors">
+          Salvar lançamento
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Template de linha — FORA do form, nunca enviado -->
+<div id="linha-template" style="display:none" aria-hidden="true">
+  <div class="linha-servico rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide linha-numero">Serviço</span>
+      <button type="button" onclick="removerLinha(this)"
+              class="text-gray-400 hover:text-red-500 text-lg leading-none transition">×</button>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div class="lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Paciente</label>
+        <input type="text" name="nome_paciente" placeholder="Nome do paciente"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">CPF</label>
+        <input type="text" name="cpf_paciente" placeholder="000.000.000-00" maxlength="14"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Centro de Custo</label>
+        <select name="centro_custo_id"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none centro-custo-select">
+          <option value="">— Selecione —</option>
+        </select>
+        <input type="hidden" name="rateios_json" class="rateios-json" value="[]">
+      </div>
+      <div class="campo-especialidade hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Especialidade</label>
+        <input type="text" name="especialidade" placeholder="Ortopedia, Clínica..."
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Serviço / Procedimento</label>
+        <select name="plano_conta_id"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Selecione o serviço...</option>
+          {% for pc in planos_conta_receita %}
+          <option value="{{ pc.id }}">{{ pc.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Valor (R$) *</label>
+        <input type="number" name="valor_servico" step="0.01" min="0" placeholder="0,00"
+               oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 bg-white p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <p class="text-[11px] font-semibold text-gray-400 uppercase">Rateio por centro de custo</p>
+        <button type="button" onclick="adicionarRateioServico(this)"
+                class="text-[11px] font-semibold text-[#5e93cc] hover:underline">Adicionar centro</button>
+      </div>
+      <div class="space-y-2 rateios-servico"></div>
+      <p class="mt-2 text-[11px] text-gray-400 rateio-resumo">Percentual usado: 0%</p>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Forma</label>
+        <select name="forma_pagamento" onchange="atualizarLinha(this)"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          <option value="cartao_credito">Cartão</option>
+          <option value="pix">Pix</option>
+          <option value="transferencia">Transferência</option>
+          <option value="dinheiro">Dinheiro</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Condição</label>
+        <select name="condicao_pagamento" onchange="atualizarLinha(this)"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="avista">À vista</option>
+          <option value="parcelado">Parcelado</option>
+        </select>
+      </div>
+      <div class="campo-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">4 dígitos</label>
+        <input type="text" name="ultimos_digitos_cartao" maxlength="4" placeholder="0000"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="campo-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Bandeira</label>
+        <select name="bandeira_cartao"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">—</option>
+          <option>Visa</option><option>Mastercard</option><option>Elo</option>
+          <option>Amex</option><option>Hipercard</option>
+        </select>
+      </div>
+      <div class="campo-parcelas-cartao hidden">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Parcelas</label>
+        <input type="number" name="parcela_total" min="2" max="48" value="2"
+               oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="campo-recorrencia hidden lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Recorrência (dias)</label>
+        <div class="flex gap-1 flex-wrap mb-1">
+          <button type="button" onclick="setRec(this,'30/60')"        class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60</button>
+          <button type="button" onclick="setRec(this,'30/60/90')"     class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60/90</button>
+          <button type="button" onclick="setRec(this,'30/60/90/120')" class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">30/60/90/120</button>
+          <button type="button" onclick="setRec(this,'60/90')"        class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">60/90</button>
+          <button type="button" onclick="setRec(this,'60/90/120')"    class="text-[10px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#5e93cc]/5 hover:border-[#5e93cc]/40 text-gray-500">60/90/120</button>
+        </div>
+        <input type="text" name="recorrencia" placeholder="30/60/90" oninput="calcularPreviewLinha(this)"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-mono focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">% Médico</label>
+        <input type="number" name="percentual_medico" step="0.01" min="0" max="100" placeholder="30"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="campo-preview hidden">
+        <div class="rounded-lg bg-[#5e93cc]/5 border border-[#5e93cc]/25 px-3 py-2 flex items-center gap-2">
+          <span class="text-[#5e93cc] font-bold">÷</span>
+          <div>
+            <p class="text-[10px] text-[#5e93cc] uppercase font-semibold">Valor por parcela</p>
+            <p class="preview-valor text-base font-bold text-[#222049]">—</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Observação</label>
+        <input type="text" name="observacao" placeholder="Opcional"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ─── Centros de custo ─────────────────────────────────────────────────────
+
+  const centrosPorCliente = {{ centros_por_cliente | tojson }};
+
+  function popularCentrosCusto(sel, clienteId) {
+    const centros = centrosPorCliente[clienteId] || [];
+    sel.innerHTML = '<option value="">— Selecione —</option>';
+    centros.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.codigo ? cc.codigo + ' — ' + cc.nome : cc.nome;
+      sel.appendChild(opt);
+    });
+  }
+
+  function popularRateioSelect(sel, clienteId) {
+    const centros = centrosPorCliente[clienteId] || [];
+    const selecionado = sel.value;
+    sel.innerHTML = '<option value="">Selecione...</option>';
+    centros.forEach(cc => {
+      const opt = document.createElement('option');
+      opt.value = cc.id;
+      opt.textContent = cc.codigo ? cc.codigo + ' - ' + cc.nome : cc.nome;
+      opt.dataset.isMedico = cc.is_medico ? '1' : '0';
+      opt.dataset.especialidade = cc.especialidade || '';
+      sel.appendChild(opt);
+    });
+    sel.value = selecionado;
+  }
+
+  function adicionarRateioServico(origem, percentual = '') {
+    const linha = origem.classList?.contains('linha-servico') ? origem : origem.closest('.linha-servico');
+    const container = linha?.querySelector('.rateios-servico');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 md:grid-cols-[1fr_100px_130px_34px] gap-2 items-center';
+    row.innerHTML = `
+      <select class="rateio-centro-select rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none"
+              onchange="atualizarRateioServico(this.closest('.linha-servico'))">
+        <option value="">Selecione...</option>
+      </select>
+      <input type="number" value="${percentual}" step="0.01" min="0" max="100" placeholder="%"
+             oninput="atualizarRateioServico(this.closest('.linha-servico'))"
+             class="rateio-percentual rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+      <div class="rateio-valor rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-600">R$ 0,00</div>
+      <button type="button" onclick="removerRateioServico(this)"
+              class="h-9 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200">x</button>
+    `;
+    container.appendChild(row);
+    popularRateioSelect(row.querySelector('.rateio-centro-select'), document.querySelector('[name="cliente_id"]').value);
+    atualizarRateioServico(linha);
+  }
+
+  function removerRateioServico(botao) {
+    const linha = botao.closest('.linha-servico');
+    botao.closest('.rateios-servico > div').remove();
+    atualizarRateioServico(linha);
+  }
+
+  function atualizarRateioServico(linha) {
+    if (!linha) return;
+    const total = parseFloat(linha.querySelector('[name="valor_servico"]')?.value || '0') || 0;
+    let soma = 0;
+    const rateios = [];
+    linha.querySelectorAll('.rateios-servico > div').forEach(row => {
+      const select = row.querySelector('.rateio-centro-select');
+      const pctInput = row.querySelector('.rateio-percentual');
+      const pct = parseFloat(pctInput?.value || '0') || 0;
+      const valor = total * pct / 100;
+      soma += pct;
+      row.querySelector('.rateio-valor').textContent = 'R$ ' + valor.toFixed(2).replace('.', ',');
+      if (select.value && pct > 0) {
+        rateios.push({ centro_custo_id: select.value, percentual: pctInput.value });
+      }
+    });
+    const resumo = linha.querySelector('.rateio-resumo');
+    if (resumo) {
+      const restante = 100 - soma;
+      resumo.textContent = `Percentual usado: ${soma.toFixed(2).replace('.', ',')}% | Restante: ${restante.toFixed(2).replace('.', ',')}%`;
+      resumo.className = 'mt-2 text-[11px] ' + (Math.abs(restante) < 0.01 ? 'text-green-600' : 'text-amber-600') + ' rateio-resumo';
+    }
+    const hidden = linha.querySelector('.rateios-json');
+    if (hidden) hidden.value = JSON.stringify(rateios);
+    const centroPrincipal = linha.querySelector('.centro-custo-select');
+    if (centroPrincipal && rateios.length) centroPrincipal.value = rateios[0].centro_custo_id;
+    const especialidadeInput = linha.querySelector('[name="especialidade"]');
+    const especialidadeCampo = linha.querySelector('.campo-especialidade');
+    const medicoSelecionado = Array.from(linha.querySelectorAll('.rateio-centro-select')).find(select => {
+      const option = select.options[select.selectedIndex];
+      return select.value && option?.dataset.isMedico === '1';
+    });
+    if (especialidadeInput && medicoSelecionado) {
+      const option = medicoSelecionado.options[medicoSelecionado.selectedIndex];
+      especialidadeInput.value = option.dataset.especialidade || '';
+      especialidadeInput.dataset.preenchidaPorMedico = '1';
+    } else if (especialidadeInput?.dataset.preenchidaPorMedico === '1') {
+      especialidadeInput.value = '';
+      delete especialidadeInput.dataset.preenchidaPorMedico;
+    }
+    if (especialidadeCampo) especialidadeCampo.classList.toggle('hidden', !medicoSelecionado);
+  }
+
+  function onClienteChange(clienteId) {
+    document.querySelectorAll('.centro-custo-select').forEach(sel => {
+      popularCentrosCusto(sel, clienteId);
+    });
+    document.querySelectorAll('.rateio-centro-select').forEach(sel => {
+      popularRateioSelect(sel, clienteId);
+    });
+    document.querySelectorAll('.linha-servico').forEach(atualizarRateioServico);
+  }
+
+  // ─── Formulário de lançamento ──────────────────────────────────────────────
+
+  let contador = 0;
+
+  function adicionarLinha() {
+    contador++;
+    const tpl = document.getElementById('linha-template');
+    const clone = tpl.querySelector('.linha-servico').cloneNode(true);
+    clone.querySelector('.linha-numero').textContent = 'Serviço ' + contador;
+
+    if (contador > 1) {
+      const primeira = document.querySelector('#linhas-container .linha-servico');
+      if (primeira) {
+        clone.querySelector('[name="nome_paciente"]').value =
+          primeira.querySelector('[name="nome_paciente"]').value;
+        clone.querySelector('[name="cpf_paciente"]').value =
+          primeira.querySelector('[name="cpf_paciente"]').value;
+      }
+    }
+
+    const clienteId = document.querySelector('[name="cliente_id"]').value;
+    const ccSel = clone.querySelector('.centro-custo-select');
+    if (ccSel) popularCentrosCusto(ccSel, clienteId);
+
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(clone);
+    document.getElementById('linhas-container').appendChild(wrapper);
+    const valorServico = clone.querySelector('[name="valor_servico"]');
+    if (valorServico) valorServico.addEventListener('input', () => atualizarRateioServico(clone));
+    adicionarRateioServico(clone, '100');
+    atualizarBotao();
+  }
+
+  function removerLinha(btn) {
+    const container = document.getElementById('linhas-container');
+    if (container.querySelectorAll('.linha-servico').length <= 1) return;
+    btn.closest('.linha-servico').parentElement.remove();
+    renumerar();
+    atualizarBotao();
+  }
+
+  function renumerar() {
+    document.querySelectorAll('#linhas-container .linha-numero').forEach((el, i) => {
+      el.textContent = 'Serviço ' + (i + 1);
+    });
+    contador = document.querySelectorAll('#linhas-container .linha-servico').length;
+  }
+
+  function atualizarLinha(select) {
+    const bloco = select.closest('.linha-servico');
+    const forma = bloco.querySelector('[name="forma_pagamento"]').value;
+    const condicao = bloco.querySelector('[name="condicao_pagamento"]').value;
+    const isCartao = forma === 'cartao_credito';
+    const isParcelado = condicao === 'parcelado';
+
+    bloco.querySelectorAll('.campo-cartao').forEach(el => el.classList.toggle('hidden', !isCartao));
+    bloco.querySelector('.campo-parcelas-cartao').classList.toggle('hidden', !(isCartao && isParcelado));
+    bloco.querySelector('.campo-recorrencia').classList.toggle('hidden', !(!isCartao && isParcelado));
+    bloco.querySelector('.campo-preview').classList.toggle('hidden', !isParcelado);
+  }
+
+  function setRec(btn, valor) {
+    const bloco = btn.closest('.linha-servico');
+    bloco.querySelector('[name="recorrencia"]').value = valor;
+    calcularPreviewLinha(btn);
+  }
+
+  function calcularPreviewLinha(el) {
+    const bloco = el.closest('.linha-servico');
+    if (!bloco) return;
+    const valorInput = bloco.querySelector('[name="valor_servico"]');
+    const forma = bloco.querySelector('[name="forma_pagamento"]').value;
+    const condicao = bloco.querySelector('[name="condicao_pagamento"]').value;
+    const previewEl = bloco.querySelector('.preview-valor');
+    if (!previewEl) return;
+
+    if (condicao !== 'parcelado' || !valorInput.value) { previewEl.textContent = '—'; return; }
+
+    const total = parseFloat(valorInput.value);
+    let n = 1;
+    if (forma === 'cartao_credito') {
+      n = parseInt(bloco.querySelector('[name="parcela_total"]')?.value || 1);
+    } else {
+      const rec = bloco.querySelector('[name="recorrencia"]')?.value || '';
+      const partes = rec.split('/').filter(x => x.trim().match(/^\d+$/));
+      n = partes.length || 1;
+    }
+    if (n > 0 && total > 0) {
+      previewEl.textContent = 'R$ ' + (total / n).toFixed(2).replace('.', ',') + ' × ' + n + 'x';
+    }
+  }
+  function atualizarBotao() {
+    const total = document.querySelectorAll('#linhas-container .linha-servico').length;
+    document.getElementById('btn-salvar').textContent =
+      total === 1 ? 'Salvar lançamento' : 'Salvar ' + total + ' lançamentos';
+  }
+
+  document.getElementById('form-lancamento').addEventListener('submit', function (e) {
+    const clienteId = this.querySelector('[name="cliente_id"]').value;
+    const dataAtend = this.querySelector('[name="data_atendimento"]').value;
+    if (!clienteId) { alert('Selecione o cliente.'); e.preventDefault(); return; }
+    if (!dataAtend) { alert('Informe a data do atendimento.'); e.preventDefault(); return; }
+    const valores = this.querySelectorAll('[name="valor_servico"]');
+    const temValor = Array.from(valores).some(i => i.value && parseFloat(i.value) > 0);
+    if (!temValor) { alert('Informe o valor de ao menos um serviço.'); e.preventDefault(); return; }
+    for (const linha of this.querySelectorAll('.linha-servico')) {
+      const valor = parseFloat(linha.querySelector('[name="valor_servico"]')?.value || '0') || 0;
+      if (!valor) continue;
+      atualizarRateioServico(linha);
+      const selects = Array.from(linha.querySelectorAll('.rateio-centro-select'));
+      const preenchidos = selects.filter(sel => sel.value);
+      const centros = preenchidos.map(sel => sel.value);
+      const soma = preenchidos.reduce((acc, select) => {
+        const input = select.closest('.rateios-servico > div').querySelector('.rateio-percentual');
+        return acc + (parseFloat(input?.value || '0') || 0);
+      }, 0);
+      const incompleto = selects.some(select => {
+        const input = select.closest('.rateios-servico > div').querySelector('.rateio-percentual');
+        return Boolean(select.value) !== Boolean(parseFloat(input?.value || '0'));
+      });
+      if (preenchidos.length && (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01)) {
+        alert('Em cada receita, selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  adicionarLinha();
+</script>
+{% endblock %}

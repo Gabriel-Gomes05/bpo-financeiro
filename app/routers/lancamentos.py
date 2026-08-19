@@ -12,7 +12,7 @@ from app.auth import get_usuario_atual
 from app.database import get_db
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
-    StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
+    PlanoConta, StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
     Usuario, PerfilUsuario,
 )
 from app.services.log_service import registrar as _log
@@ -133,6 +133,8 @@ async def listar_lancamentos(
     cliente_id: Optional[int] = None,
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
+    status_conciliacao: Optional[str] = None,
+    forma_pagamento: Optional[str] = None,
     flash: Optional[str] = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
@@ -151,6 +153,9 @@ async def listar_lancamentos(
         df = hoje
         di_str, df_str = di.isoformat(), df.isoformat()
 
+    status_conciliacao = status_conciliacao if status_conciliacao in {s.value for s in StatusConciliacao} else None
+    forma_pagamento = forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None
+
     query = db.query(Atendimento).filter(Atendimento.cliente_id.in_(ids_permitidos))
     if cliente_id and cliente_id in ids_permitidos:
         query = query.filter(Atendimento.cliente_id == cliente_id)
@@ -158,8 +163,37 @@ async def listar_lancamentos(
         Atendimento.data_atendimento >= di,
         Atendimento.data_atendimento <= df,
     )
+    if status_conciliacao:
+        query = query.filter(Atendimento.status_conciliacao == status_conciliacao)
+    if forma_pagamento:
+        query = query.filter(Atendimento.forma_pagamento == forma_pagamento)
 
     atendimentos = query.order_by(Atendimento.data_atendimento.desc(), Atendimento.criado_em.desc()).all()
+
+    return templates.TemplateResponse("lancamentos.html", {
+        "request": request,
+        "usuario": usuario,
+        "clientes": clientes,
+        "atendimentos": atendimentos,
+        "cliente_selecionado": cliente_id,
+        "data_inicio": di_str,
+        "data_fim": df_str,
+        "status_conciliacao_selecionado": status_conciliacao,
+        "forma_pagamento_selecionada": forma_pagamento,
+        "flash": flash,
+        "formatar_brl": formatar_brl,
+    })
+
+
+@router.get("/lancamentos/novo", response_class=HTMLResponse)
+async def pagina_novo_lancamento(
+    request: Request,
+    cliente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    clientes = clientes_do_usuario(db, usuario)
+    ids_permitidos = [c.id for c in clientes]
 
     centros = db.query(CentroCusto).filter(
         CentroCusto.cliente_id.in_(ids_permitidos),
@@ -172,18 +206,19 @@ async def listar_lancamentos(
             "is_medico": bool(cc.is_medico), "especialidade": cc.especialidade or "",
         })
 
-    return templates.TemplateResponse("lancamentos.html", {
+    planos_conta_receita = db.query(PlanoConta).filter(
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+    ).order_by(PlanoConta.nome).all()
+
+    return templates.TemplateResponse("lancamento_novo.html", {
         "request": request,
         "usuario": usuario,
         "clientes": clientes,
-        "atendimentos": atendimentos,
-        "hoje": hoje.isoformat(),
-        "cliente_selecionado": cliente_id,
-        "data_inicio": di_str,
-        "data_fim": df_str,
-        "flash": flash,
-        "formatar_brl": formatar_brl,
+        "cliente_selecionado": cliente_id if cliente_id in ids_permitidos else None,
+        "hoje": date.today().isoformat(),
         "centros_por_cliente": centros_por_cliente,
+        "planos_conta_receita": planos_conta_receita,
     })
 
 
@@ -197,7 +232,7 @@ async def criar_lancamentos(
     centro_custo_id: List[str] = Form(default=[]),
     rateios_json: List[str] = Form(default=[]),
     especialidade: List[str] = Form(default=[]),
-    descricao_servico: List[str] = Form(default=[]),
+    plano_conta_id: List[str] = Form(default=[]),
     valor_servico: List[str] = Form(default=[]),
     forma_pagamento: List[str] = Form(default=[]),
     condicao_pagamento: List[str] = Form(default=[]),
@@ -220,6 +255,12 @@ async def criar_lancamentos(
         cc.id: cc for cc in db.query(CentroCusto).filter(
             CentroCusto.cliente_id == cliente_id,
             CentroCusto.ativo == True,
+        ).all()
+    }
+    planos_validos = {
+        pc.id: pc for pc in db.query(PlanoConta).filter(
+            PlanoConta.tipo == "receita",
+            PlanoConta.ativo == True,
         ).all()
     }
     n = len(valor_servico)
@@ -269,6 +310,9 @@ async def criar_lancamentos(
             (r["centro"].especialidade for r in rateios if r["centro"].is_medico and r["centro"].especialidade),
             None,
         )
+        pc_id_str = _str(plano_conta_id, i)
+        plano = planos_validos.get(int(pc_id_str)) if pc_id_str.isdigit() else None
+
         pct_medico = _decimal(percentual_medico, i)
         bandeira = _str(bandeira_cartao, i) or None
         taxa_pct = _taxa_cartao(db, cliente_id, bandeira) if forma == FormaPagamento.cartao_credito.value else None
@@ -293,7 +337,8 @@ async def criar_lancamentos(
                 centro_custo_id=cc_id,
                 medico=cc.nome if cc else None,
                 especialidade=especialidade_valor,
-                descricao_servico=_str(descricao_servico, i) or None,
+                descricao_servico=plano.nome if plano else None,
+                plano_conta_id=plano.id if plano else None,
                 valor_servico=v,
                 condicao_pagamento=condicao,
                 parcela_numero=p,
@@ -352,12 +397,17 @@ async def form_editar_lancamento(
         CentroCusto.cliente_id == at.cliente_id,
         CentroCusto.ativo == True,
     ).order_by(CentroCusto.nome).all()
+    planos_conta_receita = db.query(PlanoConta).filter(
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+    ).order_by(PlanoConta.nome).all()
     return templates.TemplateResponse("lancamento_editar.html", {
         "request": request,
         "usuario": usuario,
         "clientes": clientes,
         "at": at,
         "centros_custo": centros_custo,
+        "planos_conta_receita": planos_conta_receita,
         "hoje": date.today().isoformat(),
         "formatar_brl": formatar_brl,
     })
@@ -372,7 +422,7 @@ async def salvar_edicao_lancamento(
     cpf_paciente: str = Form(""),
     centro_custo_id: str = Form(""),
     especialidade: str = Form(""),
-    descricao_servico: str = Form(""),
+    plano_conta_id: str = Form(""),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
     condicao_pagamento: str = Form("avista"),
@@ -426,13 +476,20 @@ async def salvar_edicao_lancamento(
     cc_id = int(centro_custo_id) if centro_custo_id.strip().isdigit() else None
     cc = db.query(CentroCusto).filter(CentroCusto.id == cc_id).first() if cc_id else None
 
+    pc_id = int(plano_conta_id) if plano_conta_id.strip().isdigit() else None
+    plano = db.query(PlanoConta).filter(
+        PlanoConta.id == pc_id, PlanoConta.tipo == "receita", PlanoConta.ativo == True,
+    ).first() if pc_id else None
+
     at.data_atendimento = data_atendimento
     at.nome_paciente = nome_paciente.strip() or None
     at.cpf_paciente = cpf_paciente.strip() or None
     at.centro_custo_id = cc_id
     at.medico = cc.nome if cc else None
     at.especialidade = especialidade.strip() or None
-    at.descricao_servico = descricao_servico.strip() or None
+    if plano:
+        at.plano_conta_id = plano.id
+        at.descricao_servico = plano.nome
     at.valor_servico = valor
     at.condicao_pagamento = condicao_pagamento
     at.parcela_numero = parcela_numero

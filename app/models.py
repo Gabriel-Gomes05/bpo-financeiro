@@ -37,6 +37,9 @@ class FormaPagamento(str, PyEnum):
     pix = "pix"
     transferencia = "transferencia"
     dinheiro = "dinheiro"
+    boleto = "boleto"
+    cheque = "cheque"
+    debito_automatico = "debito_automatico"
 
 
 class StatusConciliacao(str, PyEnum):
@@ -115,6 +118,19 @@ class Usuario(Base):
     clientes = relationship("ClienteBPO", back_populates="funcionario", foreign_keys="ClienteBPO.funcionario_id")
 
 
+class GrupoEmpresarial(Base):
+    __tablename__ = "grupos_empresariais"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(150), nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+    funcionario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
+    clientes = relationship("ClienteBPO", back_populates="grupo_empresarial", order_by="ClienteBPO.nome")
+    funcionario = relationship("Usuario", foreign_keys=[funcionario_id])
+
+
 class ClienteBPO(Base):
     __tablename__ = "clientes_bpo"
 
@@ -130,10 +146,12 @@ class ClienteBPO(Base):
     agencia = Column(EncryptedText("clientes_bpo.agencia"))
     conta = Column(EncryptedText("clientes_bpo.conta"))
     funcionario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    grupo_empresarial_id = Column(Integer, ForeignKey("grupos_empresariais.id"), nullable=True)
     ativo = Column(Boolean, default=True, nullable=False)
     rede_maquininha = Column(String(50))
 
     funcionario = relationship("Usuario", back_populates="clientes", foreign_keys=[funcionario_id])
+    grupo_empresarial = relationship("GrupoEmpresarial", back_populates="clientes")
     atendimentos = relationship("Atendimento", back_populates="cliente")
     centros_custo = relationship("CentroCusto", back_populates="cliente", order_by="CentroCusto.nome")
     contas_pagar = relationship("ContaPagar", back_populates="cliente")

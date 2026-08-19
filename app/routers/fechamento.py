@@ -80,7 +80,7 @@ def _contas_para_aprovacao(db: Session, cliente_id: int, data_obj: date) -> list
         .filter(
             ContaPagar.cliente_id == cliente_id,
             ContaPagar.vencimento <= data_obj,
-            ContaPagar.status.in_([StatusContaPagar.aguardando_aprovacao, StatusContaPagar.agendado]),
+            ContaPagar.status == StatusContaPagar.agendado,
         )
         .order_by(ContaPagar.vencimento.asc(), ContaPagar.descricao.asc())
         .all()

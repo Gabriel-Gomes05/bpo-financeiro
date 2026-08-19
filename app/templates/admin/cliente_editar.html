@@ -66,8 +66,20 @@
             <option value="{{ f.id }}" {% if cliente.funcionario_id == f.id %}selected{% endif %}>{{ f.nome }}</option>
             {% endfor %}
           </select>
+          {% if cliente.grupo_empresarial %}
+          <p class="mt-1 text-xs text-slate-400">Se deixado vazio, herda o responsável do grupo "{{ cliente.grupo_empresarial.nome }}".</p>
+          {% endif %}
         </div>
         {% endif %}
+        <div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Grupo de empresas</label>
+          <select name="grupo_empresarial_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+            <option value="">Sem grupo</option>
+            {% for g in grupos %}
+            <option value="{{ g.id }}" {% if cliente.grupo_empresarial_id == g.id %}selected{% endif %}>{{ g.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </section>
 

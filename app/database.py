@@ -342,6 +342,24 @@ def migrar_schema():
             WHERE pc.cliente_id IS NULL AND pc.chave = cp.categoria_dre
               AND cp.plano_conta_id IS NULL
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS grupos_empresariais (
+                id SERIAL PRIMARY KEY,
+                nome VARCHAR(150) NOT NULL,
+                ativo BOOLEAN NOT NULL DEFAULT true,
+                criado_em TIMESTAMP DEFAULT now() NOT NULL
+            )
+        """))
+        conn.execute(text(
+            "ALTER TABLE clientes_bpo ADD COLUMN IF NOT EXISTS grupo_empresarial_id "
+            "INTEGER REFERENCES grupos_empresariais(id) ON DELETE SET NULL"
+        ))
+        conn.execute(text(
+            "ALTER TABLE grupos_empresariais ADD COLUMN IF NOT EXISTS funcionario_id INTEGER REFERENCES usuarios(id)"
+        ))
+        conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'boleto'"))
+        conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'cheque'"))
+        conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'debito_automatico'"))
         # Impede que novos papeis ganhem acesso implicito ao schema/banco.
         conn.execute(text("REVOKE CREATE ON SCHEMA public FROM PUBLIC"))
         conn.execute(text("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC"))
