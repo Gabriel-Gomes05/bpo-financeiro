@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import (
     DATABASE_URL, DB_IDLE_TRANSACTION_TIMEOUT_MS, DB_MAX_OVERFLOW,
@@ -35,6 +35,31 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+@event.listens_for(Session, "before_flush")
+def _preencher_auditoria(session: Session, _flush_context, _instances) -> None:
+    """Propaga ator e request ID para a auditoria de aplicação e banco."""
+    actor_id = session.info.get("actor_id")
+    if actor_id and session.bind and session.bind.dialect.name == "postgresql":
+        session.connection().execute(
+            text("SELECT set_config('app.user_id', :actor_id, true)"),
+            {"actor_id": str(actor_id)},
+        )
+        request_id = session.info.get("request_id")
+        if request_id:
+            session.connection().execute(
+                text("SELECT set_config('app.request_id', :request_id, true)"),
+                {"request_id": str(request_id)},
+            )
+    for obj in session.new:
+        if hasattr(obj, "created_by") and getattr(obj, "created_by", None) is None:
+            obj.created_by = actor_id
+        if hasattr(obj, "updated_by"):
+            obj.updated_by = actor_id
+    for obj in session.dirty:
+        if hasattr(obj, "updated_by"):
+            obj.updated_by = actor_id
 
 
 def get_db():

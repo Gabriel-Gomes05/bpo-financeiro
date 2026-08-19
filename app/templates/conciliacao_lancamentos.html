@@ -505,15 +505,29 @@ function adicionarRateioManual(percentual) {
   if (!container) return;
   var linha = document.createElement('div');
   linha.className = 'grid grid-cols-1 md:grid-cols-[1fr_110px_140px_36px] gap-2 items-center';
-  var opcoes = '<option value="">Selecione...</option>' + centrosRateioManualDados.map(function(cc) {
-    return '<option value="' + cc.id + '" data-is-medico="' + (cc.is_medico ? '1' : '0') + '">' + (cc.codigo ? cc.codigo + ' - ' : '') + cc.nome + '</option>';
-  }).join('');
-  linha.innerHTML = '<select class="rateio-manual-centro rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">' + opcoes + '</select>' +
-    '<input type="number" class="rateio-manual-percentual rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400" value="' + (percentual || '') + '" step="0.01" min="0.01" max="100" placeholder="%">' +
+  linha.innerHTML = '<select class="rateio-manual-centro rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400"></select>' +
+    '<input type="number" class="rateio-manual-percentual rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400" step="0.01" min="0.01" max="100" placeholder="%">' +
     '<div class="rateio-manual-valor rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600">R$ 0,00</div>' +
     '<button type="button" class="h-9 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-red-500">x</button>';
-  linha.querySelector('select').addEventListener('change', atualizarRateioManual);
-  linha.querySelector('input').addEventListener('input', atualizarRateioManual);
+  var select = linha.querySelector('select');
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Selecione...';
+  select.appendChild(placeholder);
+  centrosRateioManualDados.forEach(function(cc) {
+    var option = document.createElement('option');
+    option.value = String(cc.id);
+    option.dataset.isMedico = cc.is_medico ? '1' : '0';
+    option.textContent = (cc.codigo ? cc.codigo + ' - ' : '') + cc.nome;
+    select.appendChild(option);
+  });
+  var input = linha.querySelector('input');
+  var percentualNumerico = Number(percentual);
+  input.value = Number.isFinite(percentualNumerico) && percentualNumerico > 0
+    ? String(percentualNumerico)
+    : '';
+  select.addEventListener('change', atualizarRateioManual);
+  input.addEventListener('input', atualizarRateioManual);
   linha.querySelector('button').addEventListener('click', function() {
     linha.remove();
     atualizarRateioManual();

@@ -1,12 +1,13 @@
 from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum as PyEnum
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, ForeignKey, Integer,
-    Numeric, String, Text, Enum, func
+    Numeric, String, Text, Enum, Uuid, func
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declared_attr, relationship
 
 from app.database import Base
 from app.field_encryption import EncryptedText
@@ -103,22 +104,45 @@ class DiaSemana(str, PyEnum):
 # Modelos
 # ---------------------------------------------------------------------------
 
-class Usuario(Base):
+class AuditMixin:
+    """Metadados comuns para rastreabilidade e exposição por UUID."""
+
+    public_id = Column(Uuid(as_uuid=True), default=uuid4, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
+    @declared_attr
+    def created_by(cls):
+        return Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
+    @declared_attr
+    def updated_by(cls):
+        return Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
+
+class Usuario(AuditMixin, Base):
     __tablename__ = "usuarios"
 
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(EncryptedText("usuarios.nome"), nullable=False)
-    email = Column(EncryptedText("usuarios.email", deterministic=True), unique=True, nullable=False, index=True)
+    nome = Column(Text, nullable=False)
+    email = Column(Text, unique=True, nullable=False, index=True)
     senha_hash = Column(String(255), nullable=False)
     perfil = Column(Enum(PerfilUsuario), nullable=False, default=PerfilUsuario.funcionario)
     ativo = Column(Boolean, default=True, nullable=False)
+    auth_version = Column(Integer, default=0, nullable=False, server_default="0")
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
     # clientes atribuídos a este funcionário
     clientes = relationship("ClienteBPO", back_populates="funcionario", foreign_keys="ClienteBPO.funcionario_id")
 
 
-class GrupoEmpresarial(Base):
+class GrupoEmpresarial(AuditMixin, Base):
     __tablename__ = "grupos_empresariais"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -131,13 +155,13 @@ class GrupoEmpresarial(Base):
     funcionario = relationship("Usuario", foreign_keys=[funcionario_id])
 
 
-class ClienteBPO(Base):
+class ClienteBPO(AuditMixin, Base):
     __tablename__ = "clientes_bpo"
 
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(EncryptedText("clientes_bpo.nome"), nullable=False)
-    razao_social = Column(EncryptedText("clientes_bpo.razao_social"))
-    cnpj = Column(EncryptedText("clientes_bpo.cnpj", deterministic=True))
+    nome = Column(Text, nullable=False)
+    razao_social = Column(Text)
+    cnpj = Column(Text)
     especialidade = Column(String(100))
     regime_tributario = Column(String(50))
     tem_maquininha = Column(Boolean, default=False, nullable=False)
@@ -170,7 +194,7 @@ class ClienteBPO(Base):
     anotacoes = relationship("AnotacaoCliente", back_populates="cliente", order_by="AnotacaoCliente.criado_em.desc()", cascade="all, delete-orphan")
 
 
-class Atendimento(Base):
+class Atendimento(AuditMixin, Base):
     __tablename__ = "atendimentos"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -213,12 +237,12 @@ class Atendimento(Base):
     lancado_por = relationship("Usuario", foreign_keys=[lancado_por_id])
 
 
-class CentroCusto(Base):
+class CentroCusto(AuditMixin, Base):
     __tablename__ = "centros_custo"
 
     id = Column(Integer, primary_key=True, index=True)
     codigo = Column(String(30), nullable=True)
-    nome = Column(EncryptedText("centros_custo.nome"), nullable=False)
+    nome = Column(Text, nullable=False)
     is_medico = Column(Boolean, default=False, nullable=False)
     especialidade = Column(String(100), nullable=True)
     cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=False)
@@ -229,7 +253,7 @@ class CentroCusto(Base):
     atendimentos = relationship("Atendimento", back_populates="centro_custo", foreign_keys="[Atendimento.centro_custo_id]")
 
 
-class PlanoConta(Base):
+class PlanoConta(AuditMixin, Base):
     """Plano de contas global (receita/despesa) — fallback quando o cliente não tem
     centros de custo próprios cadastrados. Semeado a partir de GRUPOS_DRE."""
     __tablename__ = "planos_conta"
@@ -247,7 +271,7 @@ class PlanoConta(Base):
     cliente = relationship("ClienteBPO", foreign_keys=[cliente_id])
 
 
-class AtendimentoCentroCustoRateio(Base):
+class AtendimentoCentroCustoRateio(AuditMixin, Base):
     __tablename__ = "atendimentos_centros_custo_rateio"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -260,7 +284,7 @@ class AtendimentoCentroCustoRateio(Base):
     centro_custo = relationship("CentroCusto", foreign_keys=[centro_custo_id])
 
 
-class ContaPagar(Base):
+class ContaPagar(AuditMixin, Base):
     __tablename__ = "contas_pagar"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -302,7 +326,7 @@ class ContaPagar(Base):
         return max(saldo, Decimal("0"))
 
 
-class PagamentoParcialContaPagar(Base):
+class PagamentoParcialContaPagar(AuditMixin, Base):
     __tablename__ = "pagamentos_parciais_contas_pagar"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -319,7 +343,7 @@ class PagamentoParcialContaPagar(Base):
     criado_por = relationship("Usuario", foreign_keys=[criado_por_id])
 
 
-class ContaPagarCentroCustoRateio(Base):
+class ContaPagarCentroCustoRateio(AuditMixin, Base):
     __tablename__ = "contas_pagar_centros_custo_rateio"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -333,7 +357,7 @@ class ContaPagarCentroCustoRateio(Base):
     centro_custo = relationship("CentroCusto", foreign_keys=[centro_custo_id])
 
 
-class FechamentoDiario(Base):
+class FechamentoDiario(AuditMixin, Base):
     __tablename__ = "fechamentos_diarios"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -353,14 +377,14 @@ class FechamentoDiario(Base):
     gerado_por = relationship("Usuario", foreign_keys=[gerado_por_id])
 
 
-class TarefaRotina(Base):
+class TarefaRotina(AuditMixin, Base):
     __tablename__ = "tarefas_rotina"
 
     id = Column(Integer, primary_key=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=False)
     funcionario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     data = Column(Date, nullable=False)
-    descricao = Column(EncryptedText("tarefas_rotina.descricao"), nullable=False)
+    descricao = Column(Text, nullable=False)
     horario_previsto = Column(String(10))    # ex: "09:00"
     concluida = Column(Boolean, default=False)
     concluida_em = Column(DateTime)
@@ -370,7 +394,7 @@ class TarefaRotina(Base):
     funcionario = relationship("Usuario", foreign_keys=[funcionario_id])
 
 
-class DivergenciaConciliacao(Base):
+class DivergenciaConciliacao(AuditMixin, Base):
     __tablename__ = "divergencias_conciliacao"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -386,7 +410,7 @@ class DivergenciaConciliacao(Base):
     cliente = relationship("ClienteBPO", back_populates="divergencias_conciliacao")
 
 
-class MovimentacaoBancaria(Base):
+class MovimentacaoBancaria(AuditMixin, Base):
     __tablename__ = "movimentacoes_bancarias"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -416,7 +440,7 @@ class MovimentacaoBancaria(Base):
     conta_bancaria = relationship("ContaBancaria", back_populates="movimentacoes")
 
 
-class ContaBancaria(Base):
+class ContaBancaria(AuditMixin, Base):
     __tablename__ = "contas_bancarias"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -436,7 +460,7 @@ class ContaBancaria(Base):
     movimentacoes = relationship("MovimentacaoBancaria", back_populates="conta_bancaria")
 
 
-class TransferenciaCartao(Base):
+class TransferenciaCartao(AuditMixin, Base):
     """Agrupamento diário por bandeira gerado ao fechar o dia de cartão."""
     __tablename__ = "transferencias_cartao"
 
@@ -455,7 +479,7 @@ class TransferenciaCartao(Base):
     extrato_linha = relationship("ExtratoLinhaBancaria", back_populates="transferencia", uselist=False)
 
 
-class ExtratoLinhaBancaria(Base):
+class ExtratoLinhaBancaria(AuditMixin, Base):
     """Linhas importadas do extrato da conta bancária principal."""
     __tablename__ = "extratos_bancarios"
 
@@ -476,7 +500,7 @@ class ExtratoLinhaBancaria(Base):
     conta_pagar = relationship("ContaPagar", foreign_keys=[conta_pagar_id])
 
 
-class MaquininhaCliente(Base):
+class MaquininhaCliente(AuditMixin, Base):
     """Maquininha(s) de cartão de um cliente — permite múltiplas por cliente."""
     __tablename__ = "maquininhas_cliente"
 
@@ -492,7 +516,7 @@ class MaquininhaCliente(Base):
     taxas = relationship("TaxaCartaoCliente", back_populates="maquininha")
 
 
-class TaxaCartaoCliente(Base):
+class TaxaCartaoCliente(AuditMixin, Base):
     """Taxa por bandeira + faixa de parcelamento por maquininha/cliente."""
     __tablename__ = "taxas_cartao_cliente"
 
@@ -512,7 +536,7 @@ class TaxaCartaoCliente(Base):
     maquininha = relationship("MaquininhaCliente", back_populates="taxas")
 
 
-class TaxaAntecipacaoCliente(Base):
+class TaxaAntecipacaoCliente(AuditMixin, Base):
     """Taxas de antecipação por bandeira — usadas quando o cliente tem antecipa=True.
     Várias taxas podem ser cadastradas por bandeira; apenas uma fica selecionada por vez."""
     __tablename__ = "taxas_antecipacao_cliente"
@@ -529,7 +553,7 @@ class TaxaAntecipacaoCliente(Base):
     cliente = relationship("ClienteBPO", back_populates="taxas_antecipacao")
 
 
-class RegraAutoMatch(Base):
+class RegraAutoMatch(AuditMixin, Base):
     """Regras para conciliar automaticamente linhas do extrato com transferências de cartão."""
     __tablename__ = "regras_auto_match"
 
@@ -544,7 +568,7 @@ class RegraAutoMatch(Base):
     cliente = relationship("ClienteBPO", back_populates="regras_auto_match")
 
 
-class ContaRecorrente(Base):
+class ContaRecorrente(AuditMixin, Base):
     """Contas fixas recorrentes com aviso automático por e-mail próximo ao vencimento."""
     __tablename__ = "contas_recorrentes"
 
@@ -563,7 +587,7 @@ class ContaRecorrente(Base):
     cliente = relationship("ClienteBPO", back_populates="contas_recorrentes")
 
 
-class OrcamentoValor(Base):
+class OrcamentoValor(AuditMixin, Base):
     """Valores orçados por categoria DRE, cliente e período (mês/ano)."""
     __tablename__ = "orcamento_valores"
 
@@ -577,7 +601,7 @@ class OrcamentoValor(Base):
     cliente = relationship("ClienteBPO")
 
 
-class VendaCartao(Base):
+class VendaCartao(AuditMixin, Base):
     """Linha individual do extrato da maquininha (pré-lote)."""
     __tablename__ = "vendas_cartao"
 
@@ -604,17 +628,17 @@ class VendaCartao(Base):
     lote = relationship("TransferenciaCartao", foreign_keys=[lote_id])
 
 
-class LogAuditoria(Base):
+class LogAuditoria(AuditMixin, Base):
     """Registro de ações realizadas pelos usuários no sistema."""
     __tablename__ = "logs_auditoria"
 
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-    usuario_nome = Column(EncryptedText("logs_auditoria.usuario_nome"), nullable=False, default="")
+    usuario_nome = Column(Text, nullable=False, default="")
     acao = Column(String(120), nullable=False)
     modulo = Column(String(50), nullable=False)
     cliente_id = Column(Integer, nullable=True)
-    cliente_nome = Column(EncryptedText("logs_auditoria.cliente_nome"), nullable=True)
+    cliente_nome = Column(Text, nullable=True)
     detalhes = Column(EncryptedText("logs_auditoria.detalhes"), nullable=True)
     ip = Column(EncryptedText("logs_auditoria.ip"), nullable=True)
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
@@ -622,7 +646,7 @@ class LogAuditoria(Base):
     usuario = relationship("Usuario", foreign_keys=[usuario_id])
 
 
-class AnotacaoCliente(Base):
+class AnotacaoCliente(AuditMixin, Base):
     """Anotações internas de procedimentos e orientações específicas do cliente."""
     __tablename__ = "anotacoes_clientes"
 
@@ -637,3 +661,18 @@ class AnotacaoCliente(Base):
 
     cliente = relationship("ClienteBPO", back_populates="anotacoes")
     autor = relationship("Usuario", foreign_keys=[autor_id])
+
+
+class AuditEvent(Base):
+    """Trilha técnica imutável sem snapshots de PII, tokens ou hashes."""
+
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    table_name = Column(String(80), nullable=False, index=True)
+    operation = Column(String(10), nullable=False)
+    record_public_id = Column(Uuid(as_uuid=True), nullable=True, index=True)
+    actor_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    database_role = Column(String(80), nullable=False)
+    request_id = Column(Uuid(as_uuid=True), nullable=True)
+    occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

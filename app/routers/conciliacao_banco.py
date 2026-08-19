@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import uuid
 from datetime import date, datetime
@@ -11,7 +12,7 @@ from app.jinja import templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
@@ -50,8 +51,11 @@ from app.services.conciliacao_service import (
     parse_ofx,
 )
 from app.services.log_service import registrar as _log
+from app.errors import public_import_error
 
 router = APIRouter()
+require_conciliacao = require_permission(Permission.CONCILIACAO)
+logger = logging.getLogger(__name__)
 
 
 def _chave_centro_custo(cc: CentroCusto) -> str:
@@ -610,7 +614,7 @@ async def pagina_banco(
     arquivados: bool = Query(default=False),
     manual_criado: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     if usuario.perfil.value in ("secretaria", "medico"):
         return RedirectResponse(url="/", status_code=303)
@@ -667,7 +671,7 @@ async def criar_receita_manual_banco(
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes] or valor <= 0:
@@ -726,7 +730,7 @@ async def criar_movimentacao_manual_banco(
     valor: Decimal = Form(...),
     descricao: str = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes] or valor <= 0 or sentido not in ("recebimento", "pagamento"):
@@ -797,7 +801,7 @@ async def criar_despesa_manual_banco(
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes] or valor <= 0:
@@ -847,7 +851,7 @@ async def criar_pagamento_parcial_banco(
     data_pagamento: date = Form(...),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
@@ -884,7 +888,7 @@ async def importar_lancamentos_banco(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -904,8 +908,8 @@ async def importar_lancamentos_banco(
             f"{total} lancamento(s) importado(s) de '{nome_original}'. "
             "As correspondências encontradas estão disponíveis como sugestões."
         )
-    except Exception as e:
-        flash_error = str(e)
+    except Exception:
+        flash_error = public_import_error(logger, "importar_lancamentos_banco")
     finally:
         try:
             if caminho:
@@ -927,7 +931,7 @@ async def importar_extrato_banco(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -959,8 +963,8 @@ async def importar_extrato_banco(
             conciliados, divergencias = conciliar_pix_ted(db, cliente_id, df, nome_original)
             resultado["conciliados"] = conciliados
             resultado["divergencias"] = divergencias
-    except Exception as e:
-        resultado["erro"] = str(e)
+    except Exception:
+        resultado["erro"] = public_import_error(logger, "importar_extrato_banco")
     finally:
         try:
             if caminho:
@@ -981,7 +985,7 @@ async def importar_extrato_banco(
 async def conciliar_todos_prontos(
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -999,7 +1003,7 @@ async def conciliar_movimentacao(
     atendimento_id: int = Form(...),
     origem: str = Form("sugestao"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -1020,7 +1024,7 @@ async def revisar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -1038,7 +1042,7 @@ async def arquivar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
@@ -1056,7 +1060,7 @@ async def restaurar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
@@ -1071,7 +1075,7 @@ async def arquivar_lancamento_sistema(
     atendimento_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     atendimento = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
@@ -1089,7 +1093,7 @@ async def restaurar_lancamento_sistema(
     atendimento_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     atendimento = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
@@ -1104,7 +1108,7 @@ async def arquivar_conta_sistema(
     conta_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
@@ -1122,7 +1126,7 @@ async def restaurar_conta_sistema(
     conta_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
@@ -1137,7 +1141,7 @@ async def desvincular_movimentacao_pix(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -1172,7 +1176,7 @@ async def criar_e_conciliar(
     descricao_servico: str = Form(""),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     from datetime import date as date_type
     clientes = clientes_do_usuario(db, usuario)
@@ -1226,7 +1230,7 @@ async def importar_conta_corrente(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -1245,8 +1249,8 @@ async def importar_conta_corrente(
             f"{res['importados']} linha(s) importada(s) de '{nome_original}'. "
             "As correspondências encontradas estão disponíveis como sugestões."
         )
-    except Exception as e:
-        flash_error = str(e)
+    except Exception:
+        flash_error = public_import_error(logger, "importar_conta_corrente")
     finally:
         try:
             if caminho:
@@ -1268,7 +1272,7 @@ async def conciliar_lote_com_banco(
     cliente_id: int = Form(...),
     mov_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -1291,7 +1295,7 @@ async def conciliar_lote_com_banco(
 async def auto_match_lotes(
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     """Auto-concilia lotes pendentes com MovimentacaoBancaria de valor exato."""
     clientes = clientes_do_usuario(db, usuario)
@@ -1307,7 +1311,7 @@ async def desvincular_lote(
     lote_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     lote = db.query(TransferenciaCartao).filter(TransferenciaCartao.id == lote_id).first()
@@ -1335,7 +1339,7 @@ async def conciliar_saida_com_conta(
     cliente_id: int = Form(...),
     conta_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
@@ -1363,7 +1367,7 @@ async def desvincular_saida(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
@@ -1396,7 +1400,7 @@ async def desvincular_saida(
 async def auto_match_saidas(
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     """Concilia em lote, por acao do usuario, saidas com contas de valor exato."""
     clientes = clientes_do_usuario(db, usuario)

@@ -9,7 +9,7 @@ from app.jinja import templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.constants import GRUPOS_DRE
 from app.database import get_db
 from app.utils import cliente_ativo as _ca
@@ -19,6 +19,7 @@ from app.models import (
 )
 
 router = APIRouter()
+require_gestao = require_permission(Permission.GESTAO)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
@@ -447,7 +448,7 @@ async def gestao_receitas(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()
@@ -500,7 +501,7 @@ async def gestao_despesas(
     ano: Optional[int] = None,
     regime: str = "vencimento",
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()
@@ -559,7 +560,7 @@ async def gestao_orcamento(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()
@@ -569,7 +570,8 @@ async def gestao_orcamento(
     ids = [c.id for c in clientes]
 
     valores_map: dict[str, Decimal] = {}
-    grupos = _grupos_dre_cliente(db, cliente_id)
+    cliente_autorizado = cliente_id if cliente_id in ids else None
+    grupos = _grupos_dre_cliente(db, cliente_autorizado)
     total_receitas_orcadas = Decimal("0")
     total_despesas_orcadas = Decimal("0")
     receita_base_real = Decimal("0")
@@ -636,7 +638,7 @@ async def salvar_orcamento(
     mes: int = Form(...),
     ano: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -692,7 +694,7 @@ async def gestao_dre_apresentacao(
     ano: Optional[int] = None,
     periodo: str = "mes",
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     hoje = date.today()
     mes = mes or hoje.month
@@ -754,7 +756,7 @@ async def gestao_dre(
     periodo: str = "mes",
     visao: str = "simples",
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_gestao),
 ):
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()

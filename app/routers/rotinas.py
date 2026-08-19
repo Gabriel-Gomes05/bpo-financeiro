@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -6,13 +7,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.database import get_db
 from app.models import ClienteBPO, ContaPagar, ContaRecorrente, StatusContaPagar, TarefaRotina, Usuario, PerfilUsuario
 from app.utils import cliente_ativo as _ca
 from app.services.log_service import registrar as _log
 
 router = APIRouter()
+require_rotinas = require_permission(Permission.ROTINAS)
 
 
 # ---------------------------------------------------------------------------
@@ -77,30 +79,32 @@ def _render_li(tarefa: TarefaRotina, pode_reverter: bool) -> str:
         f'<p class="text-xs text-gray-400 mt-0.5">Concluída às {tarefa.concluida_em.strftime("%H:%M")}</p>'
         if tarefa.concluida_em else ""
     )
-    funcionario = tarefa.funcionario.nome if tarefa.funcionario else ""
+    funcionario = escape(tarefa.funcionario.nome if tarefa.funcionario else "", quote=True)
+    descricao = escape(tarefa.descricao or "", quote=True)
+    horario = escape(tarefa.horario_previsto or "", quote=True)
     btn_excluir = _BTN_EXCLUIR.format(id=tarefa.id) if pode_reverter else ""
 
     if not tarefa.concluida:
         return _LI_PENDENTE.format(
             id=tarefa.id,
-            descricao=tarefa.descricao,
+            descricao=descricao,
             funcionario=funcionario,
-            horario=tarefa.horario_previsto or "",
+            horario=horario,
             btn_excluir=btn_excluir,
         )
     if pode_reverter:
         return _LI_CONCLUIDA_COORD.format(
             id=tarefa.id,
-            descricao=tarefa.descricao,
+            descricao=descricao,
             horario_concluida=horario_concluida,
-            horario=tarefa.horario_previsto or "",
+            horario=horario,
             btn_excluir=btn_excluir,
         )
     return _LI_CONCLUIDA_LOCK.format(
         id=tarefa.id,
-        descricao=tarefa.descricao,
+        descricao=descricao,
         horario_concluida=horario_concluida,
-        horario=tarefa.horario_previsto or "",
+        horario=horario,
     )
 
 
@@ -126,7 +130,7 @@ async def listar_rotinas(
     request: Request,
     cliente_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil.value in ("secretaria", "medico"):
         return RedirectResponse(url="/", status_code=303)
@@ -216,7 +220,7 @@ async def criar_rotina(
     descricao: str = Form(...),
     horario_previsto: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil != PerfilUsuario.coordenador:
         return RedirectResponse(url="/rotinas", status_code=303)
@@ -237,7 +241,7 @@ async def criar_rotina(
 async def toggle_tarefa(
     tarefa_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     tarefa = db.query(TarefaRotina).filter(TarefaRotina.id == tarefa_id).first()
     if not tarefa:
@@ -265,7 +269,7 @@ async def toggle_tarefa(
 async def excluir_tarefa(
     tarefa_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil != PerfilUsuario.coordenador:
         return HTMLResponse("", status_code=403)
@@ -293,7 +297,7 @@ async def criar_recorrente(
     dias_antecedencia: int = Form(3),
     email_destino: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil != PerfilUsuario.coordenador:
         return RedirectResponse(url="/rotinas", status_code=303)
@@ -323,7 +327,7 @@ async def criar_recorrente(
 async def excluir_recorrente(
     rec_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil != PerfilUsuario.coordenador:
         return RedirectResponse(url="/rotinas", status_code=303)
@@ -338,7 +342,7 @@ async def excluir_recorrente(
 async def toggle_recorrente(
     rec_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_rotinas),
 ):
     if usuario.perfil != PerfilUsuario.coordenador:
         return RedirectResponse(url="/rotinas", status_code=303)

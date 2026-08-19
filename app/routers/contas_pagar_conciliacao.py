@@ -1,4 +1,5 @@
 import os
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -10,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
 from app.utils import salvar_upload_temporario
@@ -25,8 +26,11 @@ from app.models import (
     StatusMovimentacaoBancaria,
     Usuario,
 )
+from app.errors import public_import_error
 
 router = APIRouter()
+require_conciliacao = require_permission(Permission.CONCILIACAO)
+logger = logging.getLogger(__name__)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
@@ -76,7 +80,7 @@ async def pagina_conciliacao_cartao_pagar(
     buscar_mov: Optional[int] = Query(default=None),
     termo: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -145,7 +149,7 @@ async def importar_cartao_pagar(
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -218,8 +222,8 @@ async def importar_cartao_pagar(
 
         db.commit()
 
-    except Exception as e:
-        erro = str(e)
+    except Exception:
+        erro = public_import_error(logger, "importar_cartao_contas_pagar")
     finally:
         try:
             if caminho:
@@ -239,7 +243,7 @@ async def conciliar_cartao_pagar(
     cliente_id: int = Form(...),
     conta_pagar_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -268,7 +272,7 @@ async def ignorar_cartao_pagar(
     mov_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -292,7 +296,7 @@ async def pagina_conciliacao_banco_pagar(
     buscar_linha: Optional[int] = Query(default=None),
     termo: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -362,7 +366,7 @@ async def importar_banco_pagar(
     col_valor: str = Form("valor"),
     col_tipo: str = Form("tipo"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     if cliente_id not in [c.id for c in clientes]:
@@ -426,8 +430,8 @@ async def importar_banco_pagar(
 
         db.commit()
 
-    except Exception as e:
-        erro = str(e)
+    except Exception:
+        erro = public_import_error(logger, "importar_banco_contas_pagar")
     finally:
         try:
             if caminho:
@@ -447,7 +451,7 @@ async def conciliar_linha_banco_pagar(
     cliente_id: int = Form(...),
     conta_pagar_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -476,7 +480,7 @@ async def ignorar_linha_banco_pagar(
     linha_id: int,
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]

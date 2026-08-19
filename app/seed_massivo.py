@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.database import SessionLocal, criar_tabelas, migrar_schema
+from app.database import SessionLocal
 from app.models import (
     Atendimento,
     ClienteBPO,
@@ -430,8 +430,6 @@ def criar_operacional(db, cliente: ClienteBPO, usuario: Usuario):
 
 
 def main():
-    criar_tabelas()
-    migrar_schema()
     db = SessionLocal()
     try:
         limpar_massivo(db)

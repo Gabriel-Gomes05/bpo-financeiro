@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FLIC — Erro</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f8fafc; color: #1e293b; }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    section { width: min(520px, 100%); background: white; border: 1px solid #e2e8f0;
+      border-radius: 18px; padding: 32px; box-shadow: 0 18px 45px rgba(15, 23, 42, .08); }
+    h1 { margin: 0 0 12px; font-size: 22px; } p { line-height: 1.6; color: #475569; }
+    a { display: inline-block; margin-top: 12px; color: #315f9a; font-weight: 700; text-decoration: none; }
+    small { display: block; margin-top: 24px; color: #94a3b8; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>Não foi possível concluir</h1>
+    <p>{{ message }}</p>
+    <a href="/">Voltar ao início</a>
+    {% if request_id %}<small>Identificador: {{ request_id }}</small>{% endif %}
+  </section>
+</main>
+</body>
+</html>

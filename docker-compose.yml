@@ -1,38 +1,14 @@
 services:
-  web:
-    build: .
-    ports:
-      - "127.0.0.1:8888:8000"
-    env_file:
-      - .env
-    environment:
-      - ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
-      - TZ=America/Sao_Paulo
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./uploads:/app/uploads
-      - ./app:/app/app
-      - ./static:/app/static
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    networks:
-      - frontend
-      - database
-    restart: unless-stopped
-
   db:
-    image: postgres:15
+    image: postgres:15-bookworm
     environment:
-      - POSTGRES_USER=bpo
-      - POSTGRES_PASSWORD=${DB_PASSWORD:?Defina DB_PASSWORD no arquivo .env}
-      - POSTGRES_DB=bpo_financeiro
-      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
-      - TZ=America/Sao_Paulo
-      - PGTZ=America/Sao_Paulo
+      POSTGRES_DB: ${DB_NAME:?Defina DB_NAME}
+      POSTGRES_USER: ${MIGRATION_DB_USER:?Defina MIGRATION_DB_USER}
+      POSTGRES_PASSWORD: ${MIGRATION_DB_PASSWORD:?Defina MIGRATION_DB_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER:?Defina APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Defina APP_DB_PASSWORD}
+      TZ: ${TZ:-America/Sao_Paulo}
+      PGTZ: ${TZ:-America/Sao_Paulo}
     command:
       - postgres
       - -c
@@ -47,21 +23,175 @@ services:
       - log_min_error_statement=error
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-runtime-role.sh:/docker-entrypoint-initdb.d/10-runtime-role.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bpo -d bpo_financeiro"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
     security_opt:
       - no-new-privileges:true
     networks:
-      - database
+      - data
     restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: ${LOG_MAX_FILES:-5}
+
+  redis:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?Defina REDIS_PASSWORD}
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Defina REDIS_PASSWORD}
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - data
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    command: ["alembic", "upgrade", "head"]
+    environment: &app_environment
+      APP_NAME: ${APP_NAME}
+      APP_VERSION: ${APP_VERSION}
+      APP_ENV: ${APP_ENV}
+      APP_URL: ${APP_URL:?Defina APP_URL}
+      HOST: ${HOST}
+      PORT: ${PORT}
+      LOG_LEVEL: ${LOG_LEVEL}
+      DATABASE_URL: ${DATABASE_URL}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
+      DATABASE_RUNTIME_ROLE: ${APP_DB_USER}
+      DB_SSL_MODE: ${DB_SSL_MODE}
+      DB_ALLOW_INSECURE_PRIVATE: ${DB_ALLOW_INSECURE_PRIVATE:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW}
+      DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS}
+      DB_IDLE_TRANSACTION_TIMEOUT_MS: ${DB_IDLE_TRANSACTION_TIMEOUT_MS}
+      SECRET_KEY: ${SECRET_KEY}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REDIS_URL: ${REDIS_URL}
+      LOGIN_RATE_LIMIT_ACCOUNT: ${LOGIN_RATE_LIMIT_ACCOUNT}
+      LOGIN_RATE_LIMIT_IP: ${LOGIN_RATE_LIMIT_IP}
+      LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS}
+      GLOBAL_RATE_LIMIT_REQUESTS: ${GLOBAL_RATE_LIMIT_REQUESTS}
+      GLOBAL_RATE_LIMIT_WINDOW_SECONDS: ${GLOBAL_RATE_LIMIT_WINDOW_SECONDS}
+      EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
+      INSECURE_PRIVATE_ORIGINS: ${INSECURE_PRIVATE_ORIGINS:-}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES}
+      UPLOAD_DIR: ${UPLOAD_DIR}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      EMAIL_FROM: ${EMAIL_FROM}
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - data
+    restart: "no"
+    logging: *logging
+
+  web:
+    build:
+      context: .
+      target: runtime
+    environment:
+      <<: *app_environment
+      MIGRATION_DATABASE_URL: ""
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      WORKER_TIMEOUT_SECONDS: ${WORKER_TIMEOUT_SECONDS:-60}
+      WORKER_GRACEFUL_TIMEOUT_SECONDS: ${WORKER_GRACEFUL_TIMEOUT_SECONDS:-30}
+      KEEPALIVE_SECONDS: ${KEEPALIVE_SECONDS:-5}
+      MAX_REQUESTS_PER_WORKER: ${MAX_REQUESTS_PER_WORKER:-2000}
+      MAX_REQUESTS_JITTER: ${MAX_REQUESTS_JITTER:-200}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8888}:8000"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - frontend
+      - data
+    restart: unless-stopped
+    mem_limit: ${WEB_MEMORY_LIMIT:-1g}
+    cpus: ${WEB_CPUS:-1.0}
+    logging: *logging
+
+  adminer:
+    image: adminer:5-standalone
+    profiles: ["tools"]
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: pepa-linha-dark
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+      - data
+    restart: unless-stopped
+    logging: *logging
 
 volumes:
   postgres_data:
+  redis_data:
+  uploads_data:
 
 networks:
   frontend:
-  database:
+  data:
     internal: true
