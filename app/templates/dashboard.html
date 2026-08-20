@@ -5,6 +5,24 @@
 {% block content %}
 
 {# ═══════════════════════════════════════════════════════════
+   BLOCOS POR PROCESSO — resumo de cada módulo (Contas a Receber,
+   Contas a Pagar, Conciliação, Fechamento), no escopo de cliente(s)
+   já aplicado pelo modo abaixo. Aparece em qualquer modo/perfil.
+═══════════════════════════════════════════════════════════ #}
+{% if blocos_processo %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  {% for bloco in blocos_processo %}
+  <a href="{{ bloco.link }}"
+     class="block bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:border-[#5e93cc]/50 hover:shadow-md transition-colors">
+    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ bloco.titulo }}</p>
+    <p class="text-sm font-semibold text-gray-800 mt-2">{{ bloco.linha1 }}</p>
+    {% if bloco.linha2 %}<p class="text-xs text-gray-500 mt-1">{{ bloco.linha2 }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════
    VISÃO FOCADA — aparece para qualquer perfil quando
    há um cliente ativo selecionado
 ═══════════════════════════════════════════════════════════ #}

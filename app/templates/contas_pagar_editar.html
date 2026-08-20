@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Editar Conta a Pagar — FLIC{% endblock %}
+{% block page_title %}Editar Conta a Pagar{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+
+  <div class="flex items-center gap-3 text-sm text-gray-500">
+    <a href="/contas-pagar?cliente_id={{ conta.cliente_id }}" class="hover:text-[#5e93cc]">← Voltar para Contas a Pagar</a>
+    <span>›</span>
+    <span class="text-gray-700 font-medium">Editar #{{ conta.id }}</span>
+  </div>
+
+  <form method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="md:col-span-2">
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Descrição *</label>
+        <input type="text" name="descricao" required value="{{ conta.descricao }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Fornecedor</label>
+        <input type="text" name="fornecedor" value="{{ conta.fornecedor or '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Categoria / Plano de conta</label>
+        <input type="text" disabled
+               value="{% if conta.rateios_centro_custo %}Rateio por centro de custo (edite pelo cadastro de rateio){% elif conta.categoria_dre %}{{ categoria_nome.get(conta.categoria_dre, conta.categoria_dre) }}{% else %}— não definida{% endif %}"
+               class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Valor (R$) *</label>
+        <input type="number" name="valor" step="0.01" min="0" required
+               value="{{ '%.2f'|format(conta.valor|float) }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Vencimento *</label>
+        <input type="date" name="vencimento" required value="{{ conta.vencimento.isoformat() }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data de competência</label>
+        <input type="date" name="data_competencia" value="{{ conta.data_competencia.isoformat() if conta.data_competencia else '' }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Forma de pagamento</label>
+        <select name="forma_pagamento"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="" {% if not conta.forma_pagamento %}selected{% endif %}>Não informada</option>
+          {% for fp in formas_pagamento %}
+          <option value="{{ fp.value }}" {% if conta.forma_pagamento == fp %}selected{% endif %}>
+            {{ fp.value | replace('_',' ') | capitalize }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Status atual</label>
+        <input type="text" disabled value="{{ conta.status.value | replace('_',' ') | capitalize }}"
+               class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+        <p class="mt-1 text-[11px] text-gray-400">Mude o status pela listagem de Contas a Pagar.</p>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Observação</label>
+      <textarea name="observacao" rows="3"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none resize-none">{{ conta.observacao or '' }}</textarea>
+    </div>
+
+    <div class="flex justify-end gap-3">
+      <a href="/contas-pagar?cliente_id={{ conta.cliente_id }}"
+         class="px-5 py-2.5 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-100">Cancelar</a>
+      <button type="submit"
+              class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm">
+        Salvar alterações
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

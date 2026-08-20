@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -16,7 +17,7 @@ from app.auth import (
 from app.database import get_db
 from app.models import (
     AnotacaoCliente, Atendimento, CentroCusto, ClienteBPO, ContaPagar, FechamentoDiario,
-    LogAuditoria, MaquininhaCliente, PagamentoParcialContaPagar,
+    GrupoEmpresarial, LogAuditoria, MaquininhaCliente, PagamentoParcialContaPagar,
     TarefaRotina, Usuario, PerfilUsuario, TaxaCartaoCliente,
     TaxaAntecipacaoCliente,
 )
@@ -38,19 +39,29 @@ CATEGORIAS_ANOTACAO = {
 def clientes_do_usuario(db: Session, usuario: Usuario):
     if tem_acesso_geral(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).order_by(ClienteBPO.nome).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
+    return db.query(ClienteBPO).outerjoin(
+        GrupoEmpresarial, ClienteBPO.grupo_empresarial_id == GrupoEmpresarial.id
+    ).filter(
         ClienteBPO.ativo == True,
+        or_(
+            ClienteBPO.funcionario_id == usuario.id,
+            and_(ClienteBPO.funcionario_id.is_(None), GrupoEmpresarial.funcionario_id == usuario.id),
+        ),
     ).order_by(ClienteBPO.nome).all()
 
 
 def pode_acessar_cliente(db: Session, usuario: Usuario, cliente_id: int) -> bool:
     if tem_acesso_geral(usuario):
         return True
-    return db.query(ClienteBPO.id).filter(
+    return db.query(ClienteBPO.id).outerjoin(
+        GrupoEmpresarial, ClienteBPO.grupo_empresarial_id == GrupoEmpresarial.id
+    ).filter(
         ClienteBPO.id == cliente_id,
-        ClienteBPO.funcionario_id == usuario.id,
         ClienteBPO.ativo == True,
+        or_(
+            ClienteBPO.funcionario_id == usuario.id,
+            and_(ClienteBPO.funcionario_id.is_(None), GrupoEmpresarial.funcionario_id == usuario.id),
+        ),
     ).first() is not None
 
 
@@ -94,17 +105,113 @@ async def pagina_clientes(
         Usuario.perfil == PerfilUsuario.funcionario,
         Usuario.ativo == True,
     ).order_by(Usuario.nome).all()
+    grupos = db.query(GrupoEmpresarial).filter(
+        GrupoEmpresarial.ativo == True,
+    ).order_by(GrupoEmpresarial.nome).all()
 
     return templates.TemplateResponse("admin/clientes.html", {
         "request": request,
         "usuario": usuario,
         "clientes": clientes,
         "funcionarios": funcionarios,
+        "grupos": grupos,
         "bandeiras": BANDEIRAS,
         "redes_maquininha": REDES_MAQUININHA,
         "pode_coordenar": usuario.perfil == PerfilUsuario.coordenador,
         "pode_criar_cliente": tem_acesso_geral(usuario),
     })
+
+
+@router.get("/grupos", response_class=HTMLResponse)
+async def pagina_grupos(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    if not tem_acesso_geral(usuario):
+        return RedirectResponse(url="/admin/clientes", status_code=303)
+
+    grupos = db.query(GrupoEmpresarial).filter(
+        GrupoEmpresarial.ativo == True,
+    ).order_by(GrupoEmpresarial.nome).all()
+    funcionarios = db.query(Usuario).filter(
+        Usuario.perfil == PerfilUsuario.funcionario,
+        Usuario.ativo == True,
+    ).order_by(Usuario.nome).all()
+
+    return templates.TemplateResponse("admin/grupos.html", {
+        "request": request,
+        "usuario": usuario,
+        "grupos": grupos,
+        "funcionarios": funcionarios,
+        "pode_coordenar": usuario.perfil == PerfilUsuario.coordenador,
+    })
+
+
+@router.post("/grupos")
+async def criar_grupo(
+    nome: str = Form(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    if not tem_acesso_geral(usuario):
+        return RedirectResponse(url="/admin/clientes", status_code=303)
+
+    nome = nome.strip()
+    if not nome:
+        return RedirectResponse(url="/admin/grupos?erro=nome_obrigatorio", status_code=303)
+
+    grupo = GrupoEmpresarial(nome=nome, ativo=True)
+    db.add(grupo)
+    db.commit()
+    _log(db, "Grupo empresarial criado", "admin", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=nome)
+    return RedirectResponse(url="/admin/grupos?sucesso=1", status_code=303)
+
+
+@router.post("/grupos/{grupo_id}/renomear")
+async def renomear_grupo(
+    grupo_id: int,
+    nome: str = Form(...),
+    funcionario_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    if not tem_acesso_geral(usuario):
+        return RedirectResponse(url="/admin/clientes", status_code=303)
+
+    grupo = db.query(GrupoEmpresarial).filter(GrupoEmpresarial.id == grupo_id).first()
+    nome = nome.strip()
+    if grupo and nome:
+        grupo.nome = nome
+        if usuario.perfil == PerfilUsuario.coordenador:
+            responsavel = None
+            if funcionario_id:
+                responsavel = db.query(Usuario).filter(
+                    Usuario.id == funcionario_id,
+                    Usuario.ativo == True,
+                ).first()
+            grupo.funcionario_id = responsavel.id if responsavel else None
+        db.commit()
+        _log(db, "Grupo empresarial renomeado", "admin", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=nome)
+    return RedirectResponse(url="/admin/grupos?sucesso=1", status_code=303)
+
+
+@router.post("/grupos/{grupo_id}/excluir")
+async def excluir_grupo(
+    grupo_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    if not tem_acesso_geral(usuario):
+        return RedirectResponse(url="/admin/clientes", status_code=303)
+
+    grupo = db.query(GrupoEmpresarial).filter(GrupoEmpresarial.id == grupo_id).first()
+    if grupo:
+        nome = grupo.nome
+        db.delete(grupo)
+        db.commit()
+        _log(db, "Grupo empresarial excluído", "admin", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=nome)
+    return RedirectResponse(url="/admin/grupos?sucesso=1", status_code=303)
 
 
 @router.get("/funcionarios", response_class=HTMLResponse)
@@ -370,6 +477,7 @@ async def criar_cliente(
     bandeira: List[str] = Form(default=[]),
     taxa_percentual: List[str] = Form(default=[]),
     funcionario_id: Optional[int] = Form(None),
+    grupo_empresarial_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
@@ -386,6 +494,7 @@ async def criar_cliente(
         rede_maquininha=rede_maquininha if usa_maquininha and rede_maquininha else None,
         antecipa=antecipa == "sim" if usa_maquininha else False,
         funcionario_id=funcionario_id if usuario.perfil == PerfilUsuario.coordenador and funcionario_id else None,
+        grupo_empresarial_id=grupo_empresarial_id or None,
         ativo=True,
     )
     db.add(cliente)
@@ -464,11 +573,15 @@ async def pagina_editar_cliente(
         Usuario.perfil == PerfilUsuario.funcionario,
         Usuario.ativo == True,
     ).order_by(Usuario.nome).all()
+    grupos = db.query(GrupoEmpresarial).filter(
+        GrupoEmpresarial.ativo == True,
+    ).order_by(GrupoEmpresarial.nome).all()
     return templates.TemplateResponse("admin/cliente_editar.html", {
         "request": request,
         "usuario": usuario,
         "cliente": cliente,
         "funcionarios": funcionarios,
+        "grupos": grupos,
         "redes_maquininha": REDES_MAQUININHA,
         "pode_coordenar": usuario.perfil == PerfilUsuario.coordenador,
     })
@@ -489,6 +602,7 @@ async def editar_cliente_completo(
     rede_maquininha: Optional[str] = Form(None),
     antecipa: str = Form("nao"),
     funcionario_id: Optional[int] = Form(None),
+    grupo_empresarial_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
@@ -525,6 +639,14 @@ async def editar_cliente_completo(
                 Usuario.ativo == True,
             ).first()
         cliente.funcionario_id = responsavel.id if responsavel else None
+    if tem_acesso_geral(usuario):
+        grupo = None
+        if grupo_empresarial_id:
+            grupo = db.query(GrupoEmpresarial).filter(
+                GrupoEmpresarial.id == grupo_empresarial_id,
+                GrupoEmpresarial.ativo == True,
+            ).first()
+        cliente.grupo_empresarial_id = grupo.id if grupo else None
 
     db.commit()
     _log(db, "Cliente editado", "admin", usuario_id=usuario.id,

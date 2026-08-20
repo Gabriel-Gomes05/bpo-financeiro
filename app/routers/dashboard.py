@@ -1,15 +1,17 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from app.jinja import templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual
 from app.database import get_db
 from app.models import (
-    ClienteBPO, ContaPagar, ContaRecorrente, DivergenciaConciliacao,
-    StatusContaPagar, TarefaRotina, Usuario, PerfilUsuario,
+    Atendimento, ClienteBPO, ContaPagar, ContaRecorrente, DivergenciaConciliacao,
+    FechamentoDiario, StatusConciliacao, StatusContaPagar, TarefaRotina, Usuario, PerfilUsuario,
 )
 from app.services.alertas_service import _proximo_vencimento
 
@@ -69,6 +71,79 @@ def _alertas_recorrentes(db: Session, hoje: date, ids_clientes: list) -> list:
     return sorted(alertas, key=lambda x: x["dias_restantes"])
 
 
+def _brl(v) -> str:
+    return f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _blocos_processo(db: Session, hoje: date, ids_clientes: list) -> list:
+    """Resumo por módulo/processo (Contas a Receber, Contas a Pagar, Conciliação, Fechamento)."""
+    if not ids_clientes:
+        return []
+
+    inicio_mes = hoje.replace(day=1)
+
+    pendentes_receber = db.query(Atendimento).filter(
+        Atendimento.cliente_id.in_(ids_clientes),
+        Atendimento.status_conciliacao != StatusConciliacao.conciliado,
+    ).count()
+    recebido_mes = db.query(func.sum(Atendimento.valor_liquido)).filter(
+        Atendimento.cliente_id.in_(ids_clientes),
+        Atendimento.status_conciliacao == StatusConciliacao.conciliado,
+        Atendimento.data_credito >= inicio_mes,
+        Atendimento.data_credito <= hoje,
+    ).scalar() or Decimal("0")
+
+    vencendo_pagar = db.query(ContaPagar).filter(
+        ContaPagar.cliente_id.in_(ids_clientes),
+        ContaPagar.vencimento <= hoje,
+        ContaPagar.status == StatusContaPagar.pendente,
+    ).count()
+    pago_mes = db.query(func.sum(ContaPagar.valor)).filter(
+        ContaPagar.cliente_id.in_(ids_clientes),
+        ContaPagar.status == StatusContaPagar.pago,
+        ContaPagar.data_pagamento >= inicio_mes,
+        ContaPagar.data_pagamento <= hoje,
+    ).scalar() or Decimal("0")
+
+    total_divergencias = db.query(DivergenciaConciliacao).filter(
+        DivergenciaConciliacao.cliente_id.in_(ids_clientes),
+        DivergenciaConciliacao.resolvida == False,
+    ).count()
+
+    total_clientes_escopo = len(ids_clientes)
+    fechados_hoje = db.query(FechamentoDiario.cliente_id).filter(
+        FechamentoDiario.cliente_id.in_(ids_clientes),
+        FechamentoDiario.data == hoje,
+    ).distinct().count()
+
+    return [
+        {
+            "titulo": "Contas a Receber",
+            "linha1": f"{pendentes_receber} pendente(s) de conciliação",
+            "linha2": f"R$ {_brl(recebido_mes)} recebido no mês",
+            "link": "/lancamentos",
+        },
+        {
+            "titulo": "Contas a Pagar",
+            "linha1": f"{vencendo_pagar} vencendo/vencida(s)",
+            "linha2": f"R$ {_brl(pago_mes)} pago no mês",
+            "link": "/contas-pagar",
+        },
+        {
+            "titulo": "Conciliação",
+            "linha1": f"{total_divergencias} divergência(s) aberta(s)",
+            "linha2": "",
+            "link": "/conciliacao/banco",
+        },
+        {
+            "titulo": "Fechamento",
+            "linha1": f"{fechados_hoje} de {total_clientes_escopo} cliente(s) fechado(s) hoje",
+            "linha2": "",
+            "link": "/fechamento",
+        },
+    ]
+
+
 def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None = None) -> dict:
     # ── Visão focada num cliente específico ──────────────────────────
     if cliente_ativo_id:
@@ -94,6 +169,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
             tarefas_concluidas = sum(1 for t in tarefas_hoje if t.concluida)
 
             alertas_recorrentes = _alertas_recorrentes(db, hoje, [cliente_ativo_id])
+            blocos_processo = _blocos_processo(db, hoje, [cliente_ativo_id])
 
             return {
                 "modo": "foco",
@@ -106,6 +182,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
                 "tarefas_concluidas": tarefas_concluidas,
                 "tarefas_pendentes": len(tarefas_hoje) - tarefas_concluidas,
                 "alertas_recorrentes": alertas_recorrentes,
+                "blocos_processo": blocos_processo,
                 "funcionarios": [],
                 "resumo_clientes": [],
             }
@@ -160,6 +237,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
 
     todos_ids = [c.id for c in db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()]
     alertas_recorrentes = _alertas_recorrentes(db, hoje, todos_ids)
+    blocos_processo = _blocos_processo(db, hoje, todos_ids)
 
     return {
         "modo": "geral",
@@ -168,6 +246,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
         "total_clientes": total_clientes,
         "total_tarefas": total_tarefas,
         "total_vencendo": total_vencendo,
+        "blocos_processo": blocos_processo,
         "total_divergencias": total_divergencias,
         "funcionarios": funcionarios,
         "alertas_recorrentes": alertas_recorrentes,
@@ -243,11 +322,13 @@ def _dashboard_funcionario(
         })
 
     alertas_recorrentes = _alertas_recorrentes(db, hoje, ids_filtro)
+    blocos_processo = _blocos_processo(db, hoje, ids_filtro)
 
     return {
         "meus_clientes": meus_clientes,
         "cliente_foco": cliente_foco,
         "cliente_ativo_id": cliente_ativo_id,
+        "blocos_processo": blocos_processo,
         "total_tarefas": len(tarefas_hoje),
         "tarefas_concluidas": tarefas_concluidas,
         "tarefas_pendentes": len(tarefas_hoje) - tarefas_concluidas,

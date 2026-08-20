@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import AuthMiddleware
 from app.config import ALLOWED_ORIGINS, APP_ENV, APP_NAME, APP_VERSION, PORT
-from app.database import engine
+from app.database import criar_tabelas, engine, migrar_schema
 from app.jinja import templates
 from app.logging_config import RequestLoggingMiddleware, configure_logging
 from app.redis_client import redis_async
@@ -32,6 +32,9 @@ from app.routers import (
     gestao,
     lancamentos,
     logs,
+    importacoes,
+    plano_contas,
+    procedimentos,
     rotinas,
 )
 from app.security import MaxBodySizeMiddleware, SecurityMiddleware
@@ -42,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    criar_tabelas()
+    migrar_schema()
     logger.info(
         "application_started",
         extra={"port": PORT},
@@ -88,6 +93,9 @@ app.include_router(gestao.router)
 app.include_router(cliente_ativo.router)
 app.include_router(admin.router)
 app.include_router(logs.router)
+app.include_router(plano_contas.router)
+app.include_router(procedimentos.router)
+app.include_router(importacoes.router)
 
 
 @app.get("/health", include_in_schema=False)

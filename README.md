@@ -1,216 +1,221 @@
 # FLIC — Gestão financeira para BPO
 
-Aplicação web interna para a operação financeira de clínicas e consultórios:
-receitas, contas a pagar, centros de custo, rateios, conciliação bancária e de
-cartões, orçamento, DRE, rotinas e fechamento.
+Aplicação web interna para operação financeira de clínicas e consultórios: receitas,
+contas a pagar, plano de contas, centros de custo, rateios, importações, conciliação
+bancária e de cartões, orçamento, DRE, rotinas e fechamento.
 
-O sistema usa FastAPI, Jinja2, SQLAlchemy, PostgreSQL, Redis, Alembic e Docker.
-O schema aplica isolamento entre clientes, UUIDs públicos, ciclo de vida,
-constraints, índices e auditoria.
+O projeto usa FastAPI, SQLAlchemy, PostgreSQL, Jinja2 e Docker. Foi estruturado como um
+monólito simples para facilitar manutenção, implantação e entendimento por desenvolvedores
+em início de carreira.
 
-## Segurança e produção
+## Estado atual
 
-- Autenticação JWT em cookie `HttpOnly` ou header Bearer, sem token em URL.
-- Revogação imediata no logout e rate limiting compartilhado no Redis.
-- Limites separados por IP e conta no login.
-- CORS por allowlist exata, proteção de origem e headers contra clickjacking.
-- Autorização central por perfil e filtros de acesso por cliente.
-- Senhas com bcrypt; mensagens de login não enumeram usuários.
-- Dados clínicos, bancários e financeiros sensíveis cifrados na aplicação;
-  dados cadastrais básicos ficam legíveis para relatórios e integrações.
-- Usuários distintos para migrations e runtime; o runtime não pode executar DDL.
-- Logs JSON, request ID, `/health`, `/ready` e `/version`.
-- Imagem sem reload, sem bind mount, filesystem somente leitura e usuário não-root.
+- Banco PostgreSQL 15 com separação de dados por cliente.
+- Campos pessoais e bancários cifrados na aplicação.
+- Autenticação por JWT em cookie `HttpOnly`.
+- Perfis de coordenador, editor, funcionário, secretária e médico.
+- Cadastro de procedimentos e grupos administrativos.
+- Lançamentos e contas a pagar com criação, edição, recorrência e importação em lote.
+- Modelos de planilha versionados em `static/modelos/` para orientar as importações.
+- Auditorias automáticas de banco, ORM, relacionamentos, rotas e criptografia.
+- Aplicação local em `http://localhost:8888`.
 
-## Primeira execução local
+## Tecnologias
 
-Pré-requisitos: Docker Desktop iniciado e Python 3.11 para gerar o `.env`.
+- Python 3.11, FastAPI e Uvicorn;
+- SQLAlchemy e PostgreSQL 15;
+- Jinja2, HTML, CSS e JavaScript;
+- pandas e openpyxl para importações;
+- Docker Compose para o ambiente local;
+- Ruff e Pytest para qualidade e testes.
+
+## Documentação
+
+| Documento | Quando consultar |
+|---|---|
+| [Arquitetura](docs/ARQUITETURA.md) | Para entender módulos, banco e fluxo das requisições. |
+| [Guia de manutenção](docs/GUIA_MANUTENCAO.md) | Antes de criar ou alterar funcionalidades. |
+| [Referência de funções](docs/REFERENCIA_FUNCOES.md) | Para localizar e entender cada função Python. |
+| [Segurança e dados](docs/SEGURANCA_E_DADOS.md) | Ao trabalhar com dados pessoais, chaves e produção. |
+| [Como contribuir](CONTRIBUTING.md) | Padrões, validação e mensagens de commit. |
+| [Manual do usuário](docs/Manual_do_Usuario_FINLUZ.pdf) | Uso operacional das telas. |
+
+## Pré-requisitos
+
+- Docker Desktop instalado e iniciado.
+- Git para versionamento.
+- Python 3.11 apenas para executar ferramentas fora do Docker, opcional.
+
+Não é necessário instalar PostgreSQL localmente.
+
+## Primeira execução
 
 No PowerShell:
 
 ```powershell
-python scripts/setup_local_env.py
-docker compose --profile tools up -d --build
+git clone https://github.com/Gabriel-Gomes05/bpo-financeiro.git
+Set-Location bpo-financeiro
+Copy-Item .env.example .env
+python scripts/setup_encryption_key.py
 ```
 
-O gerador cria apenas as credenciais técnicas e chaves necessárias à
-infraestrutura. Para criar o primeiro coordenador, forneça as credenciais
-transitoriamente, sem salvá-las no `.env`:
+Edite o `.env` e substitua os placeholders de `DATABASE_URL`, `DB_PASSWORD` e
+`SECRET_KEY`. Nunca reutilize a mesma chave para JWT e criptografia de campos.
+
+Depois execute:
 
 ```powershell
-$env:BOOTSTRAP_ADMIN_NAME="Administrador FLIC"
-$env:BOOTSTRAP_ADMIN_EMAIL="admin@empresa.com.br"
-$env:BOOTSTRAP_ADMIN_PASSWORD="defina-uma-senha-forte"
-docker compose run --rm --no-deps `
-  -e BOOTSTRAP_ADMIN_NAME -e BOOTSTRAP_ADMIN_EMAIL -e BOOTSTRAP_ADMIN_PASSWORD `
-  web python scripts/bootstrap_admin.py
-Remove-Item Env:BOOTSTRAP_ADMIN_NAME,Env:BOOTSTRAP_ADMIN_EMAIL,Env:BOOTSTRAP_ADMIN_PASSWORD
+docker compose up -d --build
+curl.exe --max-time 10 -o NUL -w "HTTP=%{http_code}" http://localhost:8888/login
 ```
 
-O bootstrap cria somente o primeiro coordenador e não altera um usuário
-existente.
+O resultado esperado é `HTTP=200`. Acesse:
 
-Serviços locais:
+http://localhost:8888/login
 
-- Aplicação: http://127.0.0.1:8888/login
-- Adminer: http://127.0.0.1:8080
-- Prontidão: http://127.0.0.1:8888/ready
-
-No Adminer, use sistema PostgreSQL, servidor `db`, banco `flic` e as credenciais
-`APP_DB_USER`/`APP_DB_PASSWORD` do `.env`. Esse usuário permite visualizar e
-operar dados, mas não alterar o schema. O Adminer só sobe com o perfil `tools` e
-só é publicado no loopback da máquina.
-
-## Migrations
-
-O startup da aplicação não cria nem modifica tabelas. O serviço `migrate`
-executa Alembic antes do `web`:
-
-```powershell
-docker compose run --rm migrate alembic upgrade head
-docker compose run --rm migrate alembic current
-```
-
-A migration `0001` cria um banco vazio ou adota tabelas existentes. A `0002`
-adiciona colunas de ciclo de vida, UUID, constraints, índices e auditoria de
-forma incremental. Constraints `NOT VALID` protegem registros novos sem
-bloquear a adoção de dados legados; a validação do legado deve ocorrer antes de
-uma migration futura executar `VALIDATE CONSTRAINT`.
-
-## Configuração
-
-Toda configuração está em variáveis de ambiente. Veja [.env.example](.env.example).
-As principais são:
+## Variáveis de ambiente
 
 | Variável | Finalidade |
 |---|---|
-| `DATABASE_URL` | Conexão de runtime, sem privilégio de DDL. |
-| `MIGRATION_DATABASE_URL` | Conexão usada apenas pelo Alembic. |
-| `SECRET_KEY` | Assinatura JWT; mínimo de 64 caracteres aleatórios. |
-| `FIELD_ENCRYPTION_KEY` | Chave Base64 de 64 bytes para campos cifrados. |
-| `BACKUP_ENCRYPTION_KEY` | Chave independente para backups. |
-| `REDIS_URL` | Rate limit e revogação compartilhados. |
-| `APP_URL` | URL pública e origem principal da aplicação. |
-| `EXTRA_ALLOWED_ORIGINS` | Origens adicionais opcionais, como um Hub externo. |
-| `INSECURE_PRIVATE_ORIGINS` | Exceção HTTP temporária, limitada a IP privado e porta explícita. |
-| `TRUSTED_PROXY_CIDRS` | Redes autorizadas a enviar IP encaminhado. |
-| `DB_SSL_MODE` | TLS da conexão PostgreSQL. |
-| `DB_ALLOW_INSECURE_PRIVATE` | Exceção explícita para banco na rede Docker privada. |
+| `DATABASE_URL` | URL SQLAlchemy usada pela aplicação. |
+| `DB_PASSWORD` | Senha usada na criação do PostgreSQL pelo Compose. |
+| `SECRET_KEY` | Assinatura dos tokens JWT. Mínimo de 32 caracteres. |
+| `FIELD_ENCRYPTION_KEY` | Chave Base64 de 64 bytes para os campos cifrados. |
+| `APP_ENV` | `development` ou `production`. |
+| `DB_SSL_MODE` | Modo TLS do PostgreSQL; produção exige modo seguro. |
+| `HTTPS_ONLY` | Obriga cookies seguros em produção. |
+| `ALLOWED_ORIGINS` | Origens web autorizadas, separadas por vírgula. |
 
-O `.env` real é ignorado pelo Git. Nunca reutilize chaves entre JWT, campos e
-backups.
+Veja todos os valores disponíveis em [.env.example](.env.example). O arquivo `.env` real é
+ignorado pelo Git.
 
-## Operação
+## Dados de demonstração
+
+Com os contêineres em execução:
 
 ```powershell
-# Estado e logs
-docker compose --profile tools ps
+docker compose exec -T web python seed.py
+```
+
+> Atenção: `seed.py` é destrutivo e apaga os dados existentes. Use apenas em desenvolvimento.
+
+Para uma base maior de testes, revise primeiro `app/seed_massivo.py`. Nunca execute seeds em
+produção.
+
+## Comandos do dia a dia
+
+```powershell
+# Estado dos serviços
+docker compose ps
+
+# Logs da aplicação
 docker compose logs --tail 100 web
 
-# Rebuild e migration
-docker compose build web migrate
-docker compose run --rm migrate alembic upgrade head
-docker compose up -d --force-recreate web
+# Reiniciar somente a aplicação
+docker compose restart web
 
-# Parar sem remover os dados
+# Recriar após mudar dependências ou Dockerfile
+docker compose up -d --build --force-recreate web
+
+# Parar sem excluir o volume do banco
 docker compose down
 ```
 
-Não execute `docker compose down -v` sem backup validado: `-v` remove os volumes
-do PostgreSQL, Redis e uploads.
+Não use `docker compose down -v` sem um backup validado: `-v` remove o volume do PostgreSQL.
 
-## Dados demonstrativos
+## Validação antes de publicar
 
 ```powershell
-$env:SEED_ADMIN_PASSWORD="defina-uma-senha-forte"
-$env:SEED_USER_PASSWORD="defina-outra-senha-forte"
-docker compose run --rm --no-deps `
-  -e SEED_ADMIN_PASSWORD -e SEED_USER_PASSWORD web python seed.py
-Remove-Item Env:SEED_ADMIN_PASSWORD,Env:SEED_USER_PASSWORD
+python -m pip install -r requirements-dev.txt
+ruff check app scripts tests
+pytest
+python -m compileall app scripts
+python scripts/generate_function_reference.py --check
+
+docker compose exec -T web python scripts/audit_connections.py
+docker compose exec -T web python scripts/verify_field_encryption.py
+
+curl.exe --max-time 10 -o NUL -w "HTTP=%{http_code}" http://localhost:8888/login
 ```
 
-O seed exige senhas fortes via ambiente e é destrutivo: ele apaga dados
-existentes. Use apenas em um banco local descartável. O bootstrap de
-administrador não é destrutivo.
+O auditor de conexões verifica tabelas, chaves estrangeiras, models, relacionamentos ORM e
+as principais telas autenticadas. O verificador de criptografia confirma que não restou
+texto legado nos campos protegidos.
 
-## Backup cifrado
+## Boas práticas
+
+- Crie uma branch por mudança e mantenha commits pequenos e objetivos.
+- Use mensagens de commit no padrão `feat:`, `fix:`, `docs:`, `refactor:` ou `chore:`.
+- Preserve o filtro por `cliente_id` em consultas para evitar acesso entre clientes.
+- Valide autorização no servidor; controles visuais não substituem essa validação.
+- Não registre senhas, tokens, chaves, dados bancários ou conteúdo de documentos nos logs.
+- Nunca versione `.env`, uploads, dumps, backups ou dados reais de clientes.
+- Atualize testes e documentação junto com mudanças de comportamento.
+- Execute Ruff, Pytest, compilação e auditorias antes de publicar.
+
+O fluxo completo para contribuições está em [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Backup seguro
+
+Crie o dump dentro do contêiner e copie para a pasta ignorada pelo Git:
 
 ```powershell
 New-Item -ItemType Directory -Force backups | Out-Null
-docker compose exec -T db pg_dump -U flic_migrator -d flic -Fc -f /tmp/flic.dump
-docker cp flic-db-1:/tmp/flic.dump backups/flic.dump
+docker compose exec -T db pg_dump -U bpo -d bpo_financeiro -Fc -f /tmp/flic.dump
+docker cp bpo-financeiro-db-1:/tmp/flic.dump backups/flic.dump
 python scripts/backup_crypto.py encrypt backups/flic.dump backups/flic.dump.enc --delete-source
 ```
 
-Restaure primeiro em um banco isolado:
+Para preparar uma restauração:
 
 ```powershell
 python scripts/backup_crypto.py decrypt backups/flic.dump.enc backups/flic.restore.dump
 ```
 
-O utilitário usa AES-GCM em streaming e uma chave exclusiva de backup.
+Depois valide o arquivo em um banco isolado. Não teste restauração sobre a base ativa.
 
-## Validação
-
-```powershell
-python -m compileall app alembic scripts tests
-docker compose run --rm --no-deps web sh -c "pip install --target /tmp/testdeps 'pytest>=8,<9' 'httpx2>=2.9,<3' && PYTHONPATH=/tmp/testdeps:/app python -m pytest -q -o cache_dir=/tmp/pytest-cache"
-curl.exe http://127.0.0.1:8888/health
-curl.exe http://127.0.0.1:8888/ready
-curl.exe http://127.0.0.1:8888/version
-```
-
-Antes de publicar, execute também `pip-audit` contra `requirements.txt`.
-
-## Proxy HTTPS externo
-
-O HTTPS é terminado pelo Caddy central na VM `192.168.0.250`. A configuração
-do Caddy pertence à infraestrutura central e não fica neste repositório.
-
-- use `APP_ENV=production`;
-- defina `APP_URL=https://seu-dominio`;
-- mantenha `BIND_ADDRESS=0.0.0.0` para testes locais e acesso pela rede;
-- mantenha `TRUSTED_PROXY_CIDRS=192.168.0.250/32`;
-- permita a porta da aplicação no firewall somente para a VM do Caddy;
-- preserve o `.env` operacional durante atualizações;
-- não inicie o perfil `tools` em produção.
-
-`APP_ENV=production` ativa automaticamente cookies seguros e HSTS. `APP_URL`
-define automaticamente a origem principal aceita; use `EXTRA_ALLOWED_ORIGINS`
-apenas quando outro frontend, como o futuro Hub, precisar chamar a aplicação.
-
-Quando NAT loopback ou DNS interno ainda não estiver disponível, uma origem
-HTTP privada pode ser liberada explicitamente, por exemplo
-`INSECURE_PRIVATE_ORIGINS=http://192.168.0.102:8888`. A exceção só afeta o
-cookie emitido para esse host privado; o domínio público continua exigindo
-HTTPS. Remova a exceção assim que o acesso interno pelo domínio estiver
-resolvido.
-
-Use TLS para PostgreSQL externo. Quando o banco estiver exclusivamente na rede
-Docker privada da mesma VM, use `DB_SSL_MODE=disable` somente junto de
-`DB_ALLOW_INSECURE_PRIVATE=true`.
-
-Não publique PostgreSQL ou Redis. Como `BIND_ADDRESS=0.0.0.0` aceita conexões
-pelas interfaces de rede da VM, a restrição de origem deve ser feita no
-firewall.
-
-## Estrutura
+## Estrutura resumida
 
 ```text
-Flic/
-|- alembic/                # migrations versionadas
+bpo-financeiro/
 |- app/
-|  |- config.py           # configuração e validação
-|  |- database.py         # engine e sessão de runtime
-|  |- models.py           # tabelas e relacionamentos
-|  |- authorization.py    # matriz central de permissões
-|  |- routers/            # endpoints por módulo
-|  |- services/           # regras reutilizáveis
-|  `- templates/          # interface Jinja2
-|- docker/                # inicialização do PostgreSQL
-|- scripts/               # bootstrap, auditoria, backup e chaves
-|- tests/                 # regressões funcionais e de segurança
-|- docker-compose.yml
+|  |- main.py              # inicialização e routers
+|  |- config.py            # configurações e validações
+|  |- database.py          # conexão, sessão e schema
+|  |- models.py            # tabelas e relacionamentos
+|  |- field_encryption.py  # criptografia de campos sensíveis
+|  |- routers/             # endpoints por funcionalidade
+|  |- services/            # regras reutilizáveis
+|  `- templates/           # telas Jinja2
+|- docs/                   # arquitetura, segurança e manuais
+|- scripts/                # auditoria, chaves, backup e documentação
+|- static/                 # JavaScript e imagens
+|  `- modelos/             # planilhas-modelo sem dados reais
+|- tests/                  # testes automatizados
+|- docker-compose.yml      # aplicação e PostgreSQL
 |- Dockerfile
 `- requirements.txt
 ```
+
+## Fluxos principais
+
+1. Cadastre usuários, clientes, contas bancárias e centros de custo.
+2. Lance receitas e despesas, com rateio quando necessário.
+3. Importe movimentos bancários e vendas de cartão.
+4. Revise e confirme as sugestões de conciliação.
+5. Acompanhe orçamento, DRE, rotinas e fechamento.
+
+## Produção
+
+Antes de usar dados reais:
+
+- configure `APP_ENV=production`, HTTPS e TLS do PostgreSQL;
+- use banco gerenciado e usuário sem privilégios administrativos;
+- armazene chaves em um gerenciador de segredos;
+- configure backup automático cifrado e teste de restauração;
+- mantenha `FIELD_ENCRYPTION_KEY` fora do repositório e com cópia segura;
+- restrinja `ALLOWED_ORIGINS` ao domínio oficial;
+- execute as auditorias em cada publicação.
+
+Este repositório é privado. Ainda assim, trate qualquer commit como potencialmente público:
+segredos e dados de clientes nunca devem entrar no histórico Git.
