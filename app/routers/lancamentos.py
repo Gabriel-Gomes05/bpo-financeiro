@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
+from app.auth import get_usuario_atual
 from app.authorization import Permission, require_permission
 from app.database import get_db
 from app.models import (

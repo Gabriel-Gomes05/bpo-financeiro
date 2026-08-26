@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import AuthMiddleware
 from app.config import ALLOWED_ORIGINS, APP_ENV, APP_NAME, APP_VERSION, PORT
-from app.database import criar_tabelas, engine, migrar_schema
+from app.database import engine
 from app.jinja import templates
 from app.logging_config import RequestLoggingMiddleware, configure_logging
 from app.redis_client import redis_async
@@ -45,8 +45,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    criar_tabelas()
-    migrar_schema()
     logger.info(
         "application_started",
         extra={"port": PORT},

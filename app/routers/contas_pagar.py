@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
+from app.auth import get_usuario_atual
 from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
