@@ -49,7 +49,8 @@ def schema_esta_atualizado(connection) -> bool:
         colunas_existentes = {
             coluna["name"] for coluna in inspector.get_columns(nome_tabela)
         }
-        if not set(tabela.columns).issubset(colunas_existentes):
+        colunas_modelo = {coluna.name for coluna in tabela.columns}
+        if not colunas_modelo.issubset(colunas_existentes):
             return False
     return True
 
