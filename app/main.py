@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import AuthMiddleware
 from app.config import ALLOWED_ORIGINS, APP_ENV, APP_NAME, APP_VERSION, PORT
-from app.database import engine
+from app.database import engine, schema_esta_atualizado
 from app.jinja import templates
 from app.logging_config import RequestLoggingMiddleware, configure_logging
 from app.redis_client import redis_async
@@ -107,6 +107,8 @@ async def ready():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+            if not schema_esta_atualizado(connection):
+                checks["database"] = "schema_outdated"
     except SQLAlchemyError:
         checks["database"] = "error"
     try:

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import (
@@ -35,6 +35,23 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+def schema_esta_atualizado(connection) -> bool:
+    """Confere se todas as tabelas e colunas mapeadas existem no banco."""
+    from app import models  # noqa: F401
+
+    inspector = inspect(connection)
+    tabelas_existentes = set(inspector.get_table_names())
+    for nome_tabela, tabela in Base.metadata.tables.items():
+        if nome_tabela not in tabelas_existentes:
+            return False
+        colunas_existentes = {
+            coluna["name"] for coluna in inspector.get_columns(nome_tabela)
+        }
+        if not set(tabela.columns).issubset(colunas_existentes):
+            return False
+    return True
 
 
 @event.listens_for(Session, "before_flush")
