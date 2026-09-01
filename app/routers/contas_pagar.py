@@ -22,7 +22,19 @@ from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
 from app.database import get_db
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
-from app.models import CentroCusto, ClienteBPO, ContaPagar, ContaPagarCentroCustoRateio, FormaPagamento, StatusContaPagar, TipoContaPagar, Usuario, PerfilUsuario
+from app.models import (
+    CentroCusto,
+    ClienteBPO,
+    ContaPagar,
+    ContaPagarCentroCustoRateio,
+    ExtratoLinhaBancaria,
+    FormaPagamento,
+    MovimentacaoBancaria,
+    PerfilUsuario,
+    StatusContaPagar,
+    TipoContaPagar,
+    Usuario,
+)
 from app.services.log_service import registrar as _log
 from app.errors import public_import_error
 
@@ -372,6 +384,77 @@ async def salvar_edicao_conta(
         detalhes=f"Conta #{conta_id} editada",
     )
     return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+
+
+@router.post("/contas-pagar/{conta_id}/excluir")
+async def excluir_conta(
+    conta_id: int,
+    request: Request,
+    cliente_id: int = Form(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_contas_pagar),
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    ids_permitidos = _ids_clientes_do_usuario(db, usuario)
+    destino = f"/contas-pagar?cliente_id={cliente_id}"
+    if not conta or conta.cliente_id not in ids_permitidos or conta.cliente_id != cliente_id:
+        return RedirectResponse(url=destino, status_code=303)
+
+    if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais:
+        return RedirectResponse(
+            url=f"{destino}&flash=Conta+com+pagamento+registrado+n%C3%A3o+pode+ser+exclu%C3%ADda",
+            status_code=303,
+        )
+
+    possui_conciliacao = (
+        db.query(MovimentacaoBancaria.id)
+        .filter(MovimentacaoBancaria.conta_pagar_id == conta.id)
+        .first()
+        or db.query(ExtratoLinhaBancaria.id)
+        .filter(ExtratoLinhaBancaria.conta_pagar_id == conta.id)
+        .first()
+    )
+    if possui_conciliacao:
+        return RedirectResponse(
+            url=f"{destino}&flash=Conta+vinculada+a+uma+concilia%C3%A7%C3%A3o+n%C3%A3o+pode+ser+exclu%C3%ADda",
+            status_code=303,
+        )
+
+    possui_recorrencias = db.query(ContaPagar.id).filter(
+        ContaPagar.recorrencia_grupo_id == conta.id,
+        ContaPagar.id != conta.id,
+    ).first()
+    if possui_recorrencias:
+        return RedirectResponse(
+            url=f"{destino}&flash=Conta+possui+ocorr%C3%AAncias+recorrentes+e+n%C3%A3o+pode+ser+exclu%C3%ADda",
+            status_code=303,
+        )
+
+    descricao = conta.descricao
+    documento_path = conta.documento_path
+    db.delete(conta)
+    db.commit()
+
+    if documento_path:
+        upload_dir = Path(UPLOAD_DIR).resolve()
+        caminho = Path(documento_path).resolve()
+        if upload_dir in caminho.parents and caminho.is_file():
+            try:
+                caminho.unlink()
+            except OSError:
+                logger.warning("conta_documento_delete_failed", extra={"conta_id": conta_id})
+
+    _log(
+        db,
+        "Conta a pagar excluída",
+        "contas_pagar",
+        usuario_id=usuario.id,
+        usuario_nome=usuario.nome,
+        cliente_id=cliente_id,
+        detalhes=f"Conta #{conta_id} excluída: {descricao}",
+        ip=request.client.host if request.client else None,
+    )
+    return RedirectResponse(url=f"{destino}&flash=Conta+exclu%C3%ADda+com+sucesso", status_code=303)
 
 
 @router.post("/contas-pagar")
