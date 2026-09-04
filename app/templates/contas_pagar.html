@@ -1,5 +1,5 @@
 ﻿{% extends "base.html" %}
-{% block title %}Contas a Pagar â€” FLIC{% endblock %}
+{% block title %}Contas a Pagar — FLIC{% endblock %}
 {% block page_title %}Contas a Pagar{% endblock %}
 
 {% block content %}
@@ -104,12 +104,12 @@
           <tr>
             <th class="px-4 py-3 text-left">Vencimento</th>
             <th class="px-4 py-3 text-left">Cliente</th>
-            <th class="px-4 py-3 text-left">DescriÃ§Ã£o</th>
+            <th class="px-4 py-3 text-left">Descrição</th>
             <th class="px-4 py-3 text-left">Fornecedor</th>
             <th class="px-4 py-3 text-left">Centro de custo</th>
             <th class="px-4 py-3 text-right">Valor</th>
             <th class="px-4 py-3 text-center">Status</th>
-            <th class="px-4 py-3 text-center">AÃ§Ã£o</th>
+            <th class="px-4 py-3 text-center">Ação</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -122,14 +122,14 @@
               data-id="{{ conta.id }}"
               data-cliente="{{ conta.cliente.nome | e }}"
               data-descricao="{{ conta.descricao | e }}"
-              data-fornecedor="{{ conta.fornecedor or 'â€”' }}"
+              data-fornecedor="{{ conta.fornecedor or '—' }}"
               data-tipo="{{ conta.tipo.value | capitalize }}"
               data-valor="R$ {{ '%.2f'|format(conta.valor|float) }}"
-              data-categoria="{% if conta.rateios_centro_custo %}{% for r in conta.rateios_centro_custo %}{{ r.centro_custo.nome }}: {{ '%.2f'|format(r.percentual|float) }}% = R$ {{ '%.2f'|format(r.valor|float) }}{% if not loop.last %} | {% endif %}{% endfor %}{% elif conta.categoria_dre %}{{ categoria_nome.get(conta.categoria_dre, 'â€”') }}{% else %}â€”{% endif %}"
+              data-categoria="{% if conta.rateios_centro_custo %}{% for r in conta.rateios_centro_custo %}{{ r.centro_custo.nome }}: {{ '%.2f'|format(r.percentual|float) }}% = R$ {{ '%.2f'|format(r.valor|float) }}{% if not loop.last %} | {% endif %}{% endfor %}{% elif conta.categoria_dre %}{{ categoria_nome.get(conta.categoria_dre, '—') }}{% else %}—{% endif %}"
               data-vencimento="{{ conta.vencimento.strftime('%d/%m/%Y') }}"
-              data-pagamento="{{ conta.data_pagamento.strftime('%d/%m/%Y') if conta.data_pagamento else 'â€”' }}"
+              data-pagamento="{{ conta.data_pagamento.strftime('%d/%m/%Y') if conta.data_pagamento else '—' }}"
               data-status="{{ conta.status.value | replace('_',' ') | capitalize }}"
-              data-lancado="{{ conta.lancado_por.nome if conta.lancado_por else 'â€”' }}"
+              data-lancado="{{ conta.lancado_por.nome if conta.lancado_por else '—' }}"
               data-criado="{{ conta.criado_em.strftime('%d/%m/%Y %H:%M') }}"
               data-obs="{{ conta.observacao or '' }}"
               data-doc-url="{% if conta.documento_path %}/contas-pagar/{{ conta.id }}/documento{% endif %}">
@@ -141,7 +141,7 @@
             </td>
             <td class="px-4 py-3 font-medium text-gray-800">{{ conta.cliente.nome }}</td>
             <td class="px-4 py-3 text-gray-700">{{ conta.descricao }}</td>
-            <td class="px-4 py-3 text-gray-500">{{ conta.fornecedor or 'â€”' }}</td>
+            <td class="px-4 py-3 text-gray-500">{{ conta.fornecedor or '—' }}</td>
             <td class="px-4 py-3 text-xs text-gray-500">
               {% if conta.plano_conta %}
               <span class="rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">{{ conta.plano_conta.codigo or '—' }} - {{ conta.plano_conta.nome }}</span>
@@ -155,7 +155,7 @@
               <span class="rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
                 {{ categoria_nome.get(conta.categoria_dre, conta.categoria_dre) }}
               </span>
-              {% else %}â€”{% endif %}
+              {% else %}—{% endif %}
             </td>
             <td class="px-4 py-3 text-right font-medium text-gray-800">
               R$ {{ '%.2f'|format(conta.valor|float) }}
@@ -229,7 +229,7 @@
             transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; display:none; flex-direction:column;"
      aria-hidden="true">
 
-  <!-- CabeÃ§alho do drawer -->
+  <!-- Cabeçalho do drawer -->
   <div style="padding:20px 24px 16px; border-bottom:1px solid #e2e8f0; display:flex; align-items:flex-start; justify-content:space-between; flex-shrink:0;">
     <div>
       <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Conta a Pagar</p>
@@ -296,7 +296,7 @@
       </div>
 
       <div>
-        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">LanÃ§ado por</p>
+        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Lançado por</p>
         <p id="d-lancado" style="font-size:13px; color:#374151;"></p>
       </div>
 
@@ -307,9 +307,9 @@
 
     </div>
 
-    <!-- ObservaÃ§Ã£o -->
+    <!-- Observação -->
     <div id="bloco-obs" style="display:none;">
-      <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;">ObservaÃ§Ã£o</p>
+      <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;">Observação</p>
       <p id="d-obs" style="font-size:13px; color:#374151; background:#f8fafc; border-radius:8px; padding:12px; line-height:1.6;"></p>
     </div>
 
