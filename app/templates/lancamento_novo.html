@@ -90,12 +90,17 @@
                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div class="lg:col-span-2">
-        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Serviço / Procedimento</label>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Descrição da receita</label>
+        <input type="text" name="descricao_servico" placeholder="Ex: Consulta cardiológica"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Plano de contas</label>
         <select name="plano_conta_id"
                 class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          <option value="">Selecione o serviço...</option>
+          <option value="">Selecione a conta...</option>
           {% for pc in planos_conta_receita %}
-          <option value="{{ pc.id }}">{{ pc.nome }}</option>
+          <option value="{{ pc.id }}" data-cliente-id="{{ pc.cliente_id or '' }}">{{ pc.codigo or '—' }} - {{ pc.nome }}</option>
           {% endfor %}
         </select>
       </div>
@@ -201,6 +206,18 @@
 
   const centrosPorCliente = {{ centros_por_cliente | tojson }};
 
+  function filtrarPlanosConta(clienteId) {
+    document.querySelectorAll('[name="plano_conta_id"]').forEach(sel => {
+      Array.from(sel.options).forEach(opt => {
+        if (!opt.value) return;
+        const pertence = !opt.dataset.clienteId || opt.dataset.clienteId === String(clienteId);
+        opt.hidden = !pertence;
+        opt.disabled = !pertence;
+        if (!pertence && opt.selected) sel.value = '';
+      });
+    });
+  }
+
   function popularCentrosCusto(sel, clienteId) {
     const centros = centrosPorCliente[clienteId] || [];
     sel.innerHTML = '<option value="">— Selecione —</option>';
@@ -300,6 +317,7 @@
   }
 
   function onClienteChange(clienteId) {
+    filtrarPlanosConta(clienteId);
     document.querySelectorAll('.centro-custo-select').forEach(sel => {
       popularCentrosCusto(sel, clienteId);
     });
@@ -438,5 +456,6 @@
   });
 
   adicionarLinha();
+  filtrarPlanosConta(document.querySelector('[name="cliente_id"]').value);
 </script>
 {% endblock %}

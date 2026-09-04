@@ -20,7 +20,8 @@
     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
       <div>
         <h3 class="font-semibold text-gray-700">Importar planilha</h3>
-        <p class="text-xs text-gray-400 mt-0.5">Colunas: <span class="font-mono">descricao, valor, vencimento</span> (+ fornecedor, tipo, observacao)</p>
+        <p class="text-xs text-gray-400 mt-0.5">Colunas: <span class="font-mono">descricao, valor, vencimento, plano_de_contas</span> (+ fornecedor, tipo, observacao)</p>
+        <a href="/static/modelos/modelo_contas_pagar.xlsx" download class="mt-1 inline-block text-xs font-semibold text-[#5e93cc] hover:underline">Baixar planilha modelo</a>
       </div>
       <button onclick="document.getElementById('form-importar').classList.toggle('hidden')"
               class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
@@ -142,7 +143,9 @@
             <td class="px-4 py-3 text-gray-700">{{ conta.descricao }}</td>
             <td class="px-4 py-3 text-gray-500">{{ conta.fornecedor or 'â€”' }}</td>
             <td class="px-4 py-3 text-xs text-gray-500">
-              {% if conta.rateios_centro_custo %}
+              {% if conta.plano_conta %}
+              <span class="rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">{{ conta.plano_conta.codigo or '—' }} - {{ conta.plano_conta.nome }}</span>
+              {% elif conta.rateios_centro_custo %}
                 {% for r in conta.rateios_centro_custo %}
                 <span class="mb-1 inline-block rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
                   {{ r.centro_custo.nome }} - {{ '%.2f'|format(r.percentual|float) }}% / R$ {{ '%.2f'|format(r.valor|float) }}

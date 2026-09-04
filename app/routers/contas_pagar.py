@@ -14,6 +14,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from app.jinja import templates
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual
@@ -31,6 +32,7 @@ from app.models import (
     FormaPagamento,
     MovimentacaoBancaria,
     PerfilUsuario,
+    PlanoConta,
     StatusContaPagar,
     TipoContaPagar,
     Usuario,
@@ -41,6 +43,25 @@ from app.errors import public_import_error
 router = APIRouter()
 require_contas_pagar = require_permission(Permission.CONTAS_PAGAR)
 logger = logging.getLogger(__name__)
+
+
+def _planos_despesa(db: Session, cliente_ids: list[int]) -> list[PlanoConta]:
+    return db.query(PlanoConta).filter(
+        PlanoConta.tipo == "despesa",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id.in_(cliente_ids)),
+    ).order_by(PlanoConta.codigo.asc(), PlanoConta.nome.asc()).all()
+
+
+def _plano_despesa_valido(db: Session, cliente_id: int, plano_conta_id: int | None) -> PlanoConta | None:
+    if not plano_conta_id:
+        return None
+    return db.query(PlanoConta).filter(
+        PlanoConta.id == plano_conta_id,
+        PlanoConta.tipo == "despesa",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).first()
 
 
 
@@ -295,6 +316,7 @@ async def pagina_nova_conta(
         "clientes": clientes,
         "cliente_selecionado": cliente_id if cliente_id in ids_permitidos else None,
         "centros_custo_por_cliente": centros_por_cliente,
+        "planos_conta_despesa": _planos_despesa(db, ids_permitidos),
     })
 
 
@@ -344,6 +366,7 @@ async def form_editar_conta(
         "conta": conta,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "formas_pagamento": list(FormaPagamento),
+        "planos_conta_despesa": _planos_despesa(db, [conta.cliente_id]),
     })
 
 
@@ -356,6 +379,7 @@ async def salvar_edicao_conta(
     vencimento: date = Form(...),
     data_competencia: Optional[date] = Form(None),
     forma_pagamento: Optional[str] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
@@ -375,6 +399,9 @@ async def salvar_edicao_conta(
     conta.vencimento = vencimento
     conta.data_competencia = data_competencia or vencimento
     conta.forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
+    plano = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
+    conta.plano_conta_id = plano.id if plano else None
+    conta.categoria_dre = plano.chave if plano else None
     conta.observacao = observacao or None
     db.commit()
     _log(
@@ -467,6 +494,7 @@ async def criar_conta(
     data_competencia: Optional[date] = Form(None),
     forma_pagamento: Optional[str] = Form(None),
     categoria_dre: Optional[str] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
     rateio_centro_custo_key: List[str] = Form(default=[]),
     rateio_percentual: List[str] = Form(default=[]),
     especialidade: Optional[str] = Form(None),
@@ -506,6 +534,7 @@ async def criar_conta(
             status_code=303,
         )
     categoria_compat = rateios[0]["categoria_key"] if rateios else _categoria_dre_valida(db, cliente_id, categoria_dre)
+    plano = _plano_despesa_valido(db, cliente_id, plano_conta_id)
     especialidade_valor = (especialidade or "").strip() or next(
         (r["centro"].especialidade for r in rateios if r["centro"].is_medico and r["centro"].especialidade),
         None,
@@ -521,6 +550,7 @@ async def criar_conta(
         data_competencia=data_competencia,
         forma_pagamento=forma_pagamento,
         categoria_dre=categoria_compat,
+        plano_conta_id=plano.id if plano else None,
         especialidade=especialidade_valor,
         status=StatusContaPagar.pendente,
         documento_path=documento_path,
@@ -557,6 +587,7 @@ async def criar_conta(
                 data_competencia=data_competencia_ocorrencia,
                 forma_pagamento=forma_pagamento,
                 categoria_dre=categoria_compat,
+                plano_conta_id=plano.id if plano else None,
                 especialidade=especialidade_valor,
                 status=StatusContaPagar.pendente,
                 observacao=observacao or None,
@@ -627,6 +658,14 @@ async def importar_contas(
         c_valor = _col(df, ["valor", "value", "amount", "vlr"])
         c_venc  = _col(df, ["vencimento", "data_vencimento", "vence", "due_date", "data"])
         c_obs   = _col(df, ["observacao", "obs", "nota", "note"])
+        c_plano = _col(df, ["plano_de_contas", "plano_contas", "plano_de_conta", "plano_conta", "codigo_plano_conta"])
+
+        planos_importacao = _planos_despesa(db, [cliente_id])
+        planos_por_referencia = {}
+        for plano in planos_importacao:
+            if plano.codigo:
+                planos_por_referencia[_norm(plano.codigo)] = plano
+            planos_por_referencia[_norm(plano.nome)] = plano
 
         if not c_desc or not c_valor or not c_venc:
             raise ValueError(
@@ -654,6 +693,8 @@ async def importar_contas(
 
                 tipo_raw = str(row[c_tipo]).strip().lower() if c_tipo and pd.notna(row[c_tipo]) else "pontual"
                 tipo = TipoContaPagar.fixa if "fix" in tipo_raw or "recor" in tipo_raw else TipoContaPagar.pontual
+                referencia_plano = str(row[c_plano]).strip() if c_plano and pd.notna(row[c_plano]) else ""
+                plano = planos_por_referencia.get(_norm(referencia_plano)) if referencia_plano else None
 
                 db.add(ContaPagar(
                     cliente_id=cliente_id,
@@ -662,6 +703,8 @@ async def importar_contas(
                     tipo=tipo,
                     valor=valor,
                     vencimento=vencimento,
+                    plano_conta_id=plano.id if plano else None,
+                    categoria_dre=plano.chave if plano else None,
                     observacao=observacao,
                     status=StatusContaPagar.pendente,
                     lancado_por_id=usuario.id,

@@ -25,8 +25,14 @@
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Categoria / Plano de conta</label>
-        <input type="text" disabled
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Plano de contas</label>
+        <select name="plano_conta_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Selecione...</option>
+          {% for pc in planos_conta_despesa %}
+          <option value="{{ pc.id }}" {% if conta.plano_conta_id == pc.id %}selected{% endif %}>{{ pc.codigo or '—' }} - {{ pc.nome }}</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" disabled
                value="{% if conta.rateios_centro_custo %}Rateio por centro de custo (edite pelo cadastro de rateio){% elif conta.categoria_dre %}{{ categoria_nome.get(conta.categoria_dre, conta.categoria_dre) }}{% else %}— não definida{% endif %}"
                class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
       </div>

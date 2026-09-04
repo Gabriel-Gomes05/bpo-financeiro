@@ -25,6 +25,7 @@ from app.models import (
     FormaPagamento,
     MovimentacaoBancaria,
     PerfilUsuario,
+    PlanoConta,
     StatusConciliacao,
     StatusMovimentacaoBancaria,
     StatusTransferenciaCartao,
@@ -758,11 +759,17 @@ async def pagina_lancamentos(
         CentroCusto.cliente_id == cliente_valido,
         CentroCusto.ativo == True,
     ).order_by(CentroCusto.nome).all() if cliente_valido else []
+    planos_conta = db.query(PlanoConta).filter(
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_valido),
+    ).order_by(PlanoConta.codigo.asc(), PlanoConta.nome.asc()).all() if cliente_valido else []
     return templates.TemplateResponse("conciliacao_lancamentos.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_valido,
         "lancamentos": lancamentos,
         "centros_custo": centros_custo,
+        "planos_conta": planos_conta,
         "hoje": date_type.today().isoformat(),
         "flash_error": flash,
     })
@@ -811,12 +818,18 @@ async def importar_lancamentos_conciliacao(
         CentroCusto.cliente_id == cliente_id,
         CentroCusto.ativo == True,
     ).order_by(CentroCusto.nome).all()
+    planos_conta = db.query(PlanoConta).filter(
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).order_by(PlanoConta.codigo.asc(), PlanoConta.nome.asc()).all()
     return templates.TemplateResponse("conciliacao_lancamentos.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes_do_usuario(db, usuario),
         "cliente_selecionado": cliente_id,
         "lancamentos": lancamentos,
         "centros_custo": centros_custo,
+        "planos_conta": planos_conta,
         "flash_success": flash_success,
         "flash_error": flash_error,
         "hoje": date_type.today().isoformat(),
@@ -834,6 +847,7 @@ async def criar_lancamento_manual_conciliacao(
     rateios_json: str = Form("[]"),
     especialidade: str = Form(""),
     descricao_servico: str = Form(""),
+    plano_conta_id: Optional[int] = Form(None),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
     condicao_pagamento: str = Form("avista"),
@@ -896,6 +910,12 @@ async def criar_lancamento_manual_conciliacao(
          if rateio["centro"].is_medico and rateio["centro"].especialidade),
         None,
     )
+    plano = db.query(PlanoConta).filter(
+        PlanoConta.id == plano_conta_id,
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).first() if plano_conta_id else None
 
     for parcela_numero, dias in enumerate(intervalos, 1):
         valor_item = valor_ultima if parcela_numero == qtd_parcelas else valor_parcela
@@ -918,6 +938,7 @@ async def criar_lancamento_manual_conciliacao(
             medico=cc.nome if cc else None,
             especialidade=especialidade_valor,
             descricao_servico=descricao_servico.strip() or None,
+            plano_conta_id=plano.id if plano else None,
             valor_servico=valor_item,
             condicao_pagamento=condicao,
             parcela_numero=parcela_numero,

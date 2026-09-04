@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import List, Tuple
 
 import pandas as pd
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -14,6 +15,7 @@ from app.models import (
     ExtratoLinhaBancaria,
     FormaPagamento,
     MovimentacaoBancaria,
+    PlanoConta,
     StatusConciliacao,
     StatusExtratoLinha,
     StatusMovimentacaoBancaria,
@@ -186,6 +188,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
     c_liquido  = _col("valor_liquido")
     c_credito  = _col("data_credito", "data_do_credito")
     c_obs      = _col("observacao")
+    c_plano    = _col("plano_de_contas", "plano_contas", "plano_de_conta", "plano_conta", "codigo_plano_conta")
 
     if not c_data or not c_valor:
         raise ValueError("Arquivo não contém colunas de data e valor reconhecíveis.")
@@ -216,6 +219,17 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
         "dinheiro": CondicaoPagamento.dinheiro,
     }
 
+    planos = db.query(PlanoConta).filter(
+        PlanoConta.tipo == "receita",
+        PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).all()
+    planos_por_referencia = {}
+    for plano in planos:
+        if plano.codigo:
+            planos_por_referencia[_norm_col(plano.codigo)] = plano
+        planos_por_referencia[_norm_col(plano.nome)] = plano
+
     importados = 0
     for _, row in df.iterrows():
         try:
@@ -235,6 +249,8 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
 
         cond_k = re.sub(r"[^a-z0-9]+", "_", (_v(c_condicao) or "").lower()).strip("_")
         condicao = _COND.get(cond_k, CondicaoPagamento.avista)
+        referencia_plano = _v(c_plano) or ""
+        plano = planos_por_referencia.get(_norm_col(referencia_plano)) if referencia_plano else None
 
         data_prev = None
         if c_prev:
@@ -286,6 +302,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
             especialidade=_v(c_espec),
             tipo_servico=_v(c_tipo_srv),
             descricao_servico=_v(c_desc),
+            plano_conta_id=plano.id if plano else None,
             valor_servico=valor,
             condicao_pagamento=condicao,
             parcela_numero=parcela,

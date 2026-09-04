@@ -54,6 +54,7 @@
   <div>
     <p class="px-1 mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Contas a Pagar</p>
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {{ card("Contas a pagar em lote", "Cadastro de contas a pagar, incluindo o plano de contas.", "modelo_contas_pagar.xlsx", "/contas-pagar/importar") }}
       {{ card("Cartão corporativo", "Despesas pagas com cartão corporativo (lotes de fatura).", "modelo_extrato_cartao.xlsx", "/contas-pagar/conciliacao-cartao/processar") }}
       {{ card("Banco (genérico)", "Extrato bancário para conciliar contas a pagar.", "modelo_banco_contas_pagar.xlsx", "/contas-pagar/conciliacao-banco/importar") }}
     </div>

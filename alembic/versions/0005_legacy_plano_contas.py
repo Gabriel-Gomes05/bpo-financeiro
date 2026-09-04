@@ -73,6 +73,14 @@ def _add_fk(table: str, column: str, remote_table: str, *, ondelete: str | None 
 
 def _create_planos_conta() -> None:
     if "planos_conta" in inspect(op.get_bind()).get_table_names():
+        # Bancos legados podem ter a tabela sem o índice parcial exigido pelo
+        # ON CONFLICT e sem o default de auditoria exigido nas inclusões.
+        op.execute("ALTER TABLE planos_conta ALTER COLUMN public_id SET DEFAULT gen_random_uuid()")
+        op.execute("UPDATE planos_conta SET public_id=gen_random_uuid() WHERE public_id IS NULL")
+        op.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_planos_conta_chave_global "
+            "ON planos_conta (chave) WHERE cliente_id IS NULL"
+        )
         return
     op.create_table(
         "planos_conta",

@@ -129,6 +129,16 @@
           <input type="text" name="descricao_servico"
                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
         </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plano de contas</label>
+          <select name="plano_conta_id"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">Selecione...</option>
+            {% for pc in planos_conta %}
+            <option value="{{ pc.id }}">{{ pc.codigo or '—' }} - {{ pc.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
 
       <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">

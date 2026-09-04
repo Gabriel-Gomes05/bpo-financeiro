@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual
@@ -211,6 +212,7 @@ async def pagina_novo_lancamento(
     planos_conta_receita = db.query(PlanoConta).filter(
         PlanoConta.tipo == "receita",
         PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id.in_(ids_permitidos)),
     ).order_by(PlanoConta.nome).all()
 
     return templates.TemplateResponse("lancamento_novo.html", {
@@ -234,6 +236,7 @@ async def criar_lancamentos(
     centro_custo_id: List[str] = Form(default=[]),
     rateios_json: List[str] = Form(default=[]),
     especialidade: List[str] = Form(default=[]),
+    descricao_servico: List[str] = Form(default=[]),
     plano_conta_id: List[str] = Form(default=[]),
     valor_servico: List[str] = Form(default=[]),
     forma_pagamento: List[str] = Form(default=[]),
@@ -263,6 +266,7 @@ async def criar_lancamentos(
         pc.id: pc for pc in db.query(PlanoConta).filter(
             PlanoConta.tipo == "receita",
             PlanoConta.ativo == True,
+            or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
         ).all()
     }
     n = len(valor_servico)
@@ -339,7 +343,7 @@ async def criar_lancamentos(
                 centro_custo_id=cc_id,
                 medico=cc.nome if cc else None,
                 especialidade=especialidade_valor,
-                descricao_servico=plano.nome if plano else None,
+                descricao_servico=_str(descricao_servico, i) or None,
                 plano_conta_id=plano.id if plano else None,
                 valor_servico=v,
                 condicao_pagamento=condicao,
@@ -402,6 +406,7 @@ async def form_editar_lancamento(
     planos_conta_receita = db.query(PlanoConta).filter(
         PlanoConta.tipo == "receita",
         PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).order_by(PlanoConta.nome).all()
     return templates.TemplateResponse("lancamento_editar.html", {
         "request": request,
@@ -424,6 +429,7 @@ async def salvar_edicao_lancamento(
     cpf_paciente: str = Form(""),
     centro_custo_id: str = Form(""),
     especialidade: str = Form(""),
+    descricao_servico: str = Form(""),
     plano_conta_id: str = Form(""),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
@@ -490,6 +496,7 @@ async def salvar_edicao_lancamento(
     pc_id = int(plano_conta_id) if plano_conta_id.strip().isdigit() else None
     plano = db.query(PlanoConta).filter(
         PlanoConta.id == pc_id, PlanoConta.tipo == "receita", PlanoConta.ativo == True,
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).first() if pc_id else None
 
     at.data_atendimento = data_atendimento
@@ -498,9 +505,8 @@ async def salvar_edicao_lancamento(
     at.centro_custo_id = cc_id
     at.medico = cc.nome if cc else None
     at.especialidade = especialidade.strip() or None
-    if plano:
-        at.plano_conta_id = plano.id
-        at.descricao_servico = plano.nome
+    at.plano_conta_id = plano.id if plano else None
+    at.descricao_servico = descricao_servico.strip() or None
     at.valor_servico = valor
     at.condicao_pagamento = condicao_pagamento
     at.parcela_numero = parcela_numero

@@ -56,6 +56,9 @@
       </div>
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Serviço / Procedimento</label>
+        <input type="text" name="descricao_servico" value="{{ at.descricao_servico or '' }}" placeholder="Serviço / descrição da receita"
+               class="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Plano de contas (receita)</label>
         <select name="plano_conta_id"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
           {% if not at.plano_conta_id and (at.descricao_servico or at.tipo_servico) %}
