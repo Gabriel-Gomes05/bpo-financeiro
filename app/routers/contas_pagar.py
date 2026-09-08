@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional, List
+from urllib.parse import quote_plus
 
 import pandas as pd
 
@@ -238,6 +239,7 @@ def _data_recorrencia(origem: date, intervalo: str, dias_personalizado: Optional
 async def listar_contas(
     request: Request,
     cliente_id: Optional[int] = None,
+    situacao: Optional[str] = None,
     status: Optional[str] = None,
     forma_pagamento: Optional[str] = None,
     vencimento_inicio: Optional[str] = None,
@@ -275,6 +277,13 @@ async def listar_contas(
     if venc_fim:
         query = query.filter(ContaPagar.vencimento <= venc_fim)
 
+    if situacao in {"aberto", "a_vencer", "vencidas"}:
+        query = query.filter(ContaPagar.status.notin_([StatusContaPagar.pago, StatusContaPagar.cancelado]))
+        if situacao == "a_vencer":
+            query = query.filter(ContaPagar.vencimento >= date.today())
+        elif situacao == "vencidas":
+            query = query.filter(ContaPagar.vencimento < date.today())
+
     # Ordena: vencidas primeiro, depois por vencimento
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
     centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
@@ -285,6 +294,9 @@ async def listar_contas(
         "usuario": usuario,
         "clientes": clientes,
         "contas": contas,
+        "situacao_selecionada": situacao,
+        "planos_lote": _planos_despesa(db, ids_permitidos),
+        "centros_lote": db.query(CentroCusto).filter(CentroCusto.cliente_id.in_(ids_permitidos), CentroCusto.ativo == True).order_by(CentroCusto.nome).all(),
         "hoje": date.today(),
         "cliente_selecionado": cliente_id,
         "status_selecionado": status,
@@ -815,3 +827,73 @@ async def cancelar_conta(
         return RedirectResponse(url="/contas-pagar", status_code=303)
     _alterar_status_conta(db, conta, StatusContaPagar.cancelado, usuario)
     return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+
+
+@router.post("/contas-pagar/lote/aplicar")
+async def aplicar_lote_contas(
+    request: Request,
+    ids: List[int] = Form(...),
+    acao: str = Form(...),
+    plano_conta_id: Optional[int] = Form(None),
+    centro_custo_id: Optional[int] = Form(None),
+    novo_status: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_contas_pagar),
+):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if acao not in {"editar", "excluir"} or not ids or len(set(ids)) > 200:
+        raise HTTPException(400, "Seleção ou ação inválida.")
+    contas = db.query(ContaPagar).filter(ContaPagar.id.in_(set(ids)), ContaPagar.cliente_id.in_(_ids_clientes_do_usuario(db, usuario))).all()
+    if len(contas) != len(set(ids)):
+        raise HTTPException(404, "Seleção contém contas indisponíveis.")
+    def erro(mensagem):
+        return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem + " Nenhuma conta foi alterada."), status_code=303)
+    if acao == "editar" and not (plano_conta_id or centro_custo_id or novo_status):
+        return erro("Escolha ao menos um campo para editar.")
+    planos, centros = {}, {}
+    for conta in contas:
+        if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais:
+            return erro("A seleção contém conta com pagamento registrado.")
+        if db.query(MovimentacaoBancaria.id).filter(MovimentacaoBancaria.conta_pagar_id == conta.id).first() or db.query(ExtratoLinhaBancaria.id).filter(ExtratoLinhaBancaria.conta_pagar_id == conta.id).first():
+            return erro("A seleção contém conta vinculada à conciliação.")
+        if acao == "excluir":
+            if db.query(ContaPagar.id).filter(ContaPagar.recorrencia_grupo_id == conta.id, ContaPagar.id != conta.id).first():
+                return erro("Exclua primeiro as ocorrências recorrentes da conta.")
+            continue
+        if plano_conta_id:
+            planos[conta.id] = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
+            if not planos[conta.id]:
+                return erro("Categoria inválida para um dos clientes selecionados.")
+        if centro_custo_id:
+            centros[conta.id] = db.query(CentroCusto).filter(CentroCusto.id == centro_custo_id, CentroCusto.cliente_id == conta.cliente_id, CentroCusto.ativo == True).first()
+            if not centros[conta.id]:
+                return erro("Centro de custo inválido para um dos clientes selecionados.")
+        if novo_status and novo_status != conta.status.value and novo_status not in {s.value for s in _status_permitidos(conta.status)}:
+            return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
+    documentos = []
+    for conta in contas:
+        if acao == "excluir":
+            if conta.documento_path:
+                documentos.append(conta.documento_path)
+            db.delete(conta)
+        else:
+            if plano_conta_id:
+                conta.plano_conta_id = planos[conta.id].id
+                conta.categoria_dre = planos[conta.id].chave
+            if centro_custo_id:
+                centro = centros[conta.id]
+                conta.rateios_centro_custo.clear()
+                conta.rateios_centro_custo.append(ContaPagarCentroCustoRateio(centro_custo_id=centro.id, categoria_key=_key_centro_custo(centro), percentual=Decimal("100"), valor=conta.valor))
+            if novo_status:
+                conta.status = StatusContaPagar(novo_status)
+    db.commit()
+    for documento in documentos:
+        caminho = Path(documento).resolve()
+        if Path(UPLOAD_DIR).resolve() in caminho.parents and caminho.is_file():
+            try:
+                caminho.unlink()
+            except OSError:
+                logger.warning("conta_documento_delete_failed")
+    _log(db, "Contas a pagar em lote", "contas_pagar", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=f"Ação: {acao}; IDs: {sorted(set(ids))}")
+    return RedirectResponse("/contas-pagar?flash=" + quote_plus(f"{len(contas)} conta(s) atualizada(s)."), status_code=303)

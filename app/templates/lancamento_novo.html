@@ -453,6 +453,7 @@
         return;
       }
     }
+    if (!confirm('Autoriza a inclusão destes lançamentos de contas a receber?')) e.preventDefault();
   });
 
   adicionarLinha();

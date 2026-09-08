@@ -280,7 +280,10 @@ document.addEventListener('DOMContentLoaded', function() {
     formConta.addEventListener('submit', function(e) {
       const selects = Array.from(this.querySelectorAll('[data-rateio-centro]'));
       const linhas = selects.filter(sel => sel.value);
-      if (!linhas.length) return;
+      if (!linhas.length) {
+        if (!confirm('Autoriza a inclusão desta conta a pagar e das recorrências informadas?')) e.preventDefault();
+        return;
+      }
       const selecionados = linhas.map(sel => sel.value);
       const soma = linhas.reduce((acc, select) => {
         const input = select.closest('[data-rateios-conta] > div').querySelector('[name="rateio_percentual"]');
@@ -293,7 +296,9 @@ document.addEventListener('DOMContentLoaded', function() {
       if (incompleto || new Set(selecionados).size !== selecionados.length || Math.abs(soma - 100) >= 0.01) {
         alert('Selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
         e.preventDefault();
+        return;
       }
+      if (!confirm('Autoriza a inclusão desta conta a pagar e das recorrências informadas?')) e.preventDefault();
     });
   }
   adicionarRateioConta('100');

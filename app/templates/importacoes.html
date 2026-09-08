@@ -34,30 +34,17 @@
   </article>
   {% endmacro %}
 
-  <div>
-    <p class="px-1 mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Contas a Receber</p>
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {{ card("Extrato de Maquininha", "Vendas de cartão registradas na maquininha.", "modelo_extrato_maquininha.xlsx", "/conciliacao/importar") }}
-      {{ card("Lançamentos em lote", "Atendimentos/receitas cadastrados em planilha.", "modelo_lancamentos_lote.xlsx", "/conciliacao/lancamentos/importar") }}
-    </div>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    {{ card("Lançamentos de contas a receber", "Inclusão de receitas sem substituir lançamentos existentes.", "modelo_lancamentos_lote.xlsx", "/lancamentos/importar") }}
+    {{ card("Contas a pagar em lote", "Cadastro de contas a pagar, incluindo o plano de contas.", "modelo_contas_pagar.xlsx", "/contas-pagar/importar") }}
   </div>
-
-  <div>
-    <p class="px-1 mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Conciliação Bancária</p>
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {{ card("Extrato PIX/TED", "Movimentações de PIX e TED da conta bancária.", "modelo_extrato_pix_ted.xlsx", "/conciliacao/banco/importar-extrato") }}
-      {{ card("Conta corrente (genérico)", "Extrato bancário genérico, formato livre.", "modelo_conta_corrente.xlsx", "/conciliacao/banco/conta-corrente/importar") }}
-      {{ card("Reimportar lançamentos", "Mesma planilha de Lançamentos em lote, direto pela Conciliação Bancária.", "modelo_lancamentos_lote.xlsx", "/conciliacao/banco/importar-lancamentos") }}
-    </div>
-  </div>
-
-  <div>
-    <p class="px-1 mb-2 text-xs font-semibold uppercase tracking-widest text-slate-400">Contas a Pagar</p>
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {{ card("Contas a pagar em lote", "Cadastro de contas a pagar, incluindo o plano de contas.", "modelo_contas_pagar.xlsx", "/contas-pagar/importar") }}
-      {{ card("Cartão corporativo", "Despesas pagas com cartão corporativo (lotes de fatura).", "modelo_extrato_cartao.xlsx", "/contas-pagar/conciliacao-cartao/processar") }}
-      {{ card("Banco (genérico)", "Extrato bancário para conciliar contas a pagar.", "modelo_banco_contas_pagar.xlsx", "/contas-pagar/conciliacao-banco/importar") }}
-    </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
+    <h3 class="font-semibold">Importações de conciliação</h3>
+    <p class="text-sm text-gray-500">Os modelos e o envio de extratos estão disponíveis nos respectivos módulos:</p>
+    <a class="block text-sm text-blue-600" href="/conciliacao">Conciliação cartão — contas a receber</a>
+    <a class="block text-sm text-blue-600" href="/conciliacao/banco">Conciliação banco — contas a receber</a>
+    <a class="block text-sm text-blue-600" href="/contas-pagar/conciliacao-cartao">Conciliação cartão — contas a pagar</a>
+    <a class="block text-sm text-blue-600" href="/contas-pagar/conciliacao-banco">Conciliação banco — contas a pagar</a>
   </div>
 
 </div>
@@ -80,7 +67,9 @@
       if (!clienteGlobal.value) {
         alert('Selecione o cliente antes de importar.');
         e.preventDefault();
+        return;
       }
+      if (!confirm('Autoriza a inclusão dos lançamentos desta planilha?')) e.preventDefault();
     });
   });
 </script>

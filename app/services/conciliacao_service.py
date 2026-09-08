@@ -159,8 +159,8 @@ def _criar_movimentacao(
 # Importação de lançamentos (Atendimentos via planilha)
 # ---------------------------------------------------------------------------
 
-def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
-    """Importa lançamentos do Excel/CSV. Deleta os pendentes e recria."""
+def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, substituir_pendentes: bool = True) -> int:
+    """Importa Excel/CSV; permite inclusão sem substituir os lançamentos existentes."""
     df = df.copy()
     df.columns = [_norm_col(c) for c in df.columns]
 
@@ -193,11 +193,12 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
     if not c_data or not c_valor:
         raise ValueError("Arquivo não contém colunas de data e valor reconhecíveis.")
 
-    db.query(Atendimento).filter(
-        Atendimento.cliente_id == cliente_id,
-        Atendimento.status_conciliacao == StatusConciliacao.pendente,
-    ).delete()
-    db.commit()
+    if substituir_pendentes:
+        db.query(Atendimento).filter(
+            Atendimento.cliente_id == cliente_id,
+            Atendimento.status_conciliacao == StatusConciliacao.pendente,
+        ).delete()
+        db.commit()
 
     _FORMA = {
         "cartao": FormaPagamento.cartao_credito,
@@ -286,12 +287,14 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
             except Exception:
                 pass
 
-        parcela = 1
+        parcela = parcela_total = 1
         if c_parcela and pd.notna(row.get(c_parcela)):
             try:
-                parcela = int(row[c_parcela])
-            except Exception:
-                pass
+                partes = str(row[c_parcela]).split("/")
+                parcela = max(1, int(float(partes[0])))
+                parcela_total = max(parcela, int(partes[1])) if len(partes) == 2 else parcela
+            except (ValueError, OverflowError):
+                parcela = parcela_total = 1
 
         db.add(Atendimento(
             cliente_id=cliente_id,
@@ -306,6 +309,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame) -> int:
             valor_servico=valor,
             condicao_pagamento=condicao,
             parcela_numero=parcela,
+            parcela_total=parcela_total,
             data_prevista_recebimento=data_prev or data_atend,
             forma_pagamento=forma,
             ultimos_digitos_cartao=digitos,

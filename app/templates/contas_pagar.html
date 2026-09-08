@@ -26,7 +26,7 @@
       <button onclick="document.getElementById('form-importar').classList.toggle('hidden')"
               class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
     </div>
-    <form id="form-importar" method="post" action="/contas-pagar/importar"
+    <form id="form-importar" onsubmit="return confirm('Autoriza a inclusão das contas a pagar desta planilha?')" method="post" action="/contas-pagar/importar"
           enctype="multipart/form-data"
           class="hidden p-6 flex flex-wrap gap-4 items-end">
       <div>
@@ -63,6 +63,9 @@
         <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
         {% endfor %}
       </select>
+      <select name="situacao" class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm">
+        {% for valor, rotulo in [('', 'Situação: todas'), ('aberto', 'Em aberto'), ('a_vencer', 'A vencer (inclui hoje)'), ('vencidas', 'Vencidas')] %}<option value="{{ valor }}" {% if situacao_selecionada == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
       <select name="status"
               class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none">
         <option value="">Status: todos</option>
@@ -98,15 +101,29 @@
 
   <!-- Tabela de contas -->
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+    {% if usuario.perfil != 'medico' %}
+    <form id="form-lote" method="post" action="/contas-pagar/lote/aplicar" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
+      <strong class="text-sm">Ações em lote</strong>
+      <span id="total-selecionados" class="text-sm text-gray-500">0 selecionados</span>
+      <label class="text-xs">Categoria / plano de contas<select name="plano_conta_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter categoria</option>{% for p in planos_lote %}<option value="{{ p.id }}">{{ p.codigo or '' }} - {{ p.nome }}{% if p.cliente_id %} (cliente #{{ p.cliente_id }}){% endif %}</option>{% endfor %}</select></label>
+      <label class="text-xs">Centro de custo<select name="centro_custo_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter centros de custo</option>{% for cc in centros_lote %}<option value="{{ cc.id }}">{{ cc.nome }} (cliente #{{ cc.cliente_id }})</option>{% endfor %}</select></label>
+      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="pendente">Pendente</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Agendado</option><option value="cancelado">Cancelado</option></select></label>
+      <button type="submit" name="acao" value="editar" class="rounded-lg bg-[#222049] text-white px-3 py-2 text-sm">Editar selecionados</button>
+      <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button><p class="w-full text-xs text-gray-500">O centro escolhido substituirá o rateio por 100% nesse centro. A baixa como pago é feita na conciliação bancária.</p>
+    </form>
+    <p class="px-4 pb-3 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação não podem ser excluídos.</p>
+    {% endif %}
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
           <tr>
+            <th class="px-4 py-3">{% if usuario.perfil != 'medico' %}<input type="checkbox" id="selecionar-todos" aria-label="Selecionar todos os itens exibidos" onchange="document.querySelectorAll('.selecao-lote:not(:disabled)').forEach(c => c.checked = this.checked); atualizarSelecaoLote()">{% endif %}</th>
             <th class="px-4 py-3 text-left">Vencimento</th>
             <th class="px-4 py-3 text-left">Cliente</th>
             <th class="px-4 py-3 text-left">Descrição</th>
             <th class="px-4 py-3 text-left">Fornecedor</th>
-            <th class="px-4 py-3 text-left">Centro de custo</th>
+            <th class="px-4 py-3 text-left">Categoria / Centro de custo</th>
             <th class="px-4 py-3 text-right">Valor</th>
             <th class="px-4 py-3 text-center">Status</th>
             <th class="px-4 py-3 text-center">Ação</th>
@@ -134,6 +151,7 @@
               data-obs="{{ conta.observacao or '' }}"
               data-doc-url="{% if conta.documento_path %}/contas-pagar/{{ conta.id }}/documento{% endif %}">
 
+            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ conta.id }}" aria-label="Selecionar registro {{ conta.id }}" onchange="atualizarSelecaoLote()" {% if conta.status == 'pago' or conta.pagamentos_parciais %}disabled{% endif %}>{% endif %}</td>
             <td class="px-4 py-3 {% if vencida %}text-red-600 font-semibold{% elif vence_hoje %}text-amber-600 font-semibold{% else %}text-gray-600{% endif %}">
               {{ conta.vencimento.strftime('%d/%m/%Y') }}
               {% if vencida %}<span class="text-xs ml-1">(vencida)</span>{% endif %}
@@ -145,17 +163,18 @@
             <td class="px-4 py-3 text-xs text-gray-500">
               {% if conta.plano_conta %}
               <span class="rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">{{ conta.plano_conta.codigo or '—' }} - {{ conta.plano_conta.nome }}</span>
-              {% elif conta.rateios_centro_custo %}
+              {% endif %}
+              {% if conta.rateios_centro_custo %}
                 {% for r in conta.rateios_centro_custo %}
                 <span class="mb-1 inline-block rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
                   {{ r.centro_custo.nome }} - {{ '%.2f'|format(r.percentual|float) }}% / R$ {{ '%.2f'|format(r.valor|float) }}
                 </span>
                 {% endfor %}
-              {% elif conta.categoria_dre %}
+              {% elif conta.categoria_dre and not conta.plano_conta %}
               <span class="rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
                 {{ categoria_nome.get(conta.categoria_dre, conta.categoria_dre) }}
               </span>
-              {% else %}—{% endif %}
+              {% elif not conta.plano_conta %}—{% endif %}
             </td>
             <td class="px-4 py-3 text-right font-medium text-gray-800">
               R$ {{ '%.2f'|format(conta.valor|float) }}
@@ -207,7 +226,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="7" class="px-4 py-8 text-center text-gray-400">Nenhuma conta encontrada.</td>
+            <td colspan="9" class="px-4 py-8 text-center text-gray-400">Nenhuma conta encontrada.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -328,6 +347,7 @@
   </div>
 </div>
 
+<script src="/static/js/lote.js"></script>
 <script>
 function abrirDetalhe(row) {
   var d = row.dataset;

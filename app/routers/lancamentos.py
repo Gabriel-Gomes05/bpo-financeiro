@@ -1,9 +1,12 @@
 import json
+import logging
+from pathlib import Path
+from urllib.parse import quote_plus
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy import or_
@@ -15,7 +18,7 @@ from app.database import get_db
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
     PlanoConta, StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
-    Usuario, PerfilUsuario,
+    Usuario, PerfilUsuario, MovimentacaoBancaria, VendaCartao,
 )
 from app.services.log_service import registrar as _log
 
@@ -550,7 +553,7 @@ async def excluir_lancamento(
     if not at or at.cliente_id not in ids_permitidos or at.cliente_id != cliente_id:
         return RedirectResponse(url=f"/lancamentos?cliente_id={cliente_id}", status_code=303)
 
-    if at.status_conciliacao == StatusConciliacao.conciliado:
+    if _lancamento_vinculado(db, at):
         return RedirectResponse(
             url=f"/lancamentos?cliente_id={cliente_id}&flash=Atendimento+já+conciliado%2C+não+pode+ser+excluído",
             status_code=303,
@@ -570,3 +573,65 @@ async def excluir_lancamento(
         url=f"/lancamentos?cliente_id={cliente_id}&data_inicio={data_at}&data_fim={data_at}",
         status_code=303,
     )
+
+
+def _lancamento_vinculado(db: Session, at: Atendimento) -> bool:
+    return bool(at.status_conciliacao == StatusConciliacao.conciliado
+        or db.query(MovimentacaoBancaria.id).filter(MovimentacaoBancaria.conciliada_com_atendimento_id == at.id).first()
+        or db.query(VendaCartao.id).filter(VendaCartao.atendimento_id == at.id).first())
+
+
+@router.post("/lancamentos/lote/excluir")
+async def excluir_lote_lancamentos(
+    ids: List[int] = Form(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_lancamentos),
+):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if not ids or len(set(ids)) > 1000:
+        raise HTTPException(400, "Selecione até 1000 lançamentos.")
+    permitidos = [c.id for c in clientes_do_usuario(db, usuario)]
+    registros = db.query(Atendimento).filter(Atendimento.id.in_(set(ids)), Atendimento.cliente_id.in_(permitidos)).all()
+    if len(registros) != len(set(ids)):
+        raise HTTPException(404, "Seleção contém lançamentos indisponíveis.")
+    if any(_lancamento_vinculado(db, at) for at in registros):
+        return RedirectResponse("/lancamentos?flash=" + quote_plus("Há lançamentos vinculados à conciliação. Nenhum registro foi excluído."), status_code=303)
+    for at in registros:
+        db.delete(at)
+    db.commit()
+    _log(db, "Lançamentos excluídos em lote", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=f"IDs: {sorted(set(ids))}")
+    return RedirectResponse("/lancamentos?flash=" + quote_plus(f"{len(registros)} lançamento(s) excluído(s)."), status_code=303)
+
+
+@router.post("/lancamentos/importar")
+async def importar_planilha_lancamentos(
+    cliente_id: int = Form(...),
+    arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_lancamentos),
+):
+    from app.utils import salvar_upload_temporario
+    from app.services.conciliacao_service import importar_lancamentos, ler_arquivo_extrato
+    from app.errors import public_import_error
+
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+    caminho = None
+    try:
+        caminho, nome, _ = await salvar_upload_temporario(arquivo, {".csv", ".xlsx", ".xls"})
+        total = importar_lancamentos(db, cliente_id, ler_arquivo_extrato(caminho), substituir_pendentes=False)
+        mensagem = f"{total} lançamento(s) importado(s). Consulte o período das datas da planilha."
+        _log(db, "Lançamentos importados", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"{total} linha(s) de {nome}")
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        mensagem = public_import_error(logging.getLogger(__name__), "importar_planilha_lancamentos")
+    finally:
+        if caminho:
+            Path(caminho).unlink(missing_ok=True)
+    return RedirectResponse(f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
