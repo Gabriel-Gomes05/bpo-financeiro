@@ -214,9 +214,17 @@
                 {% if conta.status != 'pago' %}
                 <a href="/contas-pagar/{{ conta.id }}/editar" class="text-xs text-[#5e93cc] hover:underline">Editar</a>
                 <form method="post" action="/contas-pagar/{{ conta.id }}/excluir"
-                      onsubmit="return confirm('Excluir esta conta a pagar? Esta ação não pode ser desfeita.')"
+                      onsubmit="return confirm(this.elements.escopo && this.elements.escopo.value === 'recorrencia' ? 'Excluir os lançamentos desta recorrência que não estão pagos nem conciliados, inclusive os que não aparecem no filtro? Os já pagos/conciliados serão mantidos. Esta ação não pode ser desfeita.' : 'Excluir somente este lançamento? Os demais lançamentos da recorrência serão mantidos. Esta ação não pode ser desfeita.')"
                       class="inline">
                   <input type="hidden" name="cliente_id" value="{{ conta.cliente_id }}">
+                  {% if conta.recorrencia_grupo_id or conta.recorrencia_intervalo %}
+                  <select name="escopo" aria-label="O que excluir da recorrência {{ conta.id }}" class="text-xs rounded-lg border border-gray-300 px-2 py-1">
+                    <option value="somente">Somente este lançamento</option>
+                    <option value="recorrencia">Toda a recorrência</option>
+                  </select>
+                  {% else %}
+                  <input type="hidden" name="escopo" value="somente">
+                  {% endif %}
                   <button type="submit" class="text-xs text-red-600 hover:underline">Excluir</button>
                 </form>
                 {% endif %}

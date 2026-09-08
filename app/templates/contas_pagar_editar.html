@@ -11,7 +11,8 @@
     <span class="text-gray-700 font-medium">Editar #{{ conta.id }}</span>
   </div>
 
-  <form method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+  <form method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5"
+        onsubmit="return !this.elements.escopo_valor || this.elements.escopo_valor.value !== 'proximos' || confirm('Aplicar o valor informado a este lançamento e aos próximos da recorrência? Os anteriores são mantidos, e os que já estiverem pagos ou conciliados também não serão alterados.')">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="md:col-span-2">
@@ -44,6 +45,14 @@
         <input type="number" name="valor" step="0.01" min="0" required
                value="{{ '%.2f'|format(conta.valor|float) }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        {% if conta.recorrencia_grupo_id %}
+        <select id="escopo-valor" name="escopo_valor" aria-label="Aplicar o valor em"
+                class="mt-2 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-[#5e93cc] outline-none">
+          <option value="somente">Aplicar só a este valor</option>
+          <option value="proximos">Aplicar a este e aos próximos</option>
+        </select>
+        <p class="mt-1 text-[11px] text-gray-500">Próximos a partir de {{ conta.vencimento.strftime('%d/%m/%Y') }}. Anteriores, pagos ou conciliados ficam com o valor atual.</p>
+        {% endif %}
       </div>
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Vencimento *</label>

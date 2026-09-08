@@ -393,9 +393,16 @@ async def salvar_edicao_conta(
     forma_pagamento: Optional[str] = Form(None),
     plano_conta_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
+    escopo_valor: str = Form("somente"),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_usuario_atual),
+    usuario: Usuario = Depends(require_contas_pagar),
 ):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if escopo_valor not in {"somente", "proximos"}:
+        raise HTTPException(400, "Opção de edição inválida.")
+    if not valor.is_finite() or valor < 0 or valor > Decimal("9999999999.99") or valor != valor.quantize(Decimal("0.01")):
+        raise HTTPException(400, "Informe um valor válido com até duas casas decimais.")
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
@@ -404,6 +411,32 @@ async def salvar_edicao_conta(
             url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
             status_code=303,
         )
+
+    contas_valor = [conta]
+    if escopo_valor == "proximos" and conta.recorrencia_grupo_id:
+        grupo_id = conta.recorrencia_grupo_id
+        contas_valor = db.query(ContaPagar).filter(
+            ContaPagar.cliente_id == conta.cliente_id,
+            or_(ContaPagar.id == grupo_id, ContaPagar.recorrencia_grupo_id == grupo_id),
+            or_(
+                ContaPagar.vencimento > conta.vencimento,
+                (ContaPagar.vencimento == conta.vencimento) & (ContaPagar.id >= conta.id),
+            ),
+        ).order_by(ContaPagar.vencimento, ContaPagar.id).all()
+    protegidos = _ids_protegidos(db, contas_valor)
+    if conta.id in protegidos:
+        mensagem = "Este lançamento tem pagamento ou conciliação e não pode ser editado."
+        return RedirectResponse(f"/contas-pagar?cliente_id={conta.cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
+    contas_valor = [item for item in contas_valor if item.id not in protegidos]
+    ids = [item.id for item in contas_valor]
+    ignorados = len(protegidos)
+    for item in contas_valor:
+        item.valor = valor
+        rateios = item.rateios_centro_custo
+        if rateios:
+            for rateio in rateios:
+                rateio.valor = (valor * rateio.percentual / Decimal("100")).quantize(Decimal("0.01"))
+            rateios[-1].valor += valor - sum((r.valor for r in rateios), Decimal("0"))
 
     conta.descricao = descricao
     conta.fornecedor = fornecedor or None
@@ -420,9 +453,55 @@ async def salvar_edicao_conta(
         db, "Conta a pagar editada", "contas_pagar",
         usuario_id=usuario.id, usuario_nome=usuario.nome,
         cliente_id=conta.cliente_id,
-        detalhes=f"Conta #{conta_id} editada",
+        detalhes=f"Conta #{conta_id} editada; escopo do valor: {escopo_valor}; valor: {valor}; IDs: {ids}; ignorados por pagamento/conciliação: {ignorados}",
     )
-    return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+    mensagem = None
+    if ignorados:
+        mensagem = f"Valor atualizado em {len(ids)} lançamento(s). {ignorados} não foram alterados por já estarem pagos ou conciliados."
+    destino = f"/contas-pagar?cliente_id={conta.cliente_id}"
+    if mensagem:
+        destino += "&flash=" + quote_plus(mensagem)
+    return RedirectResponse(url=destino, status_code=303)
+
+
+def _ids_protegidos(db: Session, contas: list[ContaPagar]) -> set[int]:
+    """IDs de contas com pagamento ou conciliação, que não podem ser alteradas/excluídas."""
+    if not contas:
+        return set()
+    ids = [conta.id for conta in contas]
+    protegidos = {conta.id for conta in contas if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais}
+    protegidos.update(
+        row[0] for row in db.query(MovimentacaoBancaria.conta_pagar_id)
+        .filter(MovimentacaoBancaria.conta_pagar_id.in_(ids)).all()
+    )
+    protegidos.update(
+        row[0] for row in db.query(ExtratoLinhaBancaria.conta_pagar_id)
+        .filter(ExtratoLinhaBancaria.conta_pagar_id.in_(ids)).all()
+    )
+    return protegidos
+
+
+def _preparar_exclusao_recorrencias(db: Session, contas: list[ContaPagar]) -> None:
+    """Preserva o grupo restante quando seu lançamento de referência é excluído."""
+    ids = {conta.id for conta in contas}
+    dependentes = db.query(ContaPagar).filter(
+        ContaPagar.recorrencia_grupo_id.in_(ids),
+    ).order_by(ContaPagar.id).all()
+    grupos: dict[int, list[ContaPagar]] = {}
+    clientes = {conta.id: conta.cliente_id for conta in contas}
+    for dependente in dependentes:
+        if dependente.cliente_id != clientes[dependente.recorrencia_grupo_id]:
+            raise HTTPException(409, "Recorrência inconsistente entre clientes.")
+        if dependente.id not in ids:
+            grupos.setdefault(dependente.recorrencia_grupo_id, []).append(dependente)
+    for restantes in grupos.values():
+        novo_grupo_id = restantes[0].id
+        for restante in restantes:
+            restante.recorrencia_grupo_id = novo_grupo_id
+    for conta in contas:
+        conta.recorrencia_grupo_id = None
+    # Atualiza as referências antes dos DELETEs, inclusive a autorreferência do grupo.
+    db.flush()
 
 
 @router.post("/contas-pagar/{conta_id}/excluir")
@@ -430,70 +509,57 @@ async def excluir_conta(
     conta_id: int,
     request: Request,
     cliente_id: int = Form(...),
+    escopo: str = Form("somente"),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if escopo not in {"somente", "recorrencia"}:
+        raise HTTPException(400, "Opção de exclusão inválida.")
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     ids_permitidos = _ids_clientes_do_usuario(db, usuario)
     destino = f"/contas-pagar?cliente_id={cliente_id}"
     if not conta or conta.cliente_id not in ids_permitidos or conta.cliente_id != cliente_id:
         return RedirectResponse(url=destino, status_code=303)
 
-    if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais:
-        return RedirectResponse(
-            url=f"{destino}&flash=Conta+com+pagamento+registrado+n%C3%A3o+pode+ser+exclu%C3%ADda",
-            status_code=303,
-        )
+    contas = [conta]
+    if escopo == "recorrencia":
+        grupo_id = conta.recorrencia_grupo_id or conta.id
+        contas = db.query(ContaPagar).filter(
+            ContaPagar.cliente_id == cliente_id,
+            or_(ContaPagar.id == grupo_id, ContaPagar.recorrencia_grupo_id == grupo_id),
+        ).order_by(ContaPagar.id).all()
 
-    possui_conciliacao = (
-        db.query(MovimentacaoBancaria.id)
-        .filter(MovimentacaoBancaria.conta_pagar_id == conta.id)
-        .first()
-        or db.query(ExtratoLinhaBancaria.id)
-        .filter(ExtratoLinhaBancaria.conta_pagar_id == conta.id)
-        .first()
-    )
-    if possui_conciliacao:
-        return RedirectResponse(
-            url=f"{destino}&flash=Conta+vinculada+a+uma+concilia%C3%A7%C3%A3o+n%C3%A3o+pode+ser+exclu%C3%ADda",
-            status_code=303,
-        )
+    protegidos = _ids_protegidos(db, contas)
+    elegiveis = [item for item in contas if item.id not in protegidos]
+    if not elegiveis:
+        mensagem = "Este lançamento tem pagamento ou conciliação e não pode ser excluído." if escopo == "somente" else "Todos os lançamentos dessa recorrência têm pagamento ou conciliação. Nada foi excluído."
+        return RedirectResponse(url=f"{destino}&flash=" + quote_plus(mensagem), status_code=303)
 
-    possui_recorrencias = db.query(ContaPagar.id).filter(
-        ContaPagar.recorrencia_grupo_id == conta.id,
-        ContaPagar.id != conta.id,
-    ).first()
-    if possui_recorrencias:
-        return RedirectResponse(
-            url=f"{destino}&flash=Conta+possui+ocorr%C3%AAncias+recorrentes+e+n%C3%A3o+pode+ser+exclu%C3%ADda",
-            status_code=303,
-        )
-
-    descricao = conta.descricao
-    documento_path = conta.documento_path
-    db.delete(conta)
+    ids = [item.id for item in elegiveis]
+    documentos = [item.documento_path for item in elegiveis if item.documento_path]
+    _preparar_exclusao_recorrencias(db, elegiveis)
+    for item in elegiveis:
+        db.delete(item)
     db.commit()
-
-    if documento_path:
-        upload_dir = Path(UPLOAD_DIR).resolve()
-        caminho = Path(documento_path).resolve()
-        if upload_dir in caminho.parents and caminho.is_file():
+    for documento in documentos:
+        caminho = Path(documento).resolve()
+        if Path(UPLOAD_DIR).resolve() in caminho.parents and caminho.is_file():
             try:
                 caminho.unlink()
             except OSError:
                 logger.warning("conta_documento_delete_failed", extra={"conta_id": conta_id})
-
     _log(
-        db,
-        "Conta a pagar excluída",
-        "contas_pagar",
-        usuario_id=usuario.id,
-        usuario_nome=usuario.nome,
-        cliente_id=cliente_id,
-        detalhes=f"Conta #{conta_id} excluída: {descricao}",
+        db, "Conta a pagar excluída", "contas_pagar",
+        usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
+        detalhes=f"Escopo: {escopo}; IDs excluídos: {ids}; ignorados por pagamento/conciliação: {len(protegidos)}",
         ip=request.client.host if request.client else None,
     )
-    return RedirectResponse(url=f"{destino}&flash=Conta+exclu%C3%ADda+com+sucesso", status_code=303)
+    mensagem = f"{len(elegiveis)} lançamento(s) excluído(s) com sucesso."
+    if protegidos:
+        mensagem += f" {len(protegidos)} não foram excluídos por já estarem pagos ou conciliados."
+    return RedirectResponse(url=f"{destino}&flash=" + quote_plus(mensagem), status_code=303)
 
 
 @router.post("/contas-pagar")
@@ -851,15 +917,15 @@ async def aplicar_lote_contas(
         return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem + " Nenhuma conta foi alterada."), status_code=303)
     if acao == "editar" and not (plano_conta_id or centro_custo_id or novo_status):
         return erro("Escolha ao menos um campo para editar.")
+
+    protegidos = _ids_protegidos(db, contas)
+    elegiveis = [conta for conta in contas if conta.id not in protegidos]
+    if not elegiveis:
+        return erro("Todas as contas selecionadas têm pagamento ou conciliação.")
+
     planos, centros = {}, {}
-    for conta in contas:
-        if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais:
-            return erro("A seleção contém conta com pagamento registrado.")
-        if db.query(MovimentacaoBancaria.id).filter(MovimentacaoBancaria.conta_pagar_id == conta.id).first() or db.query(ExtratoLinhaBancaria.id).filter(ExtratoLinhaBancaria.conta_pagar_id == conta.id).first():
-            return erro("A seleção contém conta vinculada à conciliação.")
+    for conta in elegiveis:
         if acao == "excluir":
-            if db.query(ContaPagar.id).filter(ContaPagar.recorrencia_grupo_id == conta.id, ContaPagar.id != conta.id).first():
-                return erro("Exclua primeiro as ocorrências recorrentes da conta.")
             continue
         if plano_conta_id:
             planos[conta.id] = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
@@ -872,7 +938,9 @@ async def aplicar_lote_contas(
         if novo_status and novo_status != conta.status.value and novo_status not in {s.value for s in _status_permitidos(conta.status)}:
             return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
     documentos = []
-    for conta in contas:
+    if acao == "excluir":
+        _preparar_exclusao_recorrencias(db, elegiveis)
+    for conta in elegiveis:
         if acao == "excluir":
             if conta.documento_path:
                 documentos.append(conta.documento_path)
@@ -895,5 +963,11 @@ async def aplicar_lote_contas(
                 caminho.unlink()
             except OSError:
                 logger.warning("conta_documento_delete_failed")
-    _log(db, "Contas a pagar em lote", "contas_pagar", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=f"Ação: {acao}; IDs: {sorted(set(ids))}")
-    return RedirectResponse("/contas-pagar?flash=" + quote_plus(f"{len(contas)} conta(s) atualizada(s)."), status_code=303)
+    _log(
+        db, "Contas a pagar em lote", "contas_pagar", usuario_id=usuario.id, usuario_nome=usuario.nome,
+        detalhes=f"Ação: {acao}; IDs: {sorted(c.id for c in elegiveis)}; ignorados por pagamento/conciliação: {len(protegidos)}",
+    )
+    mensagem = f"{len(elegiveis)} conta(s) atualizada(s)."
+    if protegidos:
+        mensagem += f" {len(protegidos)} não foram alteradas por já estarem pagas ou conciliadas."
+    return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem), status_code=303)
