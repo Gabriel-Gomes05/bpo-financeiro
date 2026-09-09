@@ -2,7 +2,8 @@ from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from app.jinja import templates
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual, tem_acesso_geral
@@ -11,6 +12,25 @@ from app.models import ClienteBPO, Usuario
 from app.security import secure_cookie_for
 
 router = APIRouter()
+
+
+@router.get("/painel", response_class=HTMLResponse)
+async def painel_geral(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    query = db.query(ClienteBPO).filter(
+        ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None),
+    )
+    if not tem_acesso_geral(usuario):
+        query = query.filter(ClienteBPO.funcionario_id == usuario.id)
+    response = templates.TemplateResponse("painel.html", {
+        "request": request, "usuario": usuario,
+        "clientes": query.order_by(ClienteBPO.nome).all(), "painel_geral": True,
+    })
+    response.delete_cookie("cliente_ativo", path="/")
+    return response
 
 
 @router.post("/cliente/selecionar")
@@ -26,6 +46,9 @@ async def selecionar_cliente(
         dest = "/"
     else:
         dest = urlunparse(parsed._replace(scheme="", netloc="", query="", fragment="")) or "/"
+
+    if parsed.path == "/painel":
+        dest = "/"
 
     response = RedirectResponse(url=dest, status_code=303)
     cliente_id_int = int(cliente_id) if cliente_id and cliente_id.isdigit() else None
@@ -51,5 +74,6 @@ async def selecionar_cliente(
             path="/",
         )
     else:
+        response = RedirectResponse(url="/painel", status_code=303)
         response.delete_cookie("cliente_ativo", path="/")
     return response

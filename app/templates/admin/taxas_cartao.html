@@ -29,15 +29,11 @@
     <form method="get" action="/admin/taxas-cartao" class="flex flex-wrap items-end gap-4">
       <div class="flex-1 min-w-48">
         <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Cliente</label>
-        <select name="cliente_id" onchange="this.form.submit()"
-                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
-          <option value="">Selecione um cliente...</option>
-          {% for c in clientes %}
-          <option value="{{ c.id }}" {% if cliente_selecionado and c.id == cliente_selecionado.id %}selected{% endif %}>
-            {{ c.nome }}
-          </option>
-          {% endfor %}
-        </select>
+        <select name="cliente_id"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400" style="display:none" aria-hidden="true" tabindex="-1">
+<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
+</select>
+{% include "partials/empresa_atual.html" %}
       </div>
     </form>
   </section>

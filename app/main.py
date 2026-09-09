@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from redis.exceptions import RedisError
 from sqlalchemy import text
@@ -77,6 +77,23 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityMiddleware)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.middleware("http")
+async def manter_empresa_selecionada(request: Request, call_next):
+    path = request.url.path
+    operacional = path == "/" or any(
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in ("/conciliacao", "/lancamentos", "/contas-pagar", "/fechamento",
+                       "/rotinas", "/gestao", "/admin/taxas-cartao")
+    )
+    if operacional:
+        empresa = request.cookies.get("cliente_ativo", "")
+        if not empresa.isdigit():
+            return RedirectResponse("/painel", status_code=303)
+        if request.method == "GET" and request.query_params.get("cliente_id") != empresa:
+            return RedirectResponse(str(request.url.include_query_params(cliente_id=empresa)), status_code=303)
+    return await call_next(request)
 
 app.include_router(auth.router)
 app.include_router(dashboard.router)

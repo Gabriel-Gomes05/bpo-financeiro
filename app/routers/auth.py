@@ -118,7 +118,7 @@ async def fazer_login(
         usuario_nome=usuario.nome,
         ip=ip,
     )
-    response = RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/inicio", status_code=303)
     response.set_cookie(
         key="access_token",
         value=token,
@@ -129,6 +129,16 @@ async def fazer_login(
         path="/",
     )
     return response
+
+
+@router.get("/inicio", response_class=HTMLResponse)
+async def pagina_inicio(
+    request: Request,
+    usuario: Usuario = Depends(get_usuario_atual),
+):
+    return templates.TemplateResponse(
+        "inicio.html", {"request": request, "usuario": usuario},
+    )
 
 
 @router.post("/logout")

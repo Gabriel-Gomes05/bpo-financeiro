@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import date as date_type, timedelta
+from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
+from app.services.recebimento_service import prever_recebimento
 from app.utils import cliente_ativo as _ca, salvar_upload_temporario
 from app.models import (
     Atendimento,
@@ -874,14 +875,7 @@ async def criar_lancamento_manual_conciliacao(
     condicao = condicao_pagamento.strip() or "avista"
     is_parcelado = condicao == CondicaoPagamento.parcelado.value
     intervalos = _calcular_intervalos_lancamento(forma or "", parcela_total, recorrencia) if is_parcelado else [0]
-    if (
-        cliente
-        and cliente.antecipa
-        and is_parcelado
-        and forma == FormaPagamento.cartao_credito.value
-        and intervalos
-    ):
-        intervalos = [intervalos[0] for _ in intervalos]
+
 
     qtd_parcelas = len(intervalos)
     valor_parcela = (valor / Decimal(qtd_parcelas)).quantize(Decimal("0.01"))
@@ -943,7 +937,9 @@ async def criar_lancamento_manual_conciliacao(
             condicao_pagamento=condicao,
             parcela_numero=parcela_numero,
             parcela_total=qtd_parcelas,
-            data_prevista_recebimento=data_atendimento + timedelta(days=dias),
+            data_prevista_recebimento=prever_recebimento(
+                data_atendimento, dias, forma, bool(cliente and cliente.antecipa),
+            ),
             forma_pagamento=forma,
             ultimos_digitos_cartao=ultimos_digitos_cartao.strip() or None,
             bandeira_cartao=bandeira,

@@ -7,16 +7,32 @@
   {% if request.query_params.get('erro') %}<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível salvar. Revise os campos informados.</div>{% endif %}
   <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
     <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-      <div><h2 class="text-lg font-bold text-[#222049]">Plano por cliente</h2><p class="mt-1 text-sm text-gray-500">Cada cliente herda o plano padrão da planilha e pode receber contas exclusivas.</p></div>
-      <form method="get" class="w-full md:w-80"><label class="mb-1 block text-xs font-semibold uppercase text-gray-500">Cliente</label><select name="cliente_id" onchange="this.form.submit()" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="">Selecione...</option>{% for c in clientes %}<option value="{{ c.id }}" {% if c.id == cliente_id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select></form>
+      <div>
+        <h2 class="text-lg font-bold text-[#222049]">{{ cliente.nome if cliente else 'Plano de contas geral' }}</h2>
+        <p class="mt-1 text-sm text-gray-500">{% if cliente %}Novas contas ficam exclusivas desta empresa. As contas padr&#227;o continuam dispon&#237;veis.{% else %}Escolha se a nova conta fica dispon&#237;vel para todas as empresas ou apenas para os clientes selecionados.{% endif %}</p>
+      </div>
     </div>
     {% if cliente %}<div class="mt-5 grid grid-cols-2 gap-3 md:w-96"><div class="rounded-lg bg-slate-50 p-3"><div class="text-2xl font-bold text-[#222049]">{{ total_padrao }}</div><div class="text-xs text-slate-500">contas padrão</div></div><div class="rounded-lg bg-blue-50 p-3"><div class="text-2xl font-bold text-[#5e93cc]">{{ total_personalizadas }}</div><div class="text-xs text-slate-500">exclusivas do cliente</div></div></div>{% endif %}
   </section>
-  {% if cliente %}
   <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-    <h3 class="mb-4 font-semibold text-gray-700">Nova conta para {{ cliente.nome }}</h3>
+    <h3 class="mb-4 font-semibold text-gray-700">{% if cliente %}Nova conta para {{ cliente.nome }}{% else %}Nova conta padr&#227;o{% endif %}</h3>
     <form method="post" action="/admin/plano-contas" class="grid grid-cols-1 gap-3 md:grid-cols-[130px_130px_1fr_1.4fr_auto] md:items-end">
-      <input type="hidden" name="cliente_id" value="{{ cliente.id }}">
+      <input type="hidden" name="cliente_id" value="{{ cliente_id or '' }}">
+      {% if not cliente %}
+      <fieldset class="md:col-span-5 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+        <legend class="px-2 text-sm font-semibold text-slate-700">Disponível para</legend>
+        <div class="flex flex-wrap gap-5 text-sm">
+          <label class="flex items-center gap-2"><input type="radio" name="disponibilidade" value="todos" checked onchange="document.getElementById('clientes-destino').disabled = true">Todas as empresas (padrão geral)</label>
+          <label class="flex items-center gap-2"><input type="radio" name="disponibilidade" value="selecionados" onchange="document.getElementById('clientes-destino').disabled = false">Clientes específicos</label>
+        </div>
+        <fieldset id="clientes-destino" disabled class="mt-4 grid max-h-60 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2 disabled:opacity-40">
+          <legend class="mb-2 text-xs text-slate-500">Selecione os clientes que receberão esta conta.</legend>
+          {% for c in clientes %}
+          <label class="flex items-center gap-2 rounded-lg bg-white p-3 text-sm text-slate-700"><input type="checkbox" name="clientes_ids" value="{{ c.id }}">{{ c.nome }}</label>
+          {% else %}<p class="text-sm text-slate-500">Nenhum cliente ativo cadastrado.</p>{% endfor %}
+        </fieldset>
+      </fieldset>
+      {% endif %}
       <div><label class="mb-1 block text-xs font-semibold uppercase text-gray-500">Tipo *</label><select name="tipo" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="despesa">Despesa</option><option value="receita">Receita</option></select></div>
       <div><label class="mb-1 block text-xs font-semibold uppercase text-gray-500">Código</label><input name="codigo" placeholder="Ex: 15.01" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"></div>
       <div><label class="mb-1 block text-xs font-semibold uppercase text-gray-500">Grupo *</label><input name="grupo" required placeholder="Ex: Pessoal" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"></div>
@@ -28,11 +44,11 @@
   <section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
     <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4"><h3 class="font-semibold text-gray-700">{{ titulo }}</h3><span class="text-xs text-gray-400">{{ lista|length }} conta(s)</span></div>
     <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-6 py-3">Código</th><th class="px-6 py-3">Descrição</th><th class="px-6 py-3">Grupo</th><th class="px-6 py-3">Origem</th><th class="px-6 py-3 text-right">Ações</th></tr></thead><tbody class="divide-y divide-slate-100">
-      {% for pc in lista %}<tr class="hover:bg-slate-50"><td class="px-6 py-3 font-mono text-xs">{{ pc.codigo or '—' }}</td><td class="px-6 py-3 font-medium text-[#222049]">{{ pc.nome }}</td><td class="px-6 py-3 text-slate-500">{{ pc.grupo }}</td><td class="px-6 py-3">{% if pc.cliente_id %}<span class="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Exclusiva</span>{% else %}<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">Padrão</span>{% endif %}</td><td class="px-6 py-3 text-right">{% if pc.cliente_id %}<button type="button" onclick="document.getElementById('editar-{{ pc.id }}').classList.toggle('hidden')" class="text-xs font-semibold text-[#5e93cc]">Editar</button>{% else %}<span class="text-xs text-slate-300">Protegida</span>{% endif %}</td></tr>
-      {% if pc.cliente_id %}<tr id="editar-{{ pc.id }}" class="hidden bg-slate-50"><td colspan="5" class="px-6 py-4"><form method="post" action="/admin/plano-contas/{{ pc.id }}/editar" class="flex flex-col gap-2 md:flex-row"><input type="hidden" name="cliente_id" value="{{ cliente.id }}"><input name="codigo" value="{{ pc.codigo or '' }}" class="w-32 rounded-lg border px-3 py-2"><input name="grupo" required value="{{ pc.grupo }}" class="flex-1 rounded-lg border px-3 py-2"><input name="nome" required value="{{ pc.nome }}" class="flex-1 rounded-lg border px-3 py-2"><button class="rounded-lg bg-[#222049] px-4 py-2 text-xs font-semibold text-white">Salvar</button></form><form method="post" action="/admin/plano-contas/{{ pc.id }}/excluir" onsubmit="return confirm('Remover esta conta exclusiva?')" class="mt-2 text-right"><input type="hidden" name="cliente_id" value="{{ cliente.id }}"><button class="text-xs font-semibold text-red-600">Remover conta</button></form></td></tr>{% endif %}
+      {% for pc in lista %}<tr class="hover:bg-slate-50"><td class="px-6 py-3 font-mono text-xs">{{ pc.codigo or '—' }}</td><td class="px-6 py-3 font-medium text-[#222049]">{{ pc.nome }}</td><td class="px-6 py-3 text-slate-500">{{ pc.grupo }}</td><td class="px-6 py-3">{% if pc.cliente_id %}<span class="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">{{ nomes_clientes.get(pc.cliente_id, 'Exclusiva') if not cliente else 'Exclusiva' }}</span>{% else %}<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">Padrão</span>{% endif %}</td><td class="px-6 py-3 text-right">{% if cliente and pc.cliente_id %}<button type="button" onclick="document.getElementById('editar-{{ pc.id }}').classList.toggle('hidden')" class="text-xs font-semibold text-[#5e93cc]">Editar</button>{% else %}<span class="text-xs text-slate-300">Protegida</span>{% endif %}</td></tr>
+      {% if cliente and pc.cliente_id %}<tr id="editar-{{ pc.id }}" class="hidden bg-slate-50"><td colspan="5" class="px-6 py-4"><form method="post" action="/admin/plano-contas/{{ pc.id }}/editar" class="flex flex-col gap-2 md:flex-row"><input type="hidden" name="cliente_id" value="{{ cliente_id or '' }}"><input name="codigo" value="{{ pc.codigo or '' }}" class="w-32 rounded-lg border px-3 py-2"><input name="grupo" required value="{{ pc.grupo }}" class="flex-1 rounded-lg border px-3 py-2"><input name="nome" required value="{{ pc.nome }}" class="flex-1 rounded-lg border px-3 py-2"><button class="rounded-lg bg-[#222049] px-4 py-2 text-xs font-semibold text-white">Salvar</button></form><form method="post" action="/admin/plano-contas/{{ pc.id }}/excluir" onsubmit="return confirm('Remover esta conta exclusiva?')" class="mt-2 text-right"><input type="hidden" name="cliente_id" value="{{ cliente_id or '' }}"><button class="text-xs font-semibold text-red-600">Remover conta</button></form></td></tr>{% endif %}
       {% else %}<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400">Nenhuma conta cadastrada.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>{% endfor %}
-  {% else %}<div class="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500">Cadastre um cliente para começar.</div>{% endif %}
+
 </div>
 {% endblock %}

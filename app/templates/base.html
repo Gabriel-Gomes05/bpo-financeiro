@@ -319,72 +319,22 @@
 
     <!-- Navegação principal -->
     {# ── Resolve cliente ativo para todo o template ── #}
-    {% set _ca_id = request.cookies.get('cliente_ativo', '') %}
+    {% set _ca_id = '' if painel_geral else request.cookies.get('cliente_ativo', '') %}
     {% set _ns = namespace(nome='') %}
     {% if _ca_id and clientes %}
       {% for _c in clientes %}{% if _c.id|string == _ca_id %}{% set _ns.nome = _c.nome %}{% endif %}{% endfor %}
     {% endif %}
 
     <nav class="flex-1 px-3 py-4 space-y-0.5 text-sm">
+      <a href="/painel" class="flex items-center gap-3 px-3 py-3 rounded-lg text-white font-semibold hover:bg-white/10">Painel geral</a>
+      {% if _ca_id %}
 
       {# ── Seletor de cliente ── #}
-      {% if clientes and usuario.perfil != 'secretaria' %}
-      <div style="margin:10px 2px 4px;">
-          <div style="background:{% if _ns.nome %}rgba(94,147,204,0.18){% else %}rgba(94,147,204,0.08){% endif %}; border:1px solid {% if _ns.nome %}rgba(94,147,204,0.4){% else %}rgba(94,147,204,0.2){% endif %}; border-radius:12px; overflow:hidden; transition:.2s;">
-            <div style="padding:10px 12px 6px;">
-              <p style="font-size:9px; font-weight:700; color:rgba(94,147,204,0.7); text-transform:uppercase; letter-spacing:.08em; margin-bottom:{% if _ns.nome %}4px{% else %}0{% endif %};">
-                {% if _ns.nome %}Cliente ativo{% else %}Selecione o cliente{% endif %}
-              </p>
-              {% if _ns.nome %}
-              <p style="font-size:13px; font-weight:700; color:#fff; line-height:1.25; margin-bottom:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                {{ _ns.nome }}
-              </p>
-              {% endif %}
-            </div>
-            <div style="padding:0 8px 8px;">
-              <div style="display:grid; gap:5px; max-height:190px; overflow-y:auto; padding-right:2px;">
-                <form method="post" action="/cliente/selecionar">
-                  <button type="submit"
-                          style="width:100%; min-height:30px; text-align:left; background:{% if not _ca_id %}rgba(94,147,204,0.35){% else %}rgba(0,0,0,0.16){% endif %}; color:{% if not _ca_id %}#fff{% else %}rgba(255,255,255,0.68){% endif %}; border:1px solid {% if not _ca_id %}rgba(94,147,204,0.55){% else %}rgba(94,147,204,0.18){% endif %}; border-radius:8px; padding:7px 9px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;">
-                    Todos os clientes
-                  </button>
-                </form>
-                {% for c in clientes %}
-                <form method="post" action="/cliente/selecionar">
-                  <input type="hidden" name="cliente_id" value="{{ c.id }}">
-                  <button type="submit"
-                          title="{{ c.nome }}"
-                          style="width:100%; min-height:30px; text-align:left; background:{% if c.id|string == _ca_id %}rgba(94,147,204,0.42){% else %}rgba(0,0,0,0.2){% endif %}; color:#fff; border:1px solid {% if c.id|string == _ca_id %}rgba(94,147,204,0.65){% else %}rgba(94,147,204,0.24){% endif %}; border-radius:8px; padding:7px 9px; font-size:11px; font-weight:{% if c.id|string == _ca_id %}800{% else %}600{% endif %}; cursor:pointer; font-family:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    {{ c.nome }}
-                  </button>
-                </form>
-                {% endfor %}
-              </div>
-            </div>
-            <div style="display:none;">
-              <select name="cliente_id" onchange="this.form.submit()"
-                      style="width:100%; appearance:none; background:rgba(0,0,0,0.2); color:white; border:1px solid rgba(94,147,204,0.3); border-radius:8px; padding:8px 28px 8px 10px; font-size:11px; outline:none; cursor:pointer; font-family:inherit;">
-                <option value="" style="background:#1a1836; color:rgba(255,255,255,0.6);">
-                  {% if _ns.nome %}↩ Trocar cliente{% else %}Escolher cliente...{% endif %}
-                </option>
-                {% for c in clientes %}
-                <option value="{{ c.id }}" style="background:#1a1836; color:white;"
-                        {% if c.id|string == _ca_id %}selected{% endif %}>
-                  {{ c.nome }}
-                </option>
-                {% endfor %}
-              </select>
-              <svg style="position:absolute;right:18px;top:50%;transform:translateY(-50%);pointer-events:none;color:rgba(94,147,204,0.6);"
-                   width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-              </svg>
-            </div>
-          </div>
-      </div>
-      {% elif usuario.perfil == 'secretaria' and clientes %}
-      <div style="margin:10px 2px 4px; background:rgba(94,147,204,0.18); border:1px solid rgba(94,147,204,0.4); border-radius:12px; padding:10px 12px;">
-        <p style="font-size:9px; font-weight:700; color:rgba(94,147,204,0.7); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px;">Seu cliente</p>
-        <p style="font-size:13px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ clientes[0].nome }}</p>
+      {% if _ns.nome %}
+      <div class="mx-1 my-3 rounded-xl border border-blue-300/20 bg-blue-300/10 p-3">
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Empresa atual</p>
+        <p class="mt-1 text-sm font-semibold text-white break-words">{{ _ns.nome }}</p>
+        <a href="/painel" class="mt-3 inline-block text-xs text-blue-200 hover:text-white">Trocar pelo painel geral &rarr;</a>
       </div>
       {% endif %}
 
@@ -579,6 +529,8 @@
           DRE
         </a>
       </div>
+      {% endif %}
+
       {% endif %}
 
       {% if usuario.perfil in ['coordenador', 'editor', 'funcionario'] %}

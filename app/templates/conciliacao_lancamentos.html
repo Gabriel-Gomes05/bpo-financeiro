@@ -36,12 +36,10 @@
       <div class="flex-1 min-w-[180px]">
         <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Cliente</label>
         <select name="cliente_id" required
-                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none">
-          <option value="">Selecione...</option>
-          {% for c in clientes %}
-          <option value="{{ c.id }}">{{ c.nome }}</option>
-          {% endfor %}
-        </select>
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none" style="display:none" aria-hidden="true" tabindex="-1">
+<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
+</select>
+{% include "partials/empresa_atual.html" %}
       </div>
       <button type="submit"
               class="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 text-sm">

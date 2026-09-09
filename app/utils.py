@@ -22,11 +22,9 @@ ASSINATURAS_PERMITIDAS = {
 
 def cliente_ativo(request: Request, cliente_id: Optional[int]) -> Optional[int]:
     """Retorna cliente_id do param URL; se None, lê do cookie 'cliente_ativo'."""
-    if cliente_id is not None:
-        return cliente_id
     raw = request.cookies.get("cliente_ativo", "")
     try:
-        return int(raw) if raw else None
+        return int(raw) if raw else cliente_id
     except (ValueError, TypeError):
         return None
 

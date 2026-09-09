@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Painel geral | FLIC{% endblock %}
+{% block content %}
+<style>
+  .app-content-shell {
+    background: radial-gradient(ellipse at 45% 0%, #357bd3 0%, #1455ad 55%, #0b3474 100%);
+  }
+  .painel-empresas { padding: 16px 0 40px; }
+  .painel-empresas header { background: transparent; padding-left: 0; padding-right: 0; }
+  .painel-empresas h2 { color: #fff; }
+  .painel-empresas .text-slate-500 { color: #dbeafe; }
+  .empresa-card {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 24px;
+    overflow: hidden;
+    min-height: 120px;
+    padding: 28px;
+    border-radius: 24px;
+    border: 1px solid rgba(255,255,255,.8);
+    background: linear-gradient(145deg, #fff 35%, #eaf3ff 100%);
+    box-shadow: 0 12px 30px rgba(5,28,69,.2), inset 0 1px 0 #fff;
+    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease, background-color .22s ease;
+  }
+  .empresa-card:hover, .empresa-card:focus-visible {
+    transform: translateY(-7px);
+    border-color: #93c5fd;
+    box-shadow: 0 20px 40px rgba(5,28,69,.35), 0 0 0 3px rgba(147,197,253,.3);
+  }
+  .empresa-card:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+  .empresa-card::before {
+    content: '';
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    right: -65px;
+    top: -85px;
+    border: 24px solid rgba(96,165,250,.09);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .empresa-card-topo { display: flex; align-items: center; flex-shrink: 0; }
+  .empresa-icone {
+    display: grid; place-items: center; width: 56px; height: 56px;
+    border-radius: 17px; color: white;
+    background: linear-gradient(135deg, #438ee7, #184ea4);
+    box-shadow: 0 7px 15px #2563eb30;
+  }
+  .empresa-etiqueta { display: none; }
+  .empresa-nome { position: relative; flex: 1; min-width: 0; font-size: 21px; line-height: 1.35; font-weight: 700; color: #172e50; overflow-wrap: anywhere; }
+  .empresa-rodape { display: flex; align-items: center; gap: 12px; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #2159a5; }
+  .empresa-seta { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #dceaff; transition: background .22s ease, color .22s ease; }
+  .empresa-card:hover .empresa-seta, .empresa-card:focus-visible .empresa-seta { background: #2159a5; color: #fff; }
+  @media (max-width: 640px) {
+    .empresa-card { flex-wrap: wrap; gap: 16px; padding: 22px; }
+    .empresa-nome { font-size: 18px; }
+    .empresa-rodape { width: 100%; justify-content: space-between; padding-top: 14px; border-top: 1px solid #dbe7f5; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .empresa-card, .empresa-seta { transition: none; }
+    .empresa-card:hover, .empresa-card:focus-visible { transform: none; }
+  }
+</style>
+<div class="painel-empresas max-w-6xl mx-auto space-y-10">
+  <header class="rounded-2xl bg-blue-800 text-white p-8 sm:p-10">
+    <p class="text-blue-200 text-sm font-semibold mb-3">FLIC · Painel geral</p>
+    <h1 class="text-3xl font-bold">Olá, {{ usuario.nome }}.</h1>
+    <p class="mt-3 text-blue-100">Escolha uma empresa para começar ou acesse os cadastros no menu lateral.</p>
+  </header>
+  <section aria-labelledby="empresas-titulo">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="empresas-titulo" class="text-xl font-bold text-slate-800">Suas empresas</h2>
+      <span class="text-sm text-slate-500">{{ clientes|length }} disponível(is)</span>
+    </div>
+    <div class="grid grid-cols-1 gap-4">
+      {% for cliente in clientes %}
+      <form method="post" action="/cliente/selecionar">
+        <input type="hidden" name="cliente_id" value="{{ cliente.id }}">
+        <button type="submit" class="empresa-card w-full h-full text-left p-6 rounded-2xl bg-white">
+          <span class="empresa-card-topo">
+            <span class="empresa-icone" aria-hidden="true">
+              <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h3a1 1 0 0 1 1 1v11M2 21h20M8 7h1m3 0h1M8 11h1m3 0h1M8 15h1m3 0h1M9 21v-3h3v3"/></svg>
+            </span>
+            <span class="empresa-etiqueta">EMPRESA</span>
+          </span>
+          <span class="empresa-nome">{{ cliente.nome }}</span>
+          <span class="empresa-rodape">Entrar na empresa <span class="empresa-seta" aria-hidden="true">→</span></span>
+        </button>
+      </form>
+      {% else %}
+      <p class="sm:col-span-2 lg:col-span-3 rounded-2xl border border-dashed border-slate-300 p-8 text-slate-500">Nenhuma empresa está disponível para seu usuário. Solicite a vinculação ao responsável pelo cadastro.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

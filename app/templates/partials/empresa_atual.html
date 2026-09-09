@@ -1,0 +1,6 @@
+<span class="block py-2 text-sm font-semibold">
+  {% for empresa in clientes %}
+    {% if empresa.id|string == request.cookies.get('cliente_ativo', '') %}{{ empresa.nome }}{% endif %}
+  {% endfor %}
+  <a href="/painel" class="ml-2 text-xs underline">Painel geral</a>
+</span>

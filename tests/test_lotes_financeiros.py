@@ -275,8 +275,9 @@ def test_tela_oferece_exclusao_individual_e_recorrencia(db):
     request = Request({"type": "http", "method": "GET", "scheme": "http", "server": ("testserver", 80), "path": "/contas-pagar", "headers": [], "query_string": b""})
     response = asyncio.run(contas_pagar.listar_contas(request=request, db=db, usuario=USUARIO))
     html = response.body.decode()
-    assert '<option value="somente">Somente este lançamento</option>' in html
-    assert '<option value="recorrencia">Toda a recorrência</option>' in html
+    assert '<input type="hidden" name="escopo" value="somente">' in html
+    assert '<input type="hidden" name="escopo" value="recorrencia">' in html
+    assert "Excluir série" in html
 
 
 def editar_valor(db, item, escopo="somente", **kwargs):

@@ -11,13 +11,11 @@
   <div class="flex items-center gap-3">
     <form method="get" action="/contas-pagar/conciliacao-banco" class="flex items-center gap-2">
       <label class="text-sm text-gray-500">Cliente:</label>
-      <select name="cliente_id" onchange="this.form.submit()"
-              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none">
-        <option value="">Selecione...</option>
-        {% for c in clientes %}
-        <option value="{{ c.id }}" {% if c.id == cliente_selecionado %}selected{% endif %}>{{ c.nome }}</option>
-        {% endfor %}
-      </select>
+      <select name="cliente_id"
+              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none" style="display:none" aria-hidden="true" tabindex="-1">
+<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
+</select>
+{% include "partials/empresa_atual.html" %}
     </form>
   </div>
 

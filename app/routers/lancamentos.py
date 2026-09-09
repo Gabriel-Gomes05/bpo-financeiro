@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from urllib.parse import quote_plus
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_usuario_atual
 from app.authorization import Permission, require_permission
 from app.database import get_db
+from app.services.recebimento_service import prever_recebimento
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
     PlanoConta, StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
@@ -286,14 +287,7 @@ async def criar_lancamentos(
 
         is_parcelado = condicao == "parcelado"
         intervalos = _calcular_intervalos(forma or "", n_parcelas, rec) if is_parcelado else [0]
-        if (
-            cliente
-            and cliente.antecipa
-            and is_parcelado
-            and forma == FormaPagamento.cartao_credito.value
-            and intervalos
-        ):
-            intervalos = [intervalos[0] for _ in intervalos]
+
         num = len(intervalos)
 
         valor_parcela = (valor / Decimal(num)).quantize(Decimal("0.01"))
@@ -352,7 +346,9 @@ async def criar_lancamentos(
                 condicao_pagamento=condicao,
                 parcela_numero=p,
                 parcela_total=num,
-                data_prevista_recebimento=data_atendimento + timedelta(days=dias),
+                data_prevista_recebimento=prever_recebimento(
+                    data_atendimento, dias, forma, bool(cliente and cliente.antecipa),
+                ),
                 forma_pagamento=forma or None,
                 ultimos_digitos_cartao=_str(ultimos_digitos_cartao, i) or None,
                 bandeira_cartao=bandeira,
