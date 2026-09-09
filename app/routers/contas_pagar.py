@@ -248,7 +248,7 @@ async def listar_contas(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    cliente_id = _ca(request, cliente_id)
+    cliente_id = _ca(request, None)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
@@ -266,7 +266,7 @@ async def listar_contas(
     query = db.query(ContaPagar).filter(
         ContaPagar.cliente_id.in_(ids_permitidos)
     )
-    if cliente_id and cliente_id in ids_permitidos:
+    if cliente_id:
         query = query.filter(ContaPagar.cliente_id == cliente_id)
     if status:
         query = query.filter(ContaPagar.status == status)

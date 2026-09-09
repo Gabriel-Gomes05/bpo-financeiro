@@ -3,6 +3,20 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
+<style>
+  .dashboard-colunas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+  .dashboard-medias { border: 1px solid #dbe7f5; border-radius: 20px; background: linear-gradient(150deg, #fff, #eef5ff); box-shadow: 0 12px 32px #183d7510; padding: 24px; }
+  .dashboard-medias[hidden] { display: none; }
+  @media (min-width: 1280px) {
+    .dashboard-colunas.medias-abertas { grid-template-columns: minmax(0, 1fr) 280px; }
+    .dashboard-medias { position: sticky; top: 16px; }
+  }
+</style>
+<div class="flex justify-end mb-4">
+  <button id="alternar-medias" type="button" aria-expanded="true" aria-controls="painel-medias" class="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700">Ocultar médias</button>
+</div>
+<div id="dashboard-colunas" class="dashboard-colunas medias-abertas">
+<div class="min-w-0">
 
 {# ═══════════════════════════════════════════════════════════
    BLOCOS POR PROCESSO — resumo de cada módulo (Contas a Receber,
@@ -345,4 +359,37 @@
 </div>
 {% endif %}
 
+</div>
+<aside id="painel-medias" class="dashboard-medias" aria-labelledby="titulo-medias">
+  <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Histórico financeiro</p>
+  <h2 id="titulo-medias" class="mt-2 text-lg font-bold text-slate-800">Média mensal</h2>
+  <p class="mt-2 text-xs leading-relaxed text-slate-500">Últimos 3 meses completos<br>{{ medias.inicio.strftime('%d/%m/%Y') }} a {{ medias.fim.strftime('%d/%m/%Y') }}</p>
+  <dl class="mt-6 space-y-5">
+    <div><dt class="text-sm text-slate-500">Recebimentos</dt><dd class="mt-1 text-xl font-bold text-emerald-700">R$ {{ medias.recebido }}</dd></div>
+    <div><dt class="text-sm text-slate-500">Pagamentos</dt><dd class="mt-1 text-xl font-bold text-slate-800">R$ {{ medias.pago }}</dd></div>
+    <div class="border-t border-blue-100 pt-5"><dt class="text-sm text-slate-500">Saldo médio</dt><dd class="mt-1 text-xl font-bold {{ 'text-red-600' if medias.saldo_negativo else 'text-blue-700' }}">R$ {{ medias.saldo }}</dd></div>
+  </dl>
+  <p class="mt-6 text-xs leading-relaxed text-slate-500">Recebimentos conciliados e contas integralmente pagas, pelas datas de crédito e pagamento. Meses sem movimento entram na média com zero.</p>
+</aside>
+</div>
+<script>
+(() => {
+  const button = document.getElementById('alternar-medias');
+  const panel = document.getElementById('painel-medias');
+  const grid = document.getElementById('dashboard-colunas');
+  const key = 'flic-dashboard-medias';
+  function mostrar(aberto) {
+    panel.hidden = !aberto;
+    grid.classList.toggle('medias-abertas', aberto);
+    button.setAttribute('aria-expanded', String(aberto));
+    button.textContent = aberto ? 'Ocultar médias' : 'Mostrar médias';
+  }
+  try { mostrar(localStorage.getItem(key) !== 'oculto'); } catch (_) {}
+  button.addEventListener('click', () => {
+    const aberto = panel.hidden;
+    mostrar(aberto);
+    try { localStorage.setItem(key, aberto ? 'aberto' : 'oculto'); } catch (_) {}
+  });
+})();
+</script>
 {% endblock %}

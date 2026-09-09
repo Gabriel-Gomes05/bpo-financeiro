@@ -89,6 +89,10 @@ async def manter_empresa_selecionada(request: Request, call_next):
     )
     if operacional:
         empresa = request.cookies.get("cliente_ativo", "")
+        if not empresa and request.method == "GET" and path == "/":
+            if "cliente_id" in request.query_params:
+                return RedirectResponse(str(request.url.remove_query_params("cliente_id")), status_code=303)
+            return await call_next(request)
         if not empresa.isdigit():
             return RedirectResponse("/painel", status_code=303)
         if request.method == "GET" and request.query_params.get("cliente_id") != empresa:

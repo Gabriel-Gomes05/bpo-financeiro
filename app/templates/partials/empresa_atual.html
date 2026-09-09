@@ -1,4 +1,5 @@
 <span class="block py-2 text-sm font-semibold">
+  {% if not request.cookies.get('cliente_ativo') %}Todas as suas empresas{% endif %}
   {% for empresa in clientes %}
     {% if empresa.id|string == request.cookies.get('cliente_ativo', '') %}{{ empresa.nome }}{% endif %}
   {% endfor %}

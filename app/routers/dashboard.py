@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -35,15 +35,47 @@ async def dashboard(
         except ValueError:
             pass
 
+    permitidos = db.query(ClienteBPO).filter(
+        ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None),
+    )
+    if usuario.perfil not in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+        permitidos = permitidos.filter(ClienteBPO.funcionario_id == usuario.id)
+    clientes = permitidos.order_by(ClienteBPO.nome).all()
+    if cliente_ativo_id and cliente_ativo_id not in {c.id for c in clientes}:
+        return RedirectResponse("/painel", status_code=303)
+
     if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
         contexto = _dashboard_coordenador(db, hoje, cliente_ativo_id)
     else:
         contexto = _dashboard_funcionario(db, hoje, usuario, cliente_ativo_id)
 
+    contexto["medias"] = _medias_mensais(
+        db, hoje, [cliente_ativo_id] if cliente_ativo_id else [c.id for c in clientes], 3,
+    )
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "usuario": usuario, "hoje": hoje, **contexto},
+        {"request": request, "usuario": usuario, "hoje": hoje, **contexto, "clientes": clientes},
     )
+
+
+def _medias_mensais(db: Session, hoje: date, ids_clientes: list[int], meses: int) -> dict:
+    fim = hoje.replace(day=1)
+    indice = fim.year * 12 + fim.month - 1 - meses
+    inicio = date(indice // 12, indice % 12 + 1, 1)
+    recebido = db.query(func.sum(Atendimento.valor_liquido)).filter(
+        Atendimento.cliente_id.in_(ids_clientes),
+        Atendimento.status_conciliacao == StatusConciliacao.conciliado,
+        Atendimento.data_credito >= inicio, Atendimento.data_credito < fim,
+    ).scalar() or Decimal("0")
+    pago = db.query(func.sum(ContaPagar.valor)).filter(
+        ContaPagar.cliente_id.in_(ids_clientes), ContaPagar.status == StatusContaPagar.pago,
+        ContaPagar.data_pagamento >= inicio, ContaPagar.data_pagamento < fim,
+    ).scalar() or Decimal("0")
+    return {
+        "meses": meses, "inicio": inicio, "fim": fim - timedelta(days=1),
+        "recebido": _brl(recebido / meses), "pago": _brl(pago / meses),
+        "saldo": _brl((recebido - pago) / meses), "saldo_negativo": recebido < pago,
+    }
 
 
 def _alertas_recorrentes(db: Session, hoje: date, ids_clientes: list) -> list:
