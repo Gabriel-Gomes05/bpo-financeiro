@@ -35,12 +35,12 @@ def normalizar_email(email: str) -> str:
 
 def validar_senha_nova(senha: str) -> bool:
     tamanho = len(senha.encode("utf-8"))
-    return 12 <= tamanho <= 72
+    return len(senha) >= 6 and tamanho <= 72
 
 
 def hash_senha(senha: str) -> str:
     if not validar_senha_nova(senha):
-        raise ValueError("A senha deve ter entre 12 e 72 bytes.")
+        raise ValueError("A senha deve ter pelo menos 6 caracteres e no máximo 72 bytes.")
     return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("ascii")
 
 

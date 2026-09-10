@@ -400,11 +400,11 @@ async def form_editar_lancamento(
         return RedirectResponse(url="/lancamentos", status_code=303)
     centros_custo = db.query(CentroCusto).filter(
         CentroCusto.cliente_id == at.cliente_id,
-        CentroCusto.ativo == True,
+        or_(CentroCusto.ativo == True, CentroCusto.id == at.centro_custo_id, CentroCusto.id.in_([r.centro_custo_id for r in at.rateios_centro_custo])),
     ).order_by(CentroCusto.nome).all()
     planos_conta_receita = db.query(PlanoConta).filter(
         PlanoConta.tipo == "receita",
-        PlanoConta.ativo == True,
+        or_(PlanoConta.ativo == True, PlanoConta.id == at.plano_conta_id),
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).order_by(PlanoConta.nome).all()
     return templates.TemplateResponse("lancamento_editar.html", {
@@ -412,6 +412,8 @@ async def form_editar_lancamento(
         "usuario": usuario,
         "clientes": clientes,
         "at": at,
+        "bloqueado": _lancamento_vinculado(db, at),
+        "formas_pagamento": list(FormaPagamento),
         "centros_custo": centros_custo,
         "planos_conta_receita": planos_conta_receita,
         "hoje": date.today().isoformat(),
@@ -439,36 +441,54 @@ async def salvar_edicao_lancamento(
     bandeira_cartao: str = Form(""),
     percentual_medico: str = Form(""),
     observacao: str = Form(""),
+    data_prevista_recebimento: Optional[date] = Form(None),
+    taxa_cartao: str = Form(""),
+    rateio_centro_custo_id: Optional[List[str]] = Form(None),
+    rateio_percentual: Optional[List[str]] = Form(None),
+    banco_recebimento: str = Form(""),
+    data_credito: Optional[date] = Form(None),
+    data_pagamento_medico: Optional[date] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
 ):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
     at = db.query(Atendimento).filter(Atendimento.id == at_id).first()
 
     if not at or at.cliente_id not in ids_permitidos:
         return RedirectResponse(url="/lancamentos", status_code=303)
-    if at.status_conciliacao == StatusConciliacao.conciliado:
+    if _lancamento_vinculado(db, at):
         return RedirectResponse(
             url=f"/lancamentos?cliente_id={at.cliente_id}&flash=Atendimento+já+conciliado%2C+não+pode+ser+editado",
             status_code=303,
         )
 
-    try:
-        valor = Decimal(str(valor_servico).replace(",", "."))
-    except InvalidOperation:
-        return RedirectResponse(url=f"/lancamentos/{at_id}/editar", status_code=303)
-
-    pct_medico = None
-    if percentual_medico.strip():
+    def decimal_campo(raw, nome, limite):
         try:
-            pct_medico = Decimal(str(percentual_medico).replace(",", "."))
+            numero = Decimal(str(raw).strip().replace(",", "."))
         except InvalidOperation:
-            pass
+            raise HTTPException(400, f"{nome} inválido.")
+        if not numero.is_finite() or not 0 <= numero <= limite or numero != numero.quantize(Decimal("0.01")):
+            raise HTTPException(400, f"{nome} inválido.")
+        return numero
 
-    bandeira = bandeira_cartao.strip() or None
+    valor = decimal_campo(valor_servico, "Valor", Decimal("9999999999.99"))
+    pct_medico = decimal_campo(percentual_medico, "Percentual", 100) if percentual_medico.strip() else None
     forma = forma_pagamento.strip() or None
-    taxa_pct = _taxa_cartao(db, at.cliente_id, bandeira) if forma == FormaPagamento.cartao_credito.value else None
+    if forma and forma not in {f.value for f in FormaPagamento}:
+        raise HTTPException(400, "Forma de pagamento inválida.")
+    if condicao_pagamento not in {c.value for c in CondicaoPagamento}:
+        raise HTTPException(400, "Condição de pagamento inválida.")
+    if not 1 <= parcela_numero <= parcela_total <= 48:
+        raise HTTPException(400, "Informe uma parcela entre 1 e o total de parcelas (até 48).")
+    if condicao_pagamento != "parcelado":
+        parcela_numero = parcela_total = 1
+    bandeira = (bandeira_cartao.strip() or None) if forma == "cartao_credito" else None
+    taxa_pct = None
+    if forma == "cartao_credito":
+        taxa_pct = decimal_campo(taxa_cartao, "Taxa", 100) if taxa_cartao.strip() else _taxa_cartao(db, at.cliente_id, bandeira)
 
     valor_liquido = valor
     if taxa_pct is not None:
@@ -480,25 +500,68 @@ async def salvar_edicao_lancamento(
 
     valor_clinica = valor_liquido - valor_medico_calc if valor_medico_calc is not None else valor_liquido
 
+    if centro_custo_id.strip() and not centro_custo_id.strip().isdigit():
+        raise HTTPException(400, "Centro de custo inválido.")
     cc_id = int(centro_custo_id) if centro_custo_id.strip().isdigit() else None
     cc = db.query(CentroCusto).filter(
         CentroCusto.id == cc_id,
         CentroCusto.cliente_id == at.cliente_id,
-        CentroCusto.ativo.is_(True),
+        or_(CentroCusto.ativo.is_(True), CentroCusto.id == at.centro_custo_id),
     ).first() if cc_id else None
     if cc_id and not cc:
         return RedirectResponse(
-            url=f"/lancamentos/{at_id}/editar?erro=centro_custo_invalido",
+            url=f"/lancamentos/{at_id}/editar?erro=centro_custo_inválido",
             status_code=303,
         )
 
     pc_id = int(plano_conta_id) if plano_conta_id.strip().isdigit() else None
     plano = db.query(PlanoConta).filter(
-        PlanoConta.id == pc_id, PlanoConta.tipo == "receita", PlanoConta.ativo == True,
+        PlanoConta.id == pc_id, PlanoConta.tipo == "receita", or_(PlanoConta.ativo == True, PlanoConta.id == at.plano_conta_id),
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).first() if pc_id else None
 
+    if plano_conta_id.strip() and not plano:
+        raise HTTPException(400, "Plano de contas inválido para este cliente.")
+
+    novos_rateios = None
+    if isinstance(rateio_centro_custo_id, list):
+        percentuais = rateio_percentual if isinstance(rateio_percentual, list) else []
+        centros = {c.id: c for c in db.query(CentroCusto).filter(
+            CentroCusto.cliente_id == at.cliente_id,
+            or_(CentroCusto.ativo.is_(True), CentroCusto.id.in_([r.centro_custo_id for r in at.rateios_centro_custo])),
+        ).all()}
+        payload = []
+        for i, key in enumerate(rateio_centro_custo_id):
+            pct = percentuais[i].strip() if i < len(percentuais) else ""
+            if not key.strip() and not pct:
+                continue
+            if not key.isdigit() or int(key) not in centros:
+                raise HTTPException(400, "Centro de custo do rateio inválido.")
+            percentual = decimal_campo(pct, "Percentual do rateio", 100)
+            if percentual <= 0:
+                raise HTTPException(400, "O percentual do rateio deve ser maior que zero.")
+            payload.append({"centro_custo_id": int(key), "percentual": str(percentual)})
+        novos_rateios = _parse_rateios_json(json.dumps(payload), centros, valor)
+        if payload and (not novos_rateios or len(novos_rateios) != len(payload)):
+            raise HTTPException(400, "Rateio inválido: use centros diferentes e feche 100%.")
+        if novos_rateios:
+            cc = novos_rateios[0]["centro"]
+            cc_id = cc.id
+
+    if novos_rateios is not None:
+        at.rateios_centro_custo = [AtendimentoCentroCustoRateio(
+            centro_custo_id=r["centro"].id, percentual=r["percentual"], valor=r["valor"],
+        ) for r in novos_rateios]
+    elif at.rateios_centro_custo:
+        for rateio in at.rateios_centro_custo:
+            rateio.valor = (valor * rateio.percentual / Decimal("100")).quantize(Decimal("0.01"))
+        at.rateios_centro_custo[-1].valor += valor - sum(r.valor for r in at.rateios_centro_custo)
+
     at.data_atendimento = data_atendimento
+    at.data_prevista_recebimento = data_prevista_recebimento
+    at.banco_recebimento = banco_recebimento.strip() or None
+    at.data_credito = data_credito
+    at.data_pagamento_medico = data_pagamento_medico
     at.nome_paciente = nome_paciente.strip() or None
     at.cpf_paciente = cpf_paciente.strip() or None
     at.centro_custo_id = cc_id
@@ -511,7 +574,7 @@ async def salvar_edicao_lancamento(
     at.parcela_numero = parcela_numero
     at.parcela_total = parcela_total
     at.forma_pagamento = forma or None
-    at.ultimos_digitos_cartao = ultimos_digitos_cartao.strip() or None
+    at.ultimos_digitos_cartao = (ultimos_digitos_cartao.strip() or None) if forma == "cartao_credito" else None
     at.bandeira_cartao = bandeira
     at.taxa_cartao = taxa_pct
     at.valor_liquido = valor_liquido

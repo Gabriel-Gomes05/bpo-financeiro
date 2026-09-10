@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -352,3 +353,87 @@ def test_editar_valor_rejeita_escopo_invalido(db):
     with pytest.raises(HTTPException):
         editar_valor(db, item, "todos")
     assert item.valor == Decimal("100")
+
+
+@pytest.mark.parametrize("intervalo,dias,esperadas", [
+    ("mensal", None, [date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)]),
+    ("semanal", None, [date(2026, 1, 31), date(2026, 2, 7), date(2026, 2, 14)]),
+    ("quinzenal", None, [date(2026, 1, 31), date(2026, 2, 15), date(2026, 3, 2)]),
+    ("personalizado", 10, [date(2026, 1, 31), date(2026, 2, 10), date(2026, 2, 20)]),
+])
+def test_recorrencia_copia_dados_rateios_e_anexo(db, monkeypatch, tmp_path, intervalo, dias, esperadas):
+    from app.models import Usuario
+    usuario = Usuario(id=1, nome="Operador", email="recorrencia@example.test", senha_hash="teste", perfil=PerfilUsuario.coordenador)
+    plano = PlanoConta(nome="Despesa", tipo="despesa", grupo="DESPESAS FIXAS", codigo="D1", chave="despesa_teste", ativo=True)
+    centros = [CentroCusto(cliente_id=1, nome="Centro " + str(i), codigo="C" + str(i), ativo=True) for i in range(2)]
+    db.add_all([usuario, plano, *centros])
+    db.commit()
+    anexo = tmp_path / "documento.pdf"
+    anexo.write_bytes(b"anexo de teste")
+    async def upload(*args):
+        return str(anexo), None, None
+    monkeypatch.setattr(contas_pagar, "salvar_upload_temporario", upload)
+    response = asyncio.run(contas_pagar.criar_conta(
+        cliente_id=1, descricao="Contrato", fornecedor="Fornecedor", valor=Decimal("100.01"),
+        vencimento=esperadas[0], data_competencia=date(2026, 1, 15), forma_pagamento="pix",
+        categoria_dre=None, plano_conta_id=plano.id,
+        rateio_centro_custo_key=[c.codigo for c in centros], rateio_percentual=["50", "50"],
+        especialidade="Clinica", observacao="Observacao", documento=SimpleNamespace(filename="documento.pdf"),
+        recorrente=True, recorrencia_intervalo=intervalo, recorrencia_dias=dias, recorrencia_qtd=3,
+        db=db, usuario=usuario,
+    ))
+    assert response.status_code == 303
+    db.expire_all()
+    itens = db.query(ContaPagar).order_by(ContaPagar.id).all()
+    assert [item.vencimento for item in itens] == esperadas
+    original = itens[0]
+    campos = [c.name for c in ContaPagar.__table__.columns if c.name not in {
+        "id", "public_id", "vencimento", "documento_path", "criado_em", "updated_at", "created_at",
+    }]
+    def rateios(item):
+        return sorted((r.centro_custo_id, r.categoria_key, r.percentual, r.valor) for r in item.rateios_centro_custo)
+    for item in itens:
+        for campo in campos:
+            assert getattr(item, campo) == getattr(original, campo), campo
+        assert rateios(item) == rateios(original)
+        assert sum(r.valor for r in item.rateios_centro_custo) == Decimal("100.01")
+        assert Path(item.documento_path).read_bytes() == anexo.read_bytes()
+    assert len({item.documento_path for item in itens}) == 3
+    assert len({r.id for item in itens for r in item.rateios_centro_custo}) == 6
+    editar_valor(db, itens[1], descricao="Alterado", plano_conta_id=plano.id,
+                 rateio_centro_custo_key=[centros[1].codigo], rateio_percentual=["100"])
+    db.expire_all()
+    assert itens[0].descricao == itens[2].descricao == "Contrato"
+    assert itens[0].valor == itens[2].valor == Decimal("100.01")
+    assert rateios(itens[0]) == rateios(itens[2])
+    assert len(itens[1].rateios_centro_custo) == 1
+    assert itens[1].rateios_centro_custo[0].valor == Decimal("150.01")
+
+
+def test_edicao_rateio_invalido_nao_altera_conta(db):
+    item = conta(db)
+    centro = CentroCusto(cliente_id=1, nome="Centro", codigo="C1", ativo=True)
+    db.add(centro)
+    db.commit()
+    with pytest.raises(HTTPException) as exc:
+        editar_valor(db, item, rateio_centro_custo_key=["C1"], rateio_percentual=["90"])
+    assert exc.value.status_code == 400
+    assert item.valor == Decimal("100")
+    assert not item.rateios_centro_custo
+
+
+def test_formulario_edicao_exibe_rateios(db):
+    from app.models import ContaPagarCentroCustoRateio
+    item = conta(db)
+    centro = CentroCusto(cliente_id=1, nome="Administrativo", codigo="ADM", ativo=True)
+    db.add(centro)
+    db.flush()
+    item.rateios_centro_custo.append(ContaPagarCentroCustoRateio(
+        centro_custo_id=centro.id, categoria_key="ADM", percentual=100, valor=100,
+    ))
+    db.commit()
+    request = Request({"type": "http", "method": "GET", "path": "/", "headers": [], "session": {}})
+    response = asyncio.run(contas_pagar.form_editar_conta(item.id, request, db, USUARIO))
+    html = response.body.decode()
+    assert 'value="ADM" selected' in html
+    assert 'name="rateio_percentual"' in html

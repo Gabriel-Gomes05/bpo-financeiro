@@ -11,9 +11,9 @@
     <span class="text-gray-700 font-medium">Editar #{{ at.id }}</span>
   </div>
 
-  {% if at.status_conciliacao.value == 'conciliado' %}
+  {% if bloqueado %}
   <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-4 text-sm text-emerald-800">
-    Este atendimento já foi <strong>conciliado</strong> e não pode ser editado.
+    Este lançamento possui vínculo com a conciliação. Desfaça o vínculo antes de editar.
     <a href="/lancamentos?cliente_id={{ at.cliente_id }}" class="underline ml-2">Voltar</a>
   </div>
   {% else %}
@@ -24,7 +24,7 @@
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data do atendimento *</label>
         <input type="date" name="data_atendimento" required
-               value="{{ at.data_atendimento.isoformat() }}"
+              value="{{ at.data_atendimento.isoformat() }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
@@ -77,7 +77,7 @@
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Valor (R$) *</label>
         <input type="number" name="valor_servico" step="0.01" min="0" required
-               value="{{ '%.2f'|format(at.valor_servico|float) }}"
+              value="{{ '%.2f'|format(at.valor_servico|float) }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
@@ -86,17 +86,16 @@
                 onchange="toggleCartaoEdit()"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
           <option value="">—</option>
-          <option value="cartao_credito" {% if at.forma_pagamento and at.forma_pagamento.value == 'cartao_credito' %}selected{% endif %}>Cartão</option>
-          <option value="pix"            {% if at.forma_pagamento and at.forma_pagamento.value == 'pix' %}selected{% endif %}>Pix</option>
-          <option value="transferencia"  {% if at.forma_pagamento and at.forma_pagamento.value == 'transferencia' %}selected{% endif %}>Transferência</option>
-          <option value="dinheiro"       {% if at.forma_pagamento and at.forma_pagamento.value == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+          {% for forma in formas_pagamento %}
+          <option value="{{ forma.value }}" {% if at.forma_pagamento == forma %}selected{% endif %}>{{ forma.value | replace('_', ' ') | capitalize }}</option>
+          {% endfor %}
         </select>
       </div>
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Condição</label>
         <select name="condicao_pagamento"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          <option value="avista"    {% if at.condicao_pagamento and at.condicao_pagamento.value == 'avista' %}selected{% endif %}>À vista</option>
+          <option value="avista"    {% if at.condicao_pagamento and at.condicao_pagamento.value != 'parcelado' %}selected{% endif %}>À vista</option>
           <option value="parcelado" {% if at.condicao_pagamento and at.condicao_pagamento.value == 'parcelado' %}selected{% endif %}>Parcelado</option>
         </select>
       </div>
@@ -107,33 +106,58 @@
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">4 últimos dígitos</label>
         <input type="text" name="ultimos_digitos_cartao" maxlength="4"
-               value="{{ at.ultimos_digitos_cartao or '' }}"
+              value="{{ at.ultimos_digitos_cartao or '' }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Bandeira</label>
-        <select name="bandeira_cartao"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          <option value="">—</option>
+        <input type="text" name="bandeira_cartao" maxlength="30" list="bandeiras-edicao" value="{{ at.bandeira_cartao or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <datalist id="bandeiras-edicao">
           {% for b in ['Visa','Mastercard','Elo','Amex','Hipercard'] %}
-          <option {% if at.bandeira_cartao == b %}selected{% endif %}>{{ b }}</option>
+          <option value="{{ b }}">
           {% endfor %}
-        </select>
+        </datalist>
       </div>
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nº de parcelas</label>
-        <input type="number" name="parcela_total" min="1" max="48"
-               value="{{ at.parcela_total or 1 }}"
-               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
-        <input type="hidden" name="parcela_numero" value="{{ at.parcela_numero or 1 }}" />
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Taxa do cartão (%)</label>
+        <input type="number" name="taxa_cartao" min="0" max="100" step="0.01" value="{{ at.taxa_cartao if at.taxa_cartao is not none else '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <p class="text-xs text-gray-500 mt-1">Em branco, utiliza a taxa cadastrada. O valor líquido é recalculado ao salvar.</p>
       </div>
     </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Vencimento / recebimento previsto</label>
+        <input type="date" name="data_prevista_recebimento" value="{{ at.data_prevista_recebimento.isoformat() if at.data_prevista_recebimento else '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Número desta parcela</label>
+        <input type="number" name="parcela_numero" min="1" max="48" required value="{{ at.parcela_numero or 1 }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Total de parcelas</label>
+        <input type="number" name="parcela_total" min="1" max="48" required value="{{ at.parcela_total or 1 }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Banco de recebimento</label>
+        <input type="text" name="banco_recebimento" value="{{ at.banco_recebimento or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data do crédito</label>
+        <input type="date" name="data_credito" value="{{ at.data_credito.isoformat() if at.data_credito else '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Data de pagamento do repasse</label>
+        <input type="date" name="data_pagamento_medico" value="{{ at.data_pagamento_medico.isoformat() if at.data_pagamento_medico else '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+    </div>
+    <p class="text-xs text-gray-500">A edição altera somente este lançamento. Alterar a numeração das parcelas não cria nem exclui outras contas.</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">% Centro de Custo</label>
         <input type="number" name="percentual_medico" step="0.01" min="0" max="100"
-               value="{{ '%.2f'|format(at.percentual_medico|float) if at.percentual_medico else '' }}"
+              value="{{ '%.2f'|format(at.percentual_medico|float) if at.percentual_medico else '' }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
@@ -141,6 +165,26 @@
         <input type="text" name="observacao" value="{{ at.observacao or '' }}"
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Rateio por centro de custo</label>
+      <p class="text-xs text-gray-500 mb-2">Distribua 100% do valor entre os centros. Sem rateio, será usado o centro de custo selecionado acima.</p>
+      <div id="rateios-edicao" class="space-y-2">
+        {% for rateio in at.rateios_centro_custo or [none] %}
+        <div class="flex gap-2">
+          <select name="rateio_centro_custo_id" aria-label="Centro de custo do rateio" class="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="">Selecione...</option>
+            {% for cc in centros_custo %}
+            <option value="{{ cc.id }}" {% if rateio and rateio.centro_custo_id == cc.id %}selected{% endif %}>{{ cc.nome }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="rateio_percentual" aria-label="Percentual do rateio" min="0.01" max="100" step="0.01" value="{{ rateio.percentual if rateio else '' }}" class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <button type="button" onclick="const row=this.parentElement; if(row.parentElement.children.length>1) row.remove(); else {row.querySelector('select').value=''; row.querySelector('input').value='';}" class="text-sm text-red-600">Remover</button>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" onclick="const box=document.getElementById('rateios-edicao'); const row=box.firstElementChild.cloneNode(true); row.querySelector('select').value=''; row.querySelector('input').value=''; box.appendChild(row);" class="mt-2 text-sm text-blue-700">Adicionar centro de custo</button>
     </div>
 
     <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">

@@ -44,10 +44,15 @@ def _request(
 
 
 def test_password_hash_and_policy():
-    password = "UmaSenhaForte!2026"
+    password = "abc123"
     password_hash = hash_senha(password)
     assert validar_senha_nova(password)
     assert not validar_senha_nova("curta")
+    assert not validar_senha_nova("á" * 5)
+    assert validar_senha_nova("á" * 6)
+    assert validar_senha_nova("a" * 72)
+    assert not validar_senha_nova("a" * 73)
+    assert not validar_senha_nova("á" * 37)
     assert password not in password_hash
     assert verificar_senha(password, password_hash)
     assert not verificar_senha("OutraSenhaForte!2026", password_hash)

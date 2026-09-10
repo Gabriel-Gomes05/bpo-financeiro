@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import shutil
 import unicodedata
 import uuid
 from calendar import monthrange
@@ -379,6 +380,7 @@ async def form_editar_conta(
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "formas_pagamento": list(FormaPagamento),
         "planos_conta_despesa": _planos_despesa(db, [conta.cliente_id]),
+        "centros_custo": centros_por_cliente.get(conta.cliente_id, []),
     })
 
 
@@ -394,6 +396,8 @@ async def salvar_edicao_conta(
     plano_conta_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
     escopo_valor: str = Form("somente"),
+    rateio_centro_custo_key: Optional[List[str]] = Form(None),
+    rateio_percentual: Optional[List[str]] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
@@ -411,6 +415,15 @@ async def salvar_edicao_conta(
             url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
             status_code=303,
         )
+
+    novos_rateios = None
+    if isinstance(rateio_centro_custo_key, list):
+        novos_rateios = _montar_rateios_conta(
+            db, conta.cliente_id, valor, rateio_centro_custo_key,
+            rateio_percentual if isinstance(rateio_percentual, list) else [],
+        )
+        if any(key.strip() for key in rateio_centro_custo_key) and not novos_rateios:
+            raise HTTPException(400, "Rateio invalido: use centros diferentes e feche 100%.")
 
     contas_valor = [conta]
     if escopo_valor == "proximos" and conta.recorrencia_grupo_id:
@@ -437,6 +450,14 @@ async def salvar_edicao_conta(
             for rateio in rateios:
                 rateio.valor = (valor * rateio.percentual / Decimal("100")).quantize(Decimal("0.01"))
             rateios[-1].valor += valor - sum((r.valor for r in rateios), Decimal("0"))
+
+    if novos_rateios is not None:
+        conta.rateios_centro_custo = [ContaPagarCentroCustoRateio(
+            centro_custo_id=r["centro"].id,
+            categoria_key=r["categoria_key"],
+            percentual=r["percentual"],
+            valor=r["valor"],
+        ) for r in novos_rateios]
 
     conta.descricao = descricao
     conta.fornecedor = fornecedor or None
@@ -654,26 +675,40 @@ async def criar_conta(
     if recorrente and qtd_ocorrencias > 1:
         for indice in range(1, qtd_ocorrencias):
             data_ocorrencia = _data_recorrencia(vencimento, recorrencia_intervalo, recorrencia_dias, indice)
-            data_competencia_ocorrencia = _data_recorrencia(data_competencia, recorrencia_intervalo, recorrencia_dias, indice)
-            db.add(ContaPagar(
-                cliente_id=cliente_id,
-                descricao=descricao,
-                fornecedor=fornecedor or None,
-                tipo=tipo,
-                valor=valor,
+            documento_ocorrencia = None
+            if documento_path:
+                origem_documento = Path(documento_path)
+                documento_ocorrencia = str(origem_documento.with_name(
+                    f"{uuid.uuid4().hex}{origem_documento.suffix}"
+                ))
+                shutil.copyfile(documento_path, documento_ocorrencia)
+            nova_conta = ContaPagar(
+                cliente_id=conta.cliente_id,
+                descricao=conta.descricao,
+                fornecedor=conta.fornecedor,
+                tipo=conta.tipo,
+                valor=conta.valor,
                 vencimento=data_ocorrencia,
-                data_competencia=data_competencia_ocorrencia,
-                forma_pagamento=forma_pagamento,
-                categoria_dre=categoria_compat,
-                plano_conta_id=plano.id if plano else None,
-                especialidade=especialidade_valor,
-                status=StatusContaPagar.pendente,
-                observacao=observacao or None,
-                lancado_por_id=usuario.id,
-                recorrencia_intervalo=recorrencia_intervalo,
-                recorrencia_dias=recorrencia_dias if recorrencia_intervalo == "personalizado" else None,
+                data_competencia=conta.data_competencia,
+                forma_pagamento=conta.forma_pagamento,
+                categoria_dre=conta.categoria_dre,
+                plano_conta_id=conta.plano_conta_id,
+                especialidade=conta.especialidade,
+                status=conta.status,
+                documento_path=documento_ocorrencia,
+                observacao=conta.observacao,
+                lancado_por_id=conta.lancado_por_id,
+                recorrencia_intervalo=conta.recorrencia_intervalo,
+                recorrencia_dias=conta.recorrencia_dias,
                 recorrencia_grupo_id=conta.id,
-            ))
+                rateios_centro_custo=[ContaPagarCentroCustoRateio(
+                    centro_custo_id=r["centro"].id,
+                    categoria_key=r["categoria_key"],
+                    percentual=r["percentual"],
+                    valor=r["valor"],
+                ) for r in rateios],
+            )
+            db.add(nova_conta)
             proximas_geradas += 1
 
     db.commit()
