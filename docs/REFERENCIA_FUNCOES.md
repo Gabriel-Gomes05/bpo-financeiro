@@ -2721,57 +2721,67 @@ Seed: exemplos completos para testar a Conciliação de Cartão. Cria Atendiment
 
 ### `_request(*, path: str='/', client: tuple[str, int]=('127.0.0.1', 50000), headers: list[tuple[bytes, bytes]] | None=None) -> Request`
 
-- Local: [_request](../tests/test_security.py#L25)
+- Local: [_request](../tests/test_security.py#L30)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “request”.
 
 ### `test_password_hash_and_policy()`
 
-- Local: [test_password_hash_and_policy](../tests/test_security.py#L46)
+- Local: [test_password_hash_and_policy](../tests/test_security.py#L51)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test password hash and policy”.
 
 ### `test_jwt_has_lifecycle_claims_and_does_not_accept_url_token()`
 
-- Local: [test_jwt_has_lifecycle_claims_and_does_not_accept_url_token](../tests/test_security.py#L61)
+- Local: [test_jwt_has_lifecycle_claims_and_does_not_accept_url_token](../tests/test_security.py#L66)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test jwt has lifecycle claims and does not accept url token”.
 
 ### `test_bearer_header_takes_precedence_over_cookie()`
 
-- Local: [test_bearer_header_takes_precedence_over_cookie](../tests/test_security.py#L73)
+- Local: [test_bearer_header_takes_precedence_over_cookie](../tests/test_security.py#L78)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test bearer header takes precedence over cookie”.
 
 ### `test_permission_matrix_is_centralized()`
 
-- Local: [test_permission_matrix_is_centralized](../tests/test_security.py#L83)
+- Local: [test_permission_matrix_is_centralized](../tests/test_security.py#L88)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test permission matrix is centralized”.
 
 ### `test_proxy_headers_are_only_trusted_from_configured_network()`
 
-- Local: [test_proxy_headers_are_only_trusted_from_configured_network](../tests/test_security.py#L92)
+- Local: [test_proxy_headers_are_only_trusted_from_configured_network](../tests/test_security.py#L97)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test proxy headers are only trusted from configured network”.
 
 ### `test_origin_allowlist_is_exact()`
 
-- Local: [test_origin_allowlist_is_exact](../tests/test_security.py#L105)
+- Local: [test_origin_allowlist_is_exact](../tests/test_security.py#L110)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test origin allowlist is exact”.
 
 ### `test_secure_cookie_is_disabled_only_for_explicit_private_host(monkeypatch)`
 
-- Local: [test_secure_cookie_is_disabled_only_for_explicit_private_host](../tests/test_security.py#L114)
+- Local: [test_secure_cookie_is_disabled_only_for_explicit_private_host](../tests/test_security.py#L119)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test secure cookie is disabled only for explicit private host”.
 
 ### `test_rotina_partial_escapes_user_controlled_html()`
 
-- Local: [test_rotina_partial_escapes_user_controlled_html](../tests/test_security.py#L145)
+- Local: [test_rotina_partial_escapes_user_controlled_html](../tests/test_security.py#L150)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test rotina partial escapes user controlled html”.
 
-### `test_public_endpoints_and_security_headers()`
+### `isolated_http(monkeypatch)`
 
-- Local: [test_public_endpoints_and_security_headers](../tests/test_security.py#L161)
+- Local: [isolated_http](../tests/test_security.py#L167)
+- Responsabilidade: Isola Redis e banco, preservando as regras reais de autenticação e rate limit.
+
+### `test_db()`
+
+- Local: [isolated_http.test_db](../tests/test_security.py#L177)
+- Responsabilidade: Função auxiliar responsável pelo fluxo “test db”.
+
+### `test_public_endpoints_and_security_headers(isolated_http)`
+
+- Local: [test_public_endpoints_and_security_headers](../tests/test_security.py#L193)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test public endpoints and security headers”.
 
-### `test_login_rate_limit_is_per_account_and_message_is_generic()`
+### `test_login_rate_limit_is_per_account_and_message_is_generic(isolated_http)`
 
-- Local: [test_login_rate_limit_is_per_account_and_message_is_generic](../tests/test_security.py#L178)
+- Local: [test_login_rate_limit_is_per_account_and_message_is_generic](../tests/test_security.py#L210)
 - Responsabilidade: Função auxiliar responsável pelo fluxo “test login rate limit is per account and message is generic”.
 
 ## `tests/test_taxas_cartao.py`
@@ -2805,4 +2815,4 @@ Testes da seleção automática de taxa por faixa de parcelamento.
 
 ---
 
-Total documentado: **502 funções e métodos**.
+Total documentado: **504 funções e métodos**.

@@ -1,8 +1,13 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import fakeredis.aioredis
+import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 import app.security as security
 from app.auth import (
@@ -18,7 +23,7 @@ from app.config import APP_URL
 from app.main import app
 from app.models import PerfilUsuario
 from app.routers.rotinas import _render_li
-from app.redis_client import redis_sync
+from app.database import Base, get_db
 from app.security import _origem_permitida, client_ip
 
 
@@ -158,7 +163,34 @@ def test_rotina_partial_escapes_user_controlled_html():
     assert "&lt;img" in rendered
 
 
-def test_public_endpoints_and_security_headers():
+@pytest.fixture
+def isolated_http(monkeypatch):
+    """Isola Redis e banco, preservando as regras reais de autenticação e rate limit."""
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    for module in ("app.rate_limit", "app.main", "app.auth"):
+        monkeypatch.setattr(f"{module}.redis_async", lambda: redis)
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def test_db():
+        with Session(engine) as db:
+            yield db
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = test_db
+    monkeypatch.setattr("app.routers.auth.LOGIN_RATE_LIMIT_ACCOUNT", 5)
+    monkeypatch.setattr("app.routers.auth.LOGIN_RATE_LIMIT_IP", 20)
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+        engine.dispose()
+
+
+def test_public_endpoints_and_security_headers(isolated_http):
     with TestClient(app) as client:
         health = client.get("/health")
         assert health.status_code == 200
@@ -175,9 +207,7 @@ def test_public_endpoints_and_security_headers():
         assert query_token.headers["location"] == "/login"
 
 
-def test_login_rate_limit_is_per_account_and_message_is_generic():
-    ip_key = "rate:login:ip:unknown"
-    redis_sync().delete(ip_key)
+def test_login_rate_limit_is_per_account_and_message_is_generic(isolated_http):
     email = f"inexistente-{uuid4().hex}@example.invalid"
     with TestClient(app) as client:
         responses = [
@@ -188,7 +218,13 @@ def test_login_rate_limit_is_per_account_and_message_is_generic():
             )
             for _ in range(6)
         ]
-    redis_sync().delete(ip_key)
+        other_account = client.post(
+            "/login",
+            data={"email": "outra@example.invalid", "senha": "SenhaInvalida!2026"},
+            headers={"Origin": APP_URL},
+        )
+    assert other_account.status_code == 400
+    assert int(responses[-1].headers["Retry-After"]) > 0
     assert [response.status_code for response in responses] == [400, 400, 400, 400, 400, 429]
     assert email not in responses[-1].text
     assert "credenciais informadas" in responses[-1].text
