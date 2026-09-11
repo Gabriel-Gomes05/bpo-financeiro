@@ -1,3 +1,4 @@
+from app.services.desconciliacao_service import desconciliar_recebimento, exigir_confirmacao
 import json
 import logging
 from pathlib import Path
@@ -450,6 +451,7 @@ async def salvar_edicao_lancamento(
     data_pagamento_medico: Optional[date] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
+    confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -459,11 +461,9 @@ async def salvar_edicao_lancamento(
 
     if not at or at.cliente_id not in ids_permitidos:
         return RedirectResponse(url="/lancamentos", status_code=303)
-    if _lancamento_vinculado(db, at):
-        return RedirectResponse(
-            url=f"/lancamentos?cliente_id={at.cliente_id}&flash=Atendimento+já+conciliado%2C+não+pode+ser+editado",
-            status_code=303,
-        )
+    vinculado = _lancamento_vinculado(db, at)
+    if vinculado:
+        exigir_confirmacao(confirmar_conciliacao)
 
     def decimal_campo(raw, nome, limite):
         try:
@@ -548,6 +548,10 @@ async def salvar_edicao_lancamento(
             cc = novos_rateios[0]["centro"]
             cc_id = cc.id
 
+    if vinculado:
+        desconciliar_recebimento(db, at)
+        data_credito = None
+
     if novos_rateios is not None:
         at.rateios_centro_custo = [AtendimentoCentroCustoRateio(
             centro_custo_id=r["centro"].id, percentual=r["percentual"], valor=r["valor"],
@@ -604,6 +608,7 @@ async def excluir_lancamento(
     cliente_id: int = Form(...),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
+    confirmar_conciliacao: bool = Form(False),
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -612,11 +617,11 @@ async def excluir_lancamento(
     if not at or at.cliente_id not in ids_permitidos or at.cliente_id != cliente_id:
         return RedirectResponse(url=f"/lancamentos?cliente_id={cliente_id}", status_code=303)
 
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
     if _lancamento_vinculado(db, at):
-        return RedirectResponse(
-            url=f"/lancamentos?cliente_id={cliente_id}&flash=Atendimento+já+conciliado%2C+não+pode+ser+excluído",
-            status_code=303,
-        )
+        exigir_confirmacao(confirmar_conciliacao)
+        desconciliar_recebimento(db, at)
 
     data_at = at.data_atendimento.isoformat()
     db.delete(at)
@@ -645,6 +650,7 @@ async def excluir_lote_lancamentos(
     ids: List[int] = Form(...),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
+    confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -655,7 +661,10 @@ async def excluir_lote_lancamentos(
     if len(registros) != len(set(ids)):
         raise HTTPException(404, "Seleção contém lançamentos indisponíveis.")
     if any(_lancamento_vinculado(db, at) for at in registros):
-        return RedirectResponse("/lancamentos?flash=" + quote_plus("Há lançamentos vinculados à conciliação. Nenhum registro foi excluído."), status_code=303)
+        exigir_confirmacao(confirmar_conciliacao)
+    for at in registros:
+        if _lancamento_vinculado(db, at):
+            desconciliar_recebimento(db, at)
     for at in registros:
         db.delete(at)
     db.commit()
@@ -694,3 +703,17 @@ async def importar_planilha_lancamentos(
         if caminho:
             Path(caminho).unlink(missing_ok=True)
     return RedirectResponse(f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
+
+
+@router.post("/lancamentos/{at_id}/desconciliar")
+async def desconciliar_lancamento(at_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_lancamentos)):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    at = db.query(Atendimento).filter(Atendimento.id == at_id, Atendimento.cliente_id.in_([c.id for c in clientes_do_usuario(db, usuario)])).first()
+    if not at:
+        raise HTTPException(404, "Lancamento indisponivel.")
+    exigir_confirmacao(confirmar_conciliacao)
+    desconciliar_recebimento(db, at)
+    db.commit()
+    _log(db, "Recebimento desconciliado", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=at.cliente_id, detalhes=f"Atendimento #{at.id}")
+    return RedirectResponse(f"/lancamentos?cliente_id={at.cliente_id}", status_code=303)

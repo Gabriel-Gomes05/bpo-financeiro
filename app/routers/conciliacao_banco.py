@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy import func, or_
@@ -53,9 +53,76 @@ from app.services.conciliacao_service import (
 from app.services.log_service import registrar as _log
 from app.errors import public_import_error
 
+from app.services.contas_bancarias_service import conta_do_cliente, registrar_transferencia, saldo_previsto
+
+
+async def get_banco_db(request: Request, db: Session = Depends(get_db)):
+    cliente = request.query_params.get("cliente_id")
+    selected = request.query_params.get("conta_bancaria_id")
+    if request.method == "GET":
+        cliente = request.cookies.get("cliente_ativo") or cliente
+    if request.method == "POST":
+        form = await request.form()
+        cliente = form.get("cliente_id", cliente)
+        selected = form.get("conta_bancaria_id", selected)
+    cliente = str(cliente or request.cookies.get("cliente_ativo", ""))
+    if selected is None:
+        selected = request.cookies.get("banco_conta_" + cliente, "")
+    if selected and str(selected).isdigit() and cliente.isdigit():
+        conta_do_cliente(db, int(cliente), int(selected))
+        db.info["banco_conta_id"] = int(selected)
+    return db
+
+
+def _filtrar_conta(db, registros):
+    conta_id = db.info.get("banco_conta_id")
+    return [m for m in registros if not conta_id or m.conta_bancaria_id == conta_id]
+
+
 router = APIRouter()
 require_conciliacao = require_permission(Permission.CONCILIACAO)
 logger = logging.getLogger(__name__)
+
+
+@router.post("/conciliacao/banco/contas")
+async def cadastrar_conta_bancaria(
+    cliente_id: int = Form(...), nome: str = Form(...), banco: str = Form(...),
+    agencia: str = Form(""), numero: str = Form(...), saldo: Decimal = Form(...),
+    data_saldo: date = Form(...), db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+    if not nome.strip() or len(nome.strip()) > 100 or not banco.strip() or not numero.strip():
+        raise HTTPException(400, "Informe nome, banco e número da conta.")
+    if not saldo.is_finite() or abs(saldo) > Decimal("999999999999.99") or saldo != saldo.quantize(Decimal("0.01")):
+        raise HTTPException(400, "Saldo inválido.")
+    existentes = db.query(ContaBancaria).filter(ContaBancaria.cliente_id == cliente_id).all()
+    if any((c.banco or "").strip().casefold() == banco.strip().casefold() and (c.agencia or "").strip() == agencia.strip() and (c.conta or "").strip() == numero.strip() for c in existentes):
+        raise HTTPException(409, "Esta conta já está cadastrada para o cliente.")
+    conta = ContaBancaria(cliente_id=cliente_id, nome=nome.strip(), banco=banco.strip(), agencia=agencia.strip() or None,
+        conta=numero.strip(), tipo=TipoContaBancaria.bancaria, ativo=True, saldo_atual=saldo,
+        saldo_data_referencia=datetime.combine(data_saldo, datetime.min.time()), saldo_atualizado_em=datetime.now())
+    db.add(conta)
+    db.commit()
+    _log(db, "Conta bancária cadastrada", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"Conta #{conta.id}")
+    response = RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}&conta_bancaria_id={conta.id}#movimentacoes", status_code=303)
+    response.set_cookie(f"banco_conta_{cliente_id}", str(conta.id), samesite="lax")
+    return response
+
+
+@router.post("/conciliacao/banco/transferencias")
+async def transferir_entre_contas(
+    cliente_id: int = Form(...), origem_id: int = Form(...), destino_id: int = Form(...),
+    valor: Decimal = Form(...), data_transferencia: date = Form(...), descricao: str = Form(""), token: str = Form(...),
+    db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
+):
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+    grupo = registrar_transferencia(db, cliente_id, origem_id, destino_id, valor, data_transferencia, descricao, token)
+    db.commit()
+    _log(db, "Transferência interna registrada", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"Transferência {grupo}; origem #{origem_id}; destino #{destino_id}; valor {valor}")
+    return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
 
 def _chave_centro_custo(cc: CentroCusto) -> str:
@@ -144,7 +211,7 @@ def _registrar_pagamento_conta(
 
 def _carregar_movimentacoes(db: Session, cliente_id: int):
     """Retorna pix_ted pendentes que NÃO estão vinculados a lote de cartão."""
-    return (
+    return _filtrar_conta(db, (
         db.query(MovimentacaoBancaria)
         .filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
@@ -160,7 +227,7 @@ def _carregar_movimentacoes(db: Session, cliente_id: int):
         )
         .order_by(MovimentacaoBancaria.data_movimento.asc(), MovimentacaoBancaria.id.asc())
         .all()
-    )
+    ))
 
 
 def _carregar_lancamentos_pendentes(db: Session, cliente_id: int):
@@ -296,6 +363,7 @@ def _auto_match_lotes(db: Session, cliente_id: int, usuario: Usuario | None = No
     for lote in lotes_pendentes:
         mov = db.query(MovimentacaoBancaria).filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
+            or_(db.info.get("banco_conta_id") is None, MovimentacaoBancaria.conta_bancaria_id == db.info.get("banco_conta_id")),
             MovimentacaoBancaria.tipo == "pix_ted",
             MovimentacaoBancaria.sentido == "recebimento",
             MovimentacaoBancaria.conciliada_com_atendimento_id.is_(None),
@@ -325,7 +393,7 @@ def _auto_match_lotes(db: Session, cliente_id: int, usuario: Usuario | None = No
 
 def _carregar_saidas_banco(db: Session, cliente_id: int):
     """Saídas bancárias ainda não vinculadas a uma conta a pagar."""
-    return (
+    return _filtrar_conta(db, (
         db.query(MovimentacaoBancaria)
         .filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
@@ -340,7 +408,7 @@ def _carregar_saidas_banco(db: Session, cliente_id: int):
         )
         .order_by(MovimentacaoBancaria.data_movimento.desc())
         .all()
-    )
+    ))
 
 
 def _carregar_contas_agendadas(db: Session, cliente_id: int):
@@ -368,7 +436,7 @@ def _carregar_lotes_cartao(db: Session, cliente_id: int):
 
 def _carregar_creditos_banco_para_lote(db: Session, cliente_id: int):
     """MovimentacaoBancaria pix_ted ainda não vinculadas a lote de cartão (disponíveis para match)."""
-    return (
+    return _filtrar_conta(db, (
         db.query(MovimentacaoBancaria)
         .filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
@@ -385,12 +453,12 @@ def _carregar_creditos_banco_para_lote(db: Session, cliente_id: int):
         )
         .order_by(MovimentacaoBancaria.data_movimento.desc())
         .all()
-    )
+    ))
 
 
 def _carregar_pix_conciliados(db: Session, cliente_id: int):
     """PIX/TED já conciliados com atendimento — para exibir com opção de desvincular."""
-    return (
+    return _filtrar_conta(db, (
         db.query(MovimentacaoBancaria)
         .filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
@@ -404,7 +472,7 @@ def _carregar_pix_conciliados(db: Session, cliente_id: int):
         .order_by(MovimentacaoBancaria.data_movimento.desc())
         .limit(100)
         .all()
-    )
+    ))
 
 
 def _resumo_periodo_movimentacoes(movimentacoes: list) -> str:
@@ -439,7 +507,7 @@ def _opcoes_mes_movimentacoes(movimentacoes: list) -> list[dict]:
 
 def _carregar_saidas_conciliadas(db: Session, cliente_id: int):
     """Saídas bancárias já conciliadas com conta a pagar — para exibir com opção de desvincular."""
-    return (
+    return _filtrar_conta(db, (
         db.query(MovimentacaoBancaria)
         .filter(
             MovimentacaoBancaria.cliente_id == cliente_id,
@@ -451,7 +519,7 @@ def _carregar_saidas_conciliadas(db: Session, cliente_id: int):
         .order_by(MovimentacaoBancaria.data_movimento.desc())
         .limit(100)
         .all()
-    )
+    ))
 
 
 def _carregar_arquivados(db: Session, cliente_id: int):
@@ -493,6 +561,13 @@ def _conta_bancaria_do_ofx(db: Session, cliente_id: int, df) -> ContaBancaria:
         ContaBancaria.banco == banco,
         ContaBancaria.conta == numero,
     ).first()
+    if db.info.get("banco_conta_id"):
+        selecionada = conta_do_cliente(db, cliente_id, db.info["banco_conta_id"])
+        if conta and conta.id != selecionada.id:
+            raise ValueError("O OFX pertence a outra conta cadastrada.")
+        if selecionada.conta and numero and selecionada.conta.strip() != numero:
+            raise ValueError("O numero da conta do OFX difere da conta selecionada.")
+        conta = selecionada
     if not conta:
         conta = ContaBancaria(
             cliente_id=cliente_id,
@@ -505,9 +580,12 @@ def _conta_bancaria_do_ofx(db: Session, cliente_id: int, df) -> ContaBancaria:
         db.add(conta)
         db.flush()
     if "ofx_saldo" in df.attrs:
-        conta.saldo_atual = df.attrs["ofx_saldo"]
-        conta.saldo_data_referencia = df.attrs.get("ofx_saldo_data") or datetime.now()
-        conta.saldo_atualizado_em = datetime.now()
+        referencia = df.attrs.get("ofx_saldo_data") or datetime.now()
+        referencia = datetime.combine(referencia.date(), datetime.max.time())
+        if not conta.saldo_data_referencia or referencia >= conta.saldo_data_referencia.replace(tzinfo=None):
+            conta.saldo_atual = df.attrs["ofx_saldo"]
+            conta.saldo_data_referencia = referencia
+            conta.saldo_atualizado_em = datetime.now()
     return conta
 
 
@@ -531,6 +609,7 @@ def _resumo_saldos_bancarios(db: Session, cliente_id: int | None) -> list[dict]:
         pendentes = [m for m in movimentos if m.status != StatusMovimentacaoBancaria.conciliada]
         resumos.append({
             "conta": conta,
+            "saldo_previsto": saldo_previsto(conta, movimentos),
             "entradas": entradas,
             "saidas": saidas,
             "total_movimentos": len(movimentos),
@@ -547,6 +626,7 @@ def _movimentacoes_do_extrato(db: Session, cliente_id: int | None):
     return db.query(MovimentacaoBancaria).filter(
         MovimentacaoBancaria.cliente_id == cliente_id,
         MovimentacaoBancaria.conta_bancaria_id.isnot(None),
+        or_(db.info.get("banco_conta_id") is None, MovimentacaoBancaria.conta_bancaria_id == db.info.get("banco_conta_id")),
         MovimentacaoBancaria.arquivado_conciliacao_banco == False,
     ).order_by(MovimentacaoBancaria.data_movimento.desc(), MovimentacaoBancaria.id.desc()).limit(500).all()
 
@@ -572,6 +652,8 @@ def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, me
     return {
         "clientes": clientes,
         "cliente_selecionado": cliente_id,
+        "conta_bancaria_selecionada": db.info.get("banco_conta_id"),
+        "transferencia_token": str(uuid.uuid4()),
         "receitas_pendentes": lancs,
         "movimentacoes_bancarias": movs,
         "lotes_cartao": lotes,
@@ -613,7 +695,7 @@ async def pagina_banco(
     mes_conciliado: Optional[str] = Query(default=None),
     arquivados: bool = Query(default=False),
     manual_criado: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     if usuario.perfil.value in ("secretaria", "medico"):
@@ -649,7 +731,7 @@ async def pagina_banco(
             )
 
     ctx = _ctx_padrao(db, usuario, cliente_id, buscar_mov, termo, mes_conciliado)
-    return templates.TemplateResponse("conciliacao_banco.html", {
+    response = templates.TemplateResponse("conciliacao_banco.html", {
         "request": request, "usuario": usuario,
         "flash_success": flash_success,
         "flash_error": flash_error,
@@ -657,6 +739,10 @@ async def pagina_banco(
         "mostrar_arquivados": arquivados,
         **ctx,
     })
+    if cliente_id:
+        response.set_cookie(f"banco_conta_{cliente_id}", str(db.info.get("banco_conta_id") or ""), samesite="lax")
+    return response
+
 
 
 @router.post("/conciliacao/banco/manual/receita")
@@ -670,7 +756,7 @@ async def criar_receita_manual_banco(
     forma_pagamento: str = Form("pix"),
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -729,7 +815,7 @@ async def criar_movimentacao_manual_banco(
     data_movimento: date = Form(...),
     valor: Decimal = Form(...),
     descricao: str = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -800,7 +886,7 @@ async def criar_despesa_manual_banco(
     vencimento: date = Form(...),
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -850,7 +936,7 @@ async def criar_pagamento_parcial_banco(
     valor: Decimal = Form(...),
     data_pagamento: date = Form(...),
     observacao: str = Form(""),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -887,7 +973,7 @@ async def importar_lancamentos_banco(
     request: Request,
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -930,7 +1016,7 @@ async def importar_extrato_banco(
     request: Request,
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -957,13 +1043,13 @@ async def importar_extrato_banco(
             resultado["importados"] = importacao["importados"]
             db.commit()
         else:
+            if not db.info.get("banco_conta_id"):
+                raise ValueError("Selecione a conta bancaria antes de importar CSV ou XLSX.")
             df = ler_arquivo_extrato(caminho)
-            limpar_divergencias_anteriores(db, cliente_id, "pix_ted")
-            limpar_movimentacoes_anteriores(db, cliente_id, "pix_ted")
-            conciliados, divergencias = conciliar_pix_ted(db, cliente_id, df, nome_original)
-            resultado["conciliados"] = conciliados
-            resultado["divergencias"] = divergencias
+            importacao = importar_movimentacoes_bancarias(db, cliente_id, df, nome_original, conta_bancaria_id=db.info["banco_conta_id"])
+            resultado["importados"] = importacao["importados"]
     except Exception:
+        db.rollback()
         resultado["erro"] = public_import_error(logger, "importar_extrato_banco")
     finally:
         try:
@@ -984,7 +1070,7 @@ async def importar_extrato_banco(
 @router.post("/conciliacao/banco/conciliar-todos-prontos")
 async def conciliar_todos_prontos(
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1002,7 +1088,7 @@ async def conciliar_movimentacao(
     cliente_id: int = Form(...),
     atendimento_id: int = Form(...),
     origem: str = Form("sugestao"),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1023,7 +1109,7 @@ async def conciliar_movimentacao(
 async def revisar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1041,7 +1127,7 @@ async def revisar_movimentacao(
 async def arquivar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1059,7 +1145,7 @@ async def arquivar_movimentacao(
 async def restaurar_movimentacao(
     mov_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1074,7 +1160,7 @@ async def restaurar_movimentacao(
 async def arquivar_lancamento_sistema(
     atendimento_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1092,7 +1178,7 @@ async def arquivar_lancamento_sistema(
 async def restaurar_lancamento_sistema(
     atendimento_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1107,7 +1193,7 @@ async def restaurar_lancamento_sistema(
 async def arquivar_conta_sistema(
     conta_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1125,7 +1211,7 @@ async def arquivar_conta_sistema(
 async def restaurar_conta_sistema(
     conta_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1140,7 +1226,7 @@ async def restaurar_conta_sistema(
 async def desvincular_movimentacao_pix(
     mov_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1148,7 +1234,7 @@ async def desvincular_movimentacao_pix(
 
     mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
     if not mov or mov.cliente_id not in ids_ok or mov.cliente_id != cliente_id:
-        return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
+        return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
     if mov.conciliada_com_atendimento_id:
         at = db.query(Atendimento).filter(Atendimento.id == mov.conciliada_com_atendimento_id).first()
@@ -1160,7 +1246,7 @@ async def desvincular_movimentacao_pix(
     mov.conciliada_com_atendimento_id = None
     mov.status = StatusMovimentacaoBancaria.importada
     db.commit()
-    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
+    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
 
 @router.post("/conciliacao/banco/movimentacao/{mov_id}/criar-e-conciliar")
@@ -1175,7 +1261,7 @@ async def criar_e_conciliar(
     tipo_servico: str = Form(""),
     descricao_servico: str = Form(""),
     observacao: str = Form(""),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     from datetime import date as date_type
@@ -1229,7 +1315,7 @@ async def importar_conta_corrente(
     request: Request,
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1271,7 +1357,7 @@ async def conciliar_lote_com_banco(
     lote_id: int,
     cliente_id: int = Form(...),
     mov_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1294,7 +1380,7 @@ async def conciliar_lote_com_banco(
 @router.post("/conciliacao/banco/lote/auto-match")
 async def auto_match_lotes(
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     """Auto-concilia lotes pendentes com MovimentacaoBancaria de valor exato."""
@@ -1310,7 +1396,7 @@ async def auto_match_lotes(
 async def desvincular_lote(
     lote_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1326,7 +1412,7 @@ async def desvincular_lote(
         lote.status = StatusTransferenciaCartao.pendente
         db.commit()
 
-    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
+    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -1338,7 +1424,7 @@ async def conciliar_saida_com_conta(
     mov_id: int,
     cliente_id: int = Form(...),
     conta_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1366,7 +1452,7 @@ async def conciliar_saida_com_conta(
 async def desvincular_saida(
     mov_id: int,
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
@@ -1393,13 +1479,13 @@ async def desvincular_saida(
         mov.status = StatusMovimentacaoBancaria.importada
         db.commit()
 
-    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
+    return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
 
 @router.post("/conciliacao/banco/saida/auto-match")
 async def auto_match_saidas(
     cliente_id: int = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     """Concilia em lote, por acao do usuario, saidas com contas de valor exato."""

@@ -142,7 +142,7 @@
         <tbody class="divide-y divide-gray-100">
           {% for a in atendimentos %}
           <tr class="hover:bg-gray-50">
-            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ a.id }}" aria-label="Selecionar registro {{ a.id }}" onchange="atualizarSelecaoLote()" {% if a.status_conciliacao.value == 'conciliado' %}disabled{% endif %}>{% endif %}</td>
+            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ a.id }}" aria-label="Selecionar registro {{ a.id }}" onchange="atualizarSelecaoLote()" >{% endif %}</td>
             <td data-col="data"              class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
             <td data-col="cliente"           class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{{ a.cliente.nome }}</td>
             <td data-col="nome_paciente"     class="px-4 py-3 text-gray-600">{{ a.nome_paciente or '—' }}</td>
@@ -199,7 +199,7 @@
             <td data-col="observacao"        class="px-4 py-3 text-gray-500 text-xs max-w-[180px] truncate">{{ a.observacao or '—' }}</td>
             <td data-col="lancado_por"       class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.lancado_por.nome if a.lancado_por else '—' }}</td>
             <td class="px-4 py-3 text-center whitespace-nowrap">
-              {% if a.status_conciliacao.value != 'conciliado' %}
+              {% if usuario.perfil != 'medico' %}
               <div class="flex items-center justify-center gap-1">
                 <a href="/lancamentos/{{ a.id }}/editar"
                    class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100 transition">✏ Editar</a>

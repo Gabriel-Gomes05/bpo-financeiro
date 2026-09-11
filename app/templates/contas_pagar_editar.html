@@ -12,7 +12,7 @@
   </div>
 
   <form method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5"
-        onsubmit="return !this.elements.escopo_valor || this.elements.escopo_valor.value !== 'proximos' || confirm('Aplicar o valor informado a este lançamento e aos próximos da recorrência? Os anteriores são mantidos, e os que já estiverem pagos ou conciliados também não serão alterados.')">
+        onsubmit="return !this.elements.escopo_valor || this.elements.escopo_valor.value !== 'proximos' || confirm('Aplicar a este e aos proximos da recorrencia? Pagamentos e conciliacoes serao desfeitos. Os anteriores serao mantidos.')">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="md:col-span-2">
@@ -51,7 +51,7 @@
           <option value="somente">Aplicar só a este valor</option>
           <option value="proximos">Aplicar a este e aos próximos</option>
         </select>
-        <p class="mt-1 text-[11px] text-gray-500">Próximos a partir de {{ conta.vencimento.strftime('%d/%m/%Y') }}. Anteriores, pagos ou conciliados ficam com o valor atual.</p>
+        <p class="mt-1 text-[11px] text-gray-500">Próximos a partir de {{ conta.vencimento.strftime('%d/%m/%Y') }}. Anteriores ficam com o valor atual. Os pr?ximos ser?o atualizados ap?s confirma??o.</p>
         {% endif %}
       </div>
       <div>

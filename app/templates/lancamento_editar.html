@@ -11,13 +11,6 @@
     <span class="text-gray-700 font-medium">Editar #{{ at.id }}</span>
   </div>
 
-  {% if bloqueado %}
-  <div class="rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-4 text-sm text-emerald-800">
-    Este lançamento possui vínculo com a conciliação. Desfaça o vínculo antes de editar.
-    <a href="/lancamentos?cliente_id={{ at.cliente_id }}" class="underline ml-2">Voltar</a>
-  </div>
-  {% else %}
-
   <form method="post" action="/lancamentos/{{ at.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -198,7 +191,6 @@
 
   </form>
 
-  {% endif %}
 </div>
 
 <script>

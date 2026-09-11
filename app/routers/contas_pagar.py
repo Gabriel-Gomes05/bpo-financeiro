@@ -1,3 +1,4 @@
+from app.services.desconciliacao_service import desconciliar_pagamento, exigir_confirmacao
 import os
 import logging
 import re
@@ -367,11 +368,7 @@ async def form_editar_conta(
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
-    if conta.status == StatusContaPagar.pago:
-        return RedirectResponse(
-            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
-            status_code=303,
-        )
+
     centros_por_cliente = _centros_custo_por_cliente(db, [conta.cliente_id])
     return templates.TemplateResponse("contas_pagar_editar.html", {
         "request": request,
@@ -400,6 +397,7 @@ async def salvar_edicao_conta(
     rateio_percentual: Optional[List[str]] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
+    confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -410,11 +408,7 @@ async def salvar_edicao_conta(
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
-    if conta.status == StatusContaPagar.pago:
-        return RedirectResponse(
-            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Conta+j%C3%A1+paga%2C+n%C3%A3o+pode+ser+editada",
-            status_code=303,
-        )
+
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_key, list):
@@ -437,9 +431,13 @@ async def salvar_edicao_conta(
             ),
         ).order_by(ContaPagar.vencimento, ContaPagar.id).all()
     protegidos = _ids_protegidos(db, contas_valor)
-    if conta.id in protegidos:
-        mensagem = "Este lançamento tem pagamento ou conciliação e não pode ser editado."
-        return RedirectResponse(f"/contas-pagar?cliente_id={conta.cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
+    if protegidos and confirmar_conciliacao is True:
+        for item in contas_valor:
+            if item.id in protegidos:
+                desconciliar_pagamento(db, item)
+        protegidos.clear()
+    elif conta.id in protegidos:
+        exigir_confirmacao(confirmar_conciliacao)
     contas_valor = [item for item in contas_valor if item.id not in protegidos]
     ids = [item.id for item in contas_valor]
     ignorados = len(protegidos)
@@ -533,6 +531,7 @@ async def excluir_conta(
     escopo: str = Form("somente"),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
+    confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -553,6 +552,14 @@ async def excluir_conta(
         ).order_by(ContaPagar.id).all()
 
     protegidos = _ids_protegidos(db, contas)
+    if protegidos and confirmar_conciliacao is True:
+        for item in contas:
+            if item.id in protegidos:
+                desconciliar_pagamento(db, item)
+        protegidos.clear()
+    elif escopo == "somente" and conta.id in protegidos:
+        exigir_confirmacao(confirmar_conciliacao)
+
     elegiveis = [item for item in contas if item.id not in protegidos]
     if not elegiveis:
         mensagem = "Este lançamento tem pagamento ou conciliação e não pode ser excluído." if escopo == "somente" else "Todos os lançamentos dessa recorrência têm pagamento ou conciliação. Nada foi excluído."
@@ -940,6 +947,7 @@ async def aplicar_lote_contas(
     novo_status: str = Form(""),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
+    confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -954,7 +962,7 @@ async def aplicar_lote_contas(
         return erro("Escolha ao menos um campo para editar.")
 
     protegidos = _ids_protegidos(db, contas)
-    elegiveis = [conta for conta in contas if conta.id not in protegidos]
+    elegiveis = contas if confirmar_conciliacao is True else [conta for conta in contas if conta.id not in protegidos]
     if not elegiveis:
         return erro("Todas as contas selecionadas têm pagamento ou conciliação.")
 
@@ -970,8 +978,14 @@ async def aplicar_lote_contas(
             centros[conta.id] = db.query(CentroCusto).filter(CentroCusto.id == centro_custo_id, CentroCusto.cliente_id == conta.cliente_id, CentroCusto.ativo == True).first()
             if not centros[conta.id]:
                 return erro("Centro de custo inválido para um dos clientes selecionados.")
-        if novo_status and novo_status != conta.status.value and novo_status not in {s.value for s in _status_permitidos(conta.status)}:
+        status_base = StatusContaPagar.pendente if conta.id in protegidos and confirmar_conciliacao is True else conta.status
+        if novo_status and novo_status != status_base.value and novo_status not in {s.value for s in _status_permitidos(status_base)}:
             return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
+    if confirmar_conciliacao is True:
+        for conta in elegiveis:
+            if conta.id in protegidos:
+                desconciliar_pagamento(db, conta)
+        protegidos.clear()
     documentos = []
     if acao == "excluir":
         _preparar_exclusao_recorrencias(db, elegiveis)
@@ -1006,3 +1020,17 @@ async def aplicar_lote_contas(
     if protegidos:
         mensagem += f" {len(protegidos)} não foram alteradas por já estarem pagas ou conciliadas."
     return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem), status_code=303)
+
+
+@router.post("/contas-pagar/{conta_id}/desconciliar")
+async def desconciliar_conta(conta_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_contas_pagar)):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id, ContaPagar.cliente_id.in_(_ids_clientes_do_usuario(db, usuario))).first()
+    if not conta:
+        raise HTTPException(404, "Conta indisponivel.")
+    exigir_confirmacao(confirmar_conciliacao)
+    desconciliar_pagamento(db, conta)
+    db.commit()
+    _log(db, "Conta a pagar desconciliada", "contas_pagar", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=conta.cliente_id, detalhes=f"Conta #{conta.id}")
+    return RedirectResponse(f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)

@@ -3,6 +3,7 @@
 {% block page_title %}Conciliação Bancária{% endblock %}
 
 {% block content %}
+{% include "partials/contas_bancarias.html" %}
 <div class="mb-4 flex flex-wrap gap-4"><a href="/static/modelos/modelo_extrato_pix_ted.xlsx" download class="text-sm text-blue-600 hover:underline">Baixar modelo: extrato pix ted</a><a href="/static/modelos/modelo_conta_corrente.xlsx" download class="text-sm text-blue-600 hover:underline">Baixar modelo: conta corrente</a></div>
 
 <div class="space-y-4">
@@ -422,7 +423,7 @@
         <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 overflow-hidden">
           <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-emerald-700 flex items-center justify-between hover:bg-emerald-50">
             <span>✓ {{ pix_conciliados | length }} recebimento{{ 's' if pix_conciliados | length > 1 }} conciliado{{ 's' if pix_conciliados | length > 1 }} {{ pix_conciliados_periodo }}</span>
-            <span class="text-emerald-400 text-xs">▸ expandir para desvincular</span>
+            <span class="text-emerald-400 text-xs">▸ expandir detalhes</span>
           </summary>
           <div class="px-4 py-3 border-t border-emerald-100 bg-emerald-50/60">
             <form method="get" action="/conciliacao/banco" class="flex flex-wrap items-end gap-3">
@@ -462,14 +463,6 @@
               <div class="font-medium text-slate-700">{{ at.nome_paciente if at else '—' }}</div>
               {% if at %}<div class="text-slate-400 text-xs">{{ at.forma_pagamento.value if at.forma_pagamento else '' }}</div>{% endif %}
               <div class="flex-1"></div>
-              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/desvincular"
-                    onsubmit="return confirm('Desvincular este recebimento do atendimento?')">
-                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
-                <button type="submit"
-                        class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium whitespace-nowrap">
-                  ↩ Desvincular
-                </button>
-              </form>
             </div>
             {% endfor %}
           </div>
@@ -626,10 +619,6 @@
                   ✏ Editar / Reabrir
                 </button>
               </form>
-              <form method="post" action="/conciliacao/banco/lote/{{ lote.id }}/desvincular" class="inline">
-                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
-                <button type="submit" class="text-xs border border-slate-200 text-slate-600 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Desvincular</button>
-              </form>
             </div>
           </div>
 
@@ -664,6 +653,7 @@
           </div>
           <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Saldo atual</p>
           <p class="mt-1 text-2xl font-bold text-slate-900">{% if resumo.conta.saldo_atual is not none %}R$ {{ '%.2f'|format(resumo.conta.saldo_atual|float) }}{% else %}—{% endif %}</p>
+          {% if resumo.saldo_previsto is not none %}<p class="mt-2 text-xs text-slate-500">Saldo previsto com transferencias: <strong class="text-slate-800">R$ {{ '%.2f'|format(resumo.saldo_previsto|float) }}</strong></p>{% endif %}
           <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
             <div class="rounded-lg bg-white/80 p-2"><span class="block text-slate-400">Entradas</span><strong class="text-emerald-700">R$ {{ '%.2f'|format(resumo.entradas|float) }}</strong></div>
             <div class="rounded-lg bg-white/80 p-2"><span class="block text-slate-400">Saídas</span><strong class="text-red-600">R$ {{ '%.2f'|format(resumo.saidas|float) }}</strong></div>
@@ -680,7 +670,22 @@
           <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-3 py-3 text-left">Data</th><th class="px-3 py-3 text-left">Banco / conta</th><th class="px-3 py-3 text-left">Descrição</th><th class="px-3 py-3 text-left">Tipo</th><th class="px-3 py-3 text-right">Valor</th><th class="px-3 py-3 text-left">Conciliação</th></tr></thead>
           <tbody class="divide-y divide-slate-100 bg-white">
             {% for mov in extrato_movimentacoes %}
-            <tr><td class="px-3 py-3 whitespace-nowrap">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</td><td class="px-3 py-3">{{ mov.conta_bancaria.banco or mov.conta_bancaria.nome }}<span class="block text-xs text-slate-400">{{ mov.conta_bancaria.conta or '' }}</span></td><td class="px-3 py-3">{{ mov.descricao or '—' }}{% if mov.origem_manual %}<span class="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">Manual</span>{% endif %}</td><td class="px-3 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold {% if mov.sentido == 'recebimento' %}bg-emerald-50 text-emerald-700{% else %}bg-red-50 text-red-600{% endif %}">{{ 'Entrada' if mov.sentido == 'recebimento' else 'Saída' }}</span></td><td class="px-3 py-3 text-right font-semibold">R$ {{ '%.2f'|format(mov.valor|float) }}</td><td class="px-3 py-3">{% if mov.status.value == 'conciliada' %}<span class="text-emerald-700">✓ Conciliada</span>{% else %}<span class="font-semibold text-amber-700">! Verificar</span>{% endif %}</td></tr>
+            <tr><td class="px-3 py-3 whitespace-nowrap">{{ mov.data_movimento.strftime('%d/%m/%Y') }}</td><td class="px-3 py-3">{{ mov.conta_bancaria.banco or mov.conta_bancaria.nome }}<span class="block text-xs text-slate-400">{{ mov.conta_bancaria.conta or '' }}</span></td><td class="px-3 py-3">{{ mov.descricao or '—' }}{% if mov.origem_manual %}<span class="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">Manual</span>{% endif %}</td><td class="px-3 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold {% if mov.sentido == 'recebimento' %}bg-emerald-50 text-emerald-700{% else %}bg-red-50 text-red-600{% endif %}">{{ 'Entrada' if mov.sentido == 'recebimento' else 'Saída' }}</span></td><td class="px-3 py-3 text-right font-semibold">R$ {{ '%.2f'|format(mov.valor|float) }}</td><td class="px-3 py-3">{% if mov.status.value == 'conciliada' %}<span class="text-emerald-700">✓ Conciliada</span>{% else %}<span class="font-semibold text-amber-700">! Verificar</span>{% endif %}
+              {% if mov.status.value == 'conciliada' and mov.tipo != 'transf_interna' %}
+                {% if mov.conta_pagar_id %}
+                  {% set desconciliar_url = '/conciliacao/banco/saida/' ~ mov.id ~ '/desvincular' %}
+                {% elif mov.transferencia_cartao_id %}
+                  {% set desconciliar_url = '/conciliacao/banco/lote/' ~ mov.transferencia_cartao_id ~ '/desvincular' %}
+                {% else %}
+                  {% set desconciliar_url = '/conciliacao/banco/movimentacao/' ~ mov.id ~ '/desvincular' %}
+                {% endif %}
+                <form method="post" action="{{ desconciliar_url }}" class="mt-2"
+                      onsubmit="return confirm('Tem certeza que deseja desconciliar este movimento? Os vinculos e saldos serao atualizados.')">
+                  <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                  <button type="submit" class="text-xs text-amber-700 hover:underline">Desconciliar</button>
+                </form>
+              {% endif %}
+</td></tr>
             {% else %}<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Nenhuma movimentação OFX importada.</td></tr>{% endfor %}
           </tbody>
         </table>
@@ -962,7 +967,7 @@
     <details class="rounded-xl border border-emerald-200 bg-emerald-50/40 overflow-hidden mt-2">
       <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-emerald-700 flex items-center justify-between hover:bg-emerald-50">
         <span>✓ {{ saidas_conciliadas | length }} saída{{ 's' if saidas_conciliadas | length > 1 }} conciliada{{ 's' if saidas_conciliadas | length > 1 }}</span>
-        <span class="text-emerald-400 text-xs">▸ expandir para desvincular</span>
+        <span class="text-emerald-400 text-xs">▸ expandir detalhes</span>
       </summary>
       <div class="divide-y divide-emerald-100">
         {% for mov in saidas_conciliadas %}
@@ -975,14 +980,6 @@
           <div class="font-medium text-slate-700">{{ cp.descricao if cp else '—' }}</div>
           {% if cp %}<div class="text-slate-400 text-xs">{{ cp.fornecedor or '' }}</div>{% endif %}
           <div class="flex-1"></div>
-          <form method="post" action="/conciliacao/banco/saida/{{ mov.id }}/desvincular"
-                onsubmit="return confirm('Desvincular esta saída da conta a pagar? A conta voltará para \'Agendado\'.')">
-            <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
-            <button type="submit"
-                    class="text-xs border border-orange-200 bg-orange-50 text-orange-600 rounded-lg px-2.5 py-1 hover:bg-orange-100 transition font-medium whitespace-nowrap">
-              ↩ Desvincular
-            </button>
-          </form>
         </div>
         {% endfor %}
       </div>
@@ -1355,6 +1352,8 @@ function trocarAba(aba) {
     btn.classList.toggle('aba-inativa', a!==aba);
   });
 }
+
+if (location.hash === '#movimentacoes') trocarAba('movimentacoes');
 
 function filtrarLancamentos(tipo) {
   document.querySelectorAll('.lancamento-item').forEach(function(el) {

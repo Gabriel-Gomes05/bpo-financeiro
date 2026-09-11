@@ -113,7 +113,9 @@ def test_conciliado_e_outro_cliente_nao_sao_editados(dados):
     db, at, _, _ = dados
     at.status_conciliacao = StatusConciliacao.conciliado
     db.commit()
-    assert editar(dados).status_code == 303
+    with pytest.raises(HTTPException) as exc:
+        editar(dados)
+    assert exc.value.status_code == 409
     assert at.valor_servico == 100
     at.status_conciliacao = StatusConciliacao.pendente
     db.commit()
@@ -132,3 +134,13 @@ def test_formulario_expoe_campos_e_selecoes(dados):
     for campo in ("data_prevista_recebimento", "taxa_cartao", "rateio_centro_custo_id", "rateio_percentual", "parcela_numero", "banco_recebimento", "data_credito"):
         assert f'name="{campo}"' in html
     assert 'value="boleto" selected' in html
+
+
+def test_edicao_conciliada_confirmada(dados):
+    db, at, _, _ = dados
+    at.status_conciliacao = StatusConciliacao.conciliado
+    db.commit()
+    editar(dados, confirmar_conciliacao=True)
+    assert at.valor_servico == Decimal("150.01")
+    assert at.status_conciliacao == StatusConciliacao.pendente
+    assert at.data_credito is None

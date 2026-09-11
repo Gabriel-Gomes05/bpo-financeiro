@@ -147,7 +147,7 @@
               data-obs="{{ conta.observacao or '' }}"
               data-doc-url="{% if conta.documento_path %}/contas-pagar/{{ conta.id }}/documento{% endif %}">
 
-            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ conta.id }}" aria-label="Selecionar registro {{ conta.id }}" onchange="atualizarSelecaoLote()" {% if conta.status == 'pago' or conta.pagamentos_parciais %}disabled{% endif %}>{% endif %}</td>
+            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ conta.id }}" aria-label="Selecionar registro {{ conta.id }}" onchange="atualizarSelecaoLote()" >{% endif %}</td>
             <td class="px-4 py-3 {% if vencida %}text-red-600 font-semibold{% elif vence_hoje %}text-amber-600 font-semibold{% else %}text-gray-600{% endif %}">
               {{ conta.vencimento.strftime('%d/%m/%Y') }}
               {% if vencida %}<span class="text-xs ml-1">(vencida)</span>{% endif %}
@@ -207,7 +207,7 @@
                 {% else %}
                 <span class="text-gray-300">—</span>
                 {% endif %}
-                {% if conta.status != 'pago' %}
+                {% if not somente_leitura %}
                 <a href="/contas-pagar/{{ conta.id }}/editar" class="text-xs text-[#5e93cc] hover:underline">Editar</a>
                 <form method="post" action="/contas-pagar/{{ conta.id }}/excluir" class="inline"
                       onsubmit="return confirm('Excluir somente este lançamento? Os demais lançamentos da recorrência serão mantidos. Esta ação não pode ser desfeita.')">
@@ -217,10 +217,10 @@
                 </form>
                 {% if conta.recorrencia_grupo_id %}
                 <form method="post" action="/contas-pagar/{{ conta.id }}/excluir" class="inline"
-                      onsubmit="return confirm('Excluir os lançamentos desta recorrência que não estão pagos nem conciliados, inclusive os que não aparecem no filtro? Os já pagos ou conciliados serão mantidos. Esta ação não pode ser desfeita.')">
+                      onsubmit="return confirm('Excluir toda a recorrencia, inclusive pagos, conciliados e itens fora do filtro? Esta acao nao pode ser desfeita.')">
                   <input type="hidden" name="cliente_id" value="{{ conta.cliente_id }}">
                   <input type="hidden" name="escopo" value="recorrencia">
-                  <button type="submit" class="text-xs text-red-700 hover:underline" title="Exclui todos os lançamentos desta recorrência que não estão pagos nem conciliados">Excluir série</button>
+                  <button type="submit" class="text-xs text-red-700 hover:underline" title="Excluir toda a recorrencia">Excluir série</button>
                 </form>
                 {% endif %}
                 {% endif %}

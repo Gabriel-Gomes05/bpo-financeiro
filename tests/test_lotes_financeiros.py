@@ -18,6 +18,8 @@ from app.models import (
 )
 from app.routers import contas_pagar, lancamentos
 from app.services.conciliacao_service import importar_lancamentos
+from app.services.desconciliacao_service import desconciliar_recebimento
+from app.models import ExtratoLinhaBancaria, StatusExtratoLinha, StatusMovimentacaoBancaria, TransferenciaCartao, VendaCartao, StatusVendaCartao
 
 
 @pytest.fixture
@@ -36,6 +38,66 @@ def db(monkeypatch):
 
 
 USUARIO = SimpleNamespace(id=1, nome="Operador", perfil=PerfilUsuario.coordenador)
+
+
+def test_editar_pagamento_confirmado_preserva_extratos(db):
+    item = conta(db, status=StatusContaPagar.pago)
+    mov = MovimentacaoBancaria(cliente_id=1, tipo="pix_ted", data_movimento=date.today(), valor=100, conta_pagar_id=item.id, status=StatusMovimentacaoBancaria.conciliada)
+    linha = ExtratoLinhaBancaria(cliente_id=1, data=date.today(), tipo="debito", valor=100, conta_pagar_id=item.id, status=StatusExtratoLinha.conciliado)
+    db.add_all([mov, linha])
+    db.flush()
+    db.add(PagamentoParcialContaPagar(conta_pagar_id=item.id, movimentacao_id=mov.id, valor=100, data_pagamento=date.today()))
+    db.commit()
+    editar_valor(db, item, confirmar_conciliacao=True)
+    assert item.status == StatusContaPagar.pendente
+    assert item.data_pagamento is None
+    assert not item.pagamentos_parciais
+    assert mov.conta_pagar_id is None and mov.status == StatusMovimentacaoBancaria.importada
+    assert linha.conta_pagar_id is None and linha.status == StatusExtratoLinha.importado
+
+
+def test_excluir_recebimento_confirmado_preserva_movimento(db):
+    at = Atendimento(cliente_id=1, data_atendimento=date.today(), condicao_pagamento="avista", valor_servico=50, status_conciliacao=StatusConciliacao.conciliado)
+    db.add(at)
+    db.flush()
+    mov = MovimentacaoBancaria(cliente_id=1, tipo="pix_ted", data_movimento=date.today(), valor=50, conciliada_com_atendimento_id=at.id, status=StatusMovimentacaoBancaria.conciliada)
+    db.add(mov)
+    db.commit()
+    asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[at.id], db=db, usuario=USUARIO, confirmar_conciliacao=True))
+    assert db.query(Atendimento).count() == 0
+    assert mov.conciliada_com_atendimento_id is None
+    assert mov.status == StatusMovimentacaoBancaria.importada
+
+
+def test_desconciliar_cartao_reabre_lote_e_preserva_outra_venda(db):
+    atendimentos = [Atendimento(cliente_id=1, data_atendimento=date.today(), condicao_pagamento="avista", valor_servico=50, status_conciliacao=StatusConciliacao.conciliado) for _ in range(2)]
+    lote = TransferenciaCartao(cliente_id=1, data=date.today(), bandeira="Visa", valor_bruto=100, valor_liquido=100)
+    db.add_all([*atendimentos, lote])
+    db.flush()
+    vendas = [VendaCartao(cliente_id=1, data_venda=date.today(), data_pagamento=date.today(), valor_bruto=50, atendimento_id=at.id, lote_id=lote.id, status=StatusVendaCartao.fechado) for at in atendimentos]
+    mov = MovimentacaoBancaria(cliente_id=1, tipo="cartao", data_movimento=date.today(), valor=100, transferencia_cartao_id=lote.id, status=StatusMovimentacaoBancaria.conciliada)
+    linha = ExtratoLinhaBancaria(cliente_id=1, data=date.today(), tipo="credito", valor=100, transferencia_id=lote.id, status=StatusExtratoLinha.conciliado)
+    db.add_all([*vendas, mov, linha])
+    db.commit()
+    desconciliar_recebimento(db, atendimentos[0])
+    db.commit()
+    assert db.query(TransferenciaCartao).count() == 0
+    assert vendas[0].atendimento_id is None and vendas[0].status == StatusVendaCartao.pendente
+    assert vendas[1].atendimento_id == atendimentos[1].id and vendas[1].status == StatusVendaCartao.conciliado
+    assert all(v.lote_id is None for v in vendas)
+    assert mov.transferencia_cartao_id is None and linha.transferencia_id is None
+
+
+def test_desconciliar_exige_confirmacao_e_respeita_cliente(db):
+    item = conta(db, status=StatusContaPagar.pago)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(contas_pagar.desconciliar_conta(item.id, False, db, USUARIO))
+    assert exc.value.status_code == 409
+    assert item.status == StatusContaPagar.pago
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(contas_pagar.desconciliar_conta(item.id, True, db, SimpleNamespace(id=99, perfil=PerfilUsuario.funcionario)))
+    assert exc.value.status_code == 404
+    assert item.status == StatusContaPagar.pago
 
 
 def conta(db, **kwargs):
@@ -119,7 +181,9 @@ def test_exclusao_receber_bloqueia_conciliado_e_exclui_pendente(db):
     b = Atendimento(cliente_id=1, data_atendimento=date.today(), condicao_pagamento="avista", valor_servico=60, status_conciliacao=StatusConciliacao.conciliado)
     db.add_all([a, b])
     db.commit()
-    asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[a.id, b.id], db=db, usuario=USUARIO))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[a.id, b.id], db=db, usuario=USUARIO))
+    assert exc.value.status_code == 409
     assert db.query(Atendimento).count() == 2
     asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[a.id], db=db, usuario=USUARIO))
     assert db.query(Atendimento).count() == 1
@@ -131,7 +195,9 @@ def test_exclusao_receber_bloqueia_vinculo_mesmo_pendente(db):
     db.flush()
     db.add(MovimentacaoBancaria(cliente_id=1, tipo="pix_ted", data_movimento=date.today(), valor=50, descricao="Recebimento", conciliada_com_atendimento_id=a.id))
     db.commit()
-    asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[a.id], db=db, usuario=USUARIO))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[a.id], db=db, usuario=USUARIO))
+    assert exc.value.status_code == 409
     assert db.query(Atendimento).count() == 1
 
 
@@ -327,7 +393,9 @@ def test_editar_somente_bloqueia_lancamento_com_pagamento_parcial(db):
     item = conta(db)
     db.add(PagamentoParcialContaPagar(conta_pagar_id=item.id, valor=30, data_pagamento=date.today()))
     db.commit()
-    editar_valor(db, item, descricao="Nao salvar")
+    with pytest.raises(HTTPException) as exc:
+        editar_valor(db, item, descricao="Nao salvar")
+    assert exc.value.status_code == 409
     assert item.valor == Decimal("100")
     assert item.descricao == "Teste"
 
