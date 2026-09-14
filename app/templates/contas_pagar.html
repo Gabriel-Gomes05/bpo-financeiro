@@ -67,7 +67,8 @@
         <option value="">Status: todos</option>
         <option value="pendente" {% if status_selecionado == 'pendente' %}selected{% endif %}>Pendente</option>
         <option value="aguardando_aprovacao" {% if status_selecionado == 'aguardando_aprovacao' %}selected{% endif %}>Aguardando aprovação</option>
-        <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Agendado</option>
+        <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Aprovado — pendente de saída</option>
+        <option value="pago_nao_conciliado" {% if status_selecionado == 'pago_nao_conciliado' %}selected{% endif %}>Pago — não conciliado</option>
         <option value="pago" {% if status_selecionado == 'pago' %}selected{% endif %}>Pago</option>
         <option value="cancelado" {% if status_selecionado == 'cancelado' %}selected{% endif %}>Cancelado</option>
       </select>
@@ -104,7 +105,7 @@
       <span id="total-selecionados" class="text-sm text-gray-500">0 selecionados</span>
       <label class="text-xs">Categoria / plano de contas<select name="plano_conta_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter categoria</option>{% for p in planos_lote %}<option value="{{ p.id }}">{{ p.codigo or '' }} - {{ p.nome }}{% if p.cliente_id %} (cliente #{{ p.cliente_id }}){% endif %}</option>{% endfor %}</select></label>
       <label class="text-xs">Centro de custo<select name="centro_custo_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter centros de custo</option>{% for cc in centros_lote %}<option value="{{ cc.id }}">{{ cc.nome }} (cliente #{{ cc.cliente_id }})</option>{% endfor %}</select></label>
-      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="pendente">Pendente</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Agendado</option><option value="cancelado">Cancelado</option></select></label>
+      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Aprovado — pendente de saída</option><option value="pago_nao_conciliado">Pago — não conciliado</option><option value="cancelado">Cancelado</option></select></label>
       <button type="submit" name="acao" value="editar" class="rounded-lg bg-[#222049] text-white px-3 py-2 text-sm">Editar selecionados</button>
       <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button><p class="w-full text-xs text-gray-500">O centro escolhido substituirá o rateio por 100% nesse centro. A baixa como pago é feita na conciliação bancária.</p>
     </form>
@@ -122,6 +123,7 @@
             <th class="px-4 py-3 text-left">Categoria / Centro de custo</th>
             <th class="px-4 py-3 text-right">Valor</th>
             <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-center">Recebido</th>
             <th class="px-4 py-3 text-center">Ação</th>
           </tr>
         </thead>
@@ -138,6 +140,9 @@
               data-fornecedor="{{ conta.fornecedor or '—' }}"
               data-tipo="{{ conta.tipo.value | capitalize }}"
               data-valor="R$ {{ '%.2f'|format(conta.valor|float) }}"
+              data-media-3-meses="{% if medias_por_conta[conta.id].media is not none %}R$ {{ '%.2f'|format(medias_por_conta[conta.id].media|float) }}{% else %}Sem histórico{% endif %}"
+              data-media-quantidade="{{ medias_por_conta[conta.id].quantidade }}"
+              data-grafico-meses='{{ medias_por_conta[conta.id].meses|tojson }}'
               data-categoria="{% if conta.rateios_centro_custo %}{% for r in conta.rateios_centro_custo %}{{ r.centro_custo.nome }}: {{ '%.2f'|format(r.percentual|float) }}% = R$ {{ '%.2f'|format(r.valor|float) }}{% if not loop.last %} | {% endif %}{% endfor %}{% elif conta.categoria_dre %}{{ categoria_nome.get(conta.categoria_dre, '—') }}{% else %}—{% endif %}"
               data-vencimento="{{ conta.vencimento.strftime('%d/%m/%Y') }}"
               data-pagamento="{{ conta.data_pagamento.strftime('%d/%m/%Y') if conta.data_pagamento else '—' }}"
@@ -179,7 +184,11 @@
               {% if conta.status == 'pago' %}
                 <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago</span>
               {% elif conta.status == 'agendado' %}
-                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">Agendado</span>
+                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">Aprovado — pendente de saída</span>
+              {% elif conta.status == 'pago_nao_conciliado' %}
+                <span class="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago — não conciliado</span>
+              {% elif conta.status == 'aguardando_aprovacao' %}
+                <span class="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">Aguardando aprovação</span>
               {% elif conta.status == 'cancelado' %}
                 <span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">Cancelado</span>
               {% elif vencida %}
@@ -187,6 +196,16 @@
               {% else %}
                 <span class="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">Pendente</span>
               {% endif %}
+            </td>
+            <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
+              <form method="post" action="/contas-pagar/{{ conta.id }}/recebido">
+                <input type="hidden" name="retorno" value="/contas-pagar">
+                <select name="recebido" onchange="this.form.submit()" aria-label="Recebido"
+                        class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700">
+                  <option value="false" {% if not conta.recebido %}selected{% endif %}>Não</option>
+                  <option value="true" {% if conta.recebido %}selected{% endif %}>Sim</option>
+                </select>
+              </form>
             </td>
             {% if not somente_leitura %}
             <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
@@ -198,7 +217,7 @@
                           class="text-xs rounded-lg border border-gray-300 px-2 py-1 focus:border-[#5e93cc] outline-none">
                     <option value="">Mudar status...</option>
                     {% for opcao in opcoes %}
-                    <option value="{{ opcao }}">{{ opcao | replace('_',' ') | capitalize }}</option>
+                    <option value="{{ opcao }}">{% if opcao == 'agendado' %}Aprovado — pendente de saída{% elif opcao == 'pago_nao_conciliado' %}Pago — não conciliado{% else %}{{ opcao | replace('_',' ') | capitalize }}{% endif %}</option>
                     {% endfor %}
                   </select>
                 </form>
@@ -208,6 +227,7 @@
                 <span class="text-gray-300">—</span>
                 {% endif %}
                 {% if not somente_leitura %}
+                <a href="/contas-pagar/{{ conta.id }}/clonar" class="text-xs text-indigo-600 hover:underline">Clonar</a>
                 <a href="/contas-pagar/{{ conta.id }}/editar" class="text-xs text-[#5e93cc] hover:underline">Editar</a>
                 <form method="post" action="/contas-pagar/{{ conta.id }}/excluir" class="inline"
                       onsubmit="return confirm('Excluir somente este lançamento? Os demais lançamentos da recorrência serão mantidos. Esta ação não pode ser desfeita.')">
@@ -273,6 +293,13 @@
     <div style="background:#f8fafc; border-radius:12px; padding:16px 20px; text-align:center;">
       <p style="font-size:11px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;">Valor</p>
       <p id="d-valor" style="font-size:28px; font-weight:800; color:#1e293b;"></p>
+    </div>
+
+    <div style="background:#eef2ff; border:1px solid #e0e7ff; border-radius:12px; padding:14px 18px;">
+      <p style="font-size:10px; font-weight:700; color:#6366f1; text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px;">Média da despesa nos últimos 3 meses</p>
+      <p id="d-media-3-meses" style="font-size:22px; font-weight:800; color:#3730a3;"></p>
+      <p id="d-media-detalhe" style="font-size:11px; color:#6366f1; margin-top:3px;"></p>
+      <div id="d-grafico-3-meses" style="height:115px; display:flex; align-items:flex-end; justify-content:space-around; gap:12px; margin-top:14px; padding-top:8px; border-top:1px solid #c7d2fe;"></div>
     </div>
 
     <!-- Grid de campos -->
@@ -357,6 +384,23 @@ function abrirDetalhe(row) {
   var d = row.dataset;
   document.getElementById('d-titulo').textContent   = d.descricao;
   document.getElementById('d-valor').textContent    = d.valor;
+  document.getElementById('d-media-3-meses').textContent = d.media3Meses;
+  document.getElementById('d-media-detalhe').textContent = d.mediaQuantidade === '1'
+    ? 'Calculada com 1 lançamento da mesma descrição.'
+    : `Calculada com ${d.mediaQuantidade} lançamentos da mesma descrição.`;
+  var meses = JSON.parse(d.graficoMeses || '[]');
+  var maiorValor = Math.max.apply(null, meses.map(function(item) { return Number(item.valor) || 0; }).concat([0]));
+  var grafico = document.getElementById('d-grafico-3-meses');
+  grafico.innerHTML = meses.map(function(item) {
+    var valor = Number(item.valor) || 0;
+    var altura = maiorValor > 0 ? Math.max(4, Math.round(valor / maiorValor * 62)) : 4;
+    var valorFormatado = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    return '<div style="flex:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0;" title="' + item.label + ': ' + valorFormatado + '">' +
+      '<span style="font-size:10px; font-weight:600; color:#4338ca; margin-bottom:4px; white-space:nowrap;">' + valorFormatado + '</span>' +
+      '<div style="width:70%; max-width:54px; height:' + altura + 'px; background:#818cf8; border-radius:5px 5px 2px 2px;"></div>' +
+      '<span style="font-size:10px; font-weight:700; color:#6366f1; margin-top:5px; text-transform:uppercase;">' + item.label + '</span>' +
+      '</div>';
+  }).join('');
   document.getElementById('d-id').textContent       = '#' + d.id;
   document.getElementById('d-status').textContent   = d.status;
   document.getElementById('d-cliente').textContent  = d.cliente;

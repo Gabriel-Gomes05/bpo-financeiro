@@ -35,6 +35,7 @@ class CondicaoPagamento(str, PyEnum):
 
 class FormaPagamento(str, PyEnum):
     cartao_credito = "cartao_credito"
+    cartao_debito = "cartao_debito"
     pix = "pix"
     transferencia = "transferencia"
     dinheiro = "dinheiro"
@@ -88,6 +89,7 @@ class StatusContaPagar(str, PyEnum):
     pendente = "pendente"
     aguardando_aprovacao = "aguardando_aprovacao"
     agendado = "agendado"
+    pago_nao_conciliado = "pago_nao_conciliado"
     pago = "pago"
     cancelado = "cancelado"
 
@@ -187,6 +189,7 @@ class ClienteBPO(AuditMixin, Base):
     transferencias_cartao = relationship("TransferenciaCartao", back_populates="cliente")
     extratos_bancarios = relationship("ExtratoLinhaBancaria", back_populates="cliente")
     regras_auto_match = relationship("RegraAutoMatch", back_populates="cliente")
+    regras_bancarias = relationship("RegraNegocioBancaria", back_populates="cliente", cascade="all, delete-orphan")
     taxas_cartao = relationship("TaxaCartaoCliente", back_populates="cliente")
     taxas_antecipacao = relationship("TaxaAntecipacaoCliente", back_populates="cliente")
     contas_recorrentes = relationship("ContaRecorrente", back_populates="cliente")
@@ -212,6 +215,7 @@ class Atendimento(AuditMixin, Base):
     parcela_total = Column(Integer, default=1)
     data_prevista_recebimento = Column(Date)
     forma_pagamento = Column(Enum(FormaPagamento))
+    nome_pagador_pix = Column(EncryptedText("atendimentos.nome_pagador_pix"))
     ultimos_digitos_cartao = Column(EncryptedText("atendimentos.ultimos_digitos_cartao", deterministic=True))
     bandeira_cartao = Column(String(30))
     taxa_cartao = Column(Numeric(5, 2))          # percentual, ex: 2.50
@@ -271,6 +275,22 @@ class PlanoConta(AuditMixin, Base):
     cliente = relationship("ClienteBPO", foreign_keys=[cliente_id])
 
 
+class ServicoCadastro(AuditMixin, Base):
+    """Serviço selecionável nos lançamentos, global ou exclusivo de um cliente."""
+    __tablename__ = "servicos_cadastro"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
+    codigo = Column(String(30), nullable=True)
+    nome = Column(String(150), nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+
+    cliente = relationship("ClienteBPO", foreign_keys=[cliente_id])
+    plano_conta = relationship("PlanoConta", foreign_keys=[plano_conta_id])
+
+
 class AtendimentoCentroCustoRateio(AuditMixin, Base):
     __tablename__ = "atendimentos_centros_custo_rateio"
 
@@ -298,6 +318,7 @@ class ContaPagar(AuditMixin, Base):
     data_competencia = Column(Date, nullable=True)
     forma_pagamento = Column(Enum(FormaPagamento), nullable=True)
     status = Column(Enum(StatusContaPagar), default=StatusContaPagar.pendente, nullable=False)
+    recebido = Column(Boolean, default=False, nullable=False)
     categoria_dre = Column(String(60))        # chave da categoria do DRE (ex: df_aluguel) — espelho de plano_conta.chave
     plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
     recorrencia_intervalo = Column(String(20), nullable=True)   # semanal | quinzenal | mensal | personalizado
@@ -566,6 +587,27 @@ class RegraAutoMatch(AuditMixin, Base):
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
     cliente = relationship("ClienteBPO", back_populates="regras_auto_match")
+
+
+class RegraNegocioBancaria(AuditMixin, Base):
+    """Automação aplicada às movimentações bancárias pela descrição do extrato."""
+    __tablename__ = "regras_negocio_bancarias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=False)
+    nome = Column(String(100), nullable=False)
+    padrao_descricao = Column(EncryptedText("regras_negocio_bancarias.padrao_descricao"), nullable=False)
+    acao = Column(String(30), nullable=False, default="transferencia")
+    conta_origem_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)
+    conta_destino_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+
+    cliente = relationship("ClienteBPO", back_populates="regras_bancarias")
+    conta_origem = relationship("ContaBancaria", foreign_keys=[conta_origem_id])
+    conta_destino = relationship("ContaBancaria", foreign_keys=[conta_destino_id])
+    plano_conta = relationship("PlanoConta", foreign_keys=[plano_conta_id])
 
 
 class ContaRecorrente(AuditMixin, Base):

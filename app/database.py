@@ -403,6 +403,7 @@ def migrar_schema():
         conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'boleto'"))
         conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'cheque'"))
         conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'debito_automatico'"))
+        conn.execute(text("ALTER TYPE formapagamento ADD VALUE IF NOT EXISTS 'cartao_debito'"))
         # Impede que novos papeis ganhem acesso implicito ao schema/banco.
         conn.execute(text("REVOKE CREATE ON SCHEMA public FROM PUBLIC"))
         conn.execute(text("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC"))

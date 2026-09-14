@@ -47,7 +47,7 @@ def _contas_pendentes(db: Session, cliente_id: int):
         db.query(ContaPagar)
         .filter(
             ContaPagar.cliente_id == cliente_id,
-            ContaPagar.status.in_([StatusContaPagar.pendente, StatusContaPagar.aguardando_aprovacao]),
+            ContaPagar.status.in_([StatusContaPagar.agendado, StatusContaPagar.pago_nao_conciliado]),
         )
         .order_by(ContaPagar.vencimento.asc())
         .all()

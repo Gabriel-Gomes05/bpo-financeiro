@@ -156,10 +156,13 @@ def _montar_rateios_conta(
     soma = Decimal("0")
     centros_usados: set[int] = set()
     for i, cat in enumerate(categorias):
-        pct = _decimal_rateio(percentuais[i] if i < len(percentuais) else "")
+        percentual_raw = percentuais[i] if i < len(percentuais) else ""
+        if not (cat or "").strip() and not (percentual_raw or "").strip():
+            continue
+        pct = _decimal_rateio(percentual_raw)
         cc = _centro_por_key(db, cliente_id, cat)
         if not cc or pct is None or pct <= 0 or pct > 100 or cc.id in centros_usados:
-            continue
+            return []
         centros_usados.add(cc.id)
         soma += pct
         valor = (valor_total * pct / Decimal("100")).quantize(Decimal("0.01"))
@@ -185,9 +188,10 @@ FORMAS_PAGAMENTO_VALIDAS = {f.value for f in FormaPagamento}
 # Matriz de transição manual de status — "pago" nunca aparece aqui: só é setado
 # via conciliação bancária, que também cuida do estorno (PagamentoParcialContaPagar).
 TRANSICOES_STATUS_CONTA_PAGAR: dict[StatusContaPagar, set[StatusContaPagar]] = {
-    StatusContaPagar.pendente: {StatusContaPagar.aguardando_aprovacao, StatusContaPagar.agendado, StatusContaPagar.cancelado},
-    StatusContaPagar.aguardando_aprovacao: {StatusContaPagar.pendente, StatusContaPagar.agendado, StatusContaPagar.cancelado},
-    StatusContaPagar.agendado: {StatusContaPagar.pendente, StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
+    StatusContaPagar.pendente: {StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
+    StatusContaPagar.aguardando_aprovacao: {StatusContaPagar.agendado, StatusContaPagar.cancelado},
+    StatusContaPagar.agendado: {StatusContaPagar.pago_nao_conciliado, StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
+    StatusContaPagar.pago_nao_conciliado: {StatusContaPagar.agendado, StatusContaPagar.cancelado},
     StatusContaPagar.cancelado: {StatusContaPagar.pendente},
     StatusContaPagar.pago: set(),
 }
@@ -288,6 +292,43 @@ async def listar_contas(
 
     # Ordena: vencidas primeiro, depois por vencimento
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
+    hoje_media = date.today()
+    meses_media = []
+    for deslocamento in (2, 1, 0):
+        total_meses = hoje_media.year * 12 + hoje_media.month - 1 - deslocamento
+        meses_media.append((total_meses // 12, total_meses % 12 + 1))
+    inicio_media = date(meses_media[0][0], meses_media[0][1], 1)
+    historico_media = db.query(ContaPagar).filter(
+        ContaPagar.cliente_id.in_(ids_permitidos),
+        ContaPagar.vencimento >= inicio_media,
+        ContaPagar.vencimento <= date.today(),
+        ContaPagar.status != StatusContaPagar.cancelado,
+    ).all()
+    valores_por_despesa: dict[tuple[int, str], list[tuple[date, Decimal]]] = {}
+    for item in historico_media:
+        chave_descricao = " ".join((item.descricao or "").casefold().split())
+        valores_por_despesa.setdefault((item.cliente_id, chave_descricao), []).append((item.vencimento, item.valor))
+    nomes_meses = ("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez")
+    medias_por_conta = {}
+    for item in contas:
+        chave_descricao = " ".join((item.descricao or "").casefold().split())
+        ocorrencias = valores_por_despesa.get((item.cliente_id, chave_descricao), [])
+        valores = [valor_item for _, valor_item in ocorrencias]
+        medias_por_conta[item.id] = {
+            "media": (sum(valores, Decimal("0")) / len(valores)).quantize(Decimal("0.01")) if valores else None,
+            "quantidade": len(valores),
+            "meses": [
+                {
+                    "label": nomes_meses[mes - 1],
+                    "valor": float(sum(
+                        (valor_item for vencimento_item, valor_item in ocorrencias
+                         if vencimento_item.year == ano and vencimento_item.month == mes),
+                        Decimal("0"),
+                    )),
+                }
+                for ano, mes in meses_media
+            ],
+        }
     centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
     status_permitidos_por_conta = {c.id: [s.value for s in _status_permitidos(c.status)] for c in contas}
 
@@ -308,6 +349,8 @@ async def listar_contas(
         "categorias_despesa": CATEGORIAS_DESPESA,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "status_permitidos_por_conta": status_permitidos_por_conta,
+        "medias_por_conta": medias_por_conta,
+        "inicio_media": inicio_media,
         "flash": flash,
     })
 
@@ -331,6 +374,35 @@ async def pagina_nova_conta(
         "cliente_selecionado": cliente_id if cliente_id in ids_permitidos else None,
         "centros_custo_por_cliente": centros_por_cliente,
         "planos_conta_despesa": _planos_despesa(db, ids_permitidos),
+        "conta_origem": None,
+        "rateios_iniciais": [],
+    })
+
+
+@router.get("/contas-pagar/{conta_id}/clonar", response_class=HTMLResponse)
+async def clonar_conta(
+    conta_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_contas_pagar),
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    ids_permitidos = _ids_clientes_do_usuario(db, usuario)
+    if not conta or conta.cliente_id not in ids_permitidos:
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+
+    return templates.TemplateResponse("contas_pagar_novo.html", {
+        "request": request,
+        "usuario": usuario,
+        "clientes": clientes_do_usuario(db, usuario),
+        "cliente_selecionado": conta.cliente_id,
+        "centros_custo_por_cliente": _centros_custo_por_cliente(db, ids_permitidos),
+        "planos_conta_despesa": _planos_despesa(db, ids_permitidos),
+        "conta_origem": conta,
+        "rateios_iniciais": [
+            {"key": rateio.categoria_key, "percentual": float(rateio.percentual)}
+            for rateio in conta.rateios_centro_custo
+        ],
     })
 
 
@@ -658,7 +730,7 @@ async def criar_conta(
         categoria_dre=categoria_compat,
         plano_conta_id=plano.id if plano else None,
         especialidade=especialidade_valor,
-        status=StatusContaPagar.pendente,
+        status=StatusContaPagar.aguardando_aprovacao,
         documento_path=documento_path,
         observacao=observacao or None,
         lancado_por_id=usuario.id,
@@ -826,7 +898,7 @@ async def importar_contas(
                     plano_conta_id=plano.id if plano else None,
                     categoria_dre=plano.chave if plano else None,
                     observacao=observacao,
-                    status=StatusContaPagar.pendente,
+                    status=StatusContaPagar.aguardando_aprovacao,
                     lancado_por_id=usuario.id,
                 ))
                 importadas += 1
@@ -879,6 +951,7 @@ async def importar_contas(
 async def alterar_status_conta_rota(
     conta_id: int,
     novo_status: str = Form(...),
+    retorno: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
@@ -900,7 +973,28 @@ async def alterar_status_conta_rota(
             url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Transi%C3%A7%C3%A3o+de+status+n%C3%A3o+permitida",
             status_code=303,
         )
-    return RedirectResponse(url=f"/contas-pagar?cliente_id={conta.cliente_id}", status_code=303)
+    destino = retorno if retorno and retorno.startswith("/fechamento") else f"/contas-pagar?cliente_id={conta.cliente_id}"
+    return RedirectResponse(url=destino, status_code=303)
+
+
+@router.post("/contas-pagar/{conta_id}/recebido")
+async def alterar_recebido_conta(
+    conta_id: int,
+    recebido: bool = Form(False),
+    retorno: str = Form("/contas-pagar"),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_contas_pagar),
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
+        return RedirectResponse(url="/contas-pagar", status_code=303)
+    conta.recebido = recebido
+    db.commit()
+    _log(db, "Recebimento informativo alterado", "contas_pagar",
+         usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=conta.cliente_id,
+         detalhes=f"Conta #{conta.id}: {'Sim' if recebido else 'Não'}")
+    destino = retorno if retorno.startswith("/fechamento") else f"/contas-pagar?cliente_id={conta.cliente_id}"
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/contas-pagar/{conta_id}/agendar")

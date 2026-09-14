@@ -108,15 +108,24 @@
             {% endif %}
           </div>
           <p class="text-slate-700 text-sm font-medium truncate">{{ venda.nome_portador or '—' }}</p>
-          <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-            <div class="text-xs text-slate-400">
-              Líq: <span class="font-semibold text-emerald-600">R$ {{ '%.2f'|format((venda.valor_liquido or venda.valor_bruto)|float) }}</span>
-              {% if venda.taxa_percentual %}<span class="ml-1">({{ '%.2f'|format(venda.taxa_percentual|float) }}%)</span>{% endif %}
+          <div class="mt-2 pt-2 border-t border-slate-100 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <label for="taxa-individual-{{ venda.id }}" class="text-xs font-medium text-slate-500">Taxa desta venda (%)</label>
+              <input id="taxa-individual-{{ venda.id }}" type="number" min="0" max="100" step="0.01"
+                     value="{{ '%.2f'|format(venda.taxa_percentual|float) if venda.taxa_percentual is not none else '' }}"
+                     oninput="atualizarTaxaIndividual('{{ venda.id }}', {{ venda.valor_bruto|float }})"
+                     class="w-20 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-right text-xs font-semibold text-violet-700 outline-none focus:border-violet-400"
+                     aria-describedby="liquido-individual-{{ venda.id }}">
             </div>
-            <form method="post" action="/conciliacao/venda/{{ venda.id }}/cancelar">
-              <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
-              <button type="submit" title="Remover" class="text-slate-300 hover:text-red-400 text-lg leading-none transition-colors">×</button>
-            </form>
+            <div class="flex items-center justify-between">
+              <div class="text-xs text-slate-400">
+                Líq: <span id="liquido-individual-{{ venda.id }}" class="font-semibold text-emerald-600">R$ {{ '%.2f'|format((venda.valor_liquido if venda.valor_liquido is not none else venda.valor_bruto)|float) }}</span>
+              </div>
+              <form method="post" action="/conciliacao/venda/{{ venda.id }}/cancelar">
+                <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+                <button type="submit" title="Remover" class="text-slate-300 hover:text-red-400 text-lg leading-none transition-colors">×</button>
+              </form>
+            </div>
           </div>
         </div>
 
@@ -124,7 +133,7 @@
         <div class="flex flex-col items-center justify-center gap-1.5 py-2">
           {% if sug %}
             {% if sug.status == 'sugestao_pronta' or sug.status == 'sugestao_verde' %}
-            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" onsubmit="incluirTaxaIndividual(this, '{{ venda.id }}')">
               <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
               <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
               <input type="hidden" name="origem" value="sugestao">
@@ -135,7 +144,7 @@
               </button>
             </form>
             {% else %}
-            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" onsubmit="incluirTaxaIndividual(this, '{{ venda.id }}')">
               <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
               <input type="hidden" name="atendimento_id" value="{{ sug.atendimento.id }}">
               <input type="hidden" name="origem" value="revisar">
@@ -180,7 +189,7 @@
           </div>
           {% endif %}
           <div class="flex items-center gap-2 pt-2 border-t border-slate-100 flex-wrap">
-            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar">
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" onsubmit="incluirTaxaIndividual(this, '{{ venda.id }}')">
               <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
               <input type="hidden" name="atendimento_id" value="{{ at.id }}">
               <input type="hidden" name="origem" value="manual">
@@ -219,7 +228,7 @@
               <button type="submit" class="rounded-lg bg-violet-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-violet-700">Buscar</button>
             </form>
             {% if item.busca_aberta and item.resultados_busca %}
-            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" class="space-y-2">
+            <form method="post" action="/conciliacao/venda/{{ venda.id }}/conciliar" class="space-y-2" onsubmit="incluirTaxaIndividual(this, '{{ venda.id }}')">
               <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
               <input type="hidden" name="origem" value="manual">
               <div class="space-y-2 max-h-48 overflow-y-auto">
@@ -581,6 +590,27 @@
 
 {% block extra_js %}
 <script>
+function incluirTaxaIndividual(form, vendaId) {
+  var campo = document.getElementById('taxa-individual-' + vendaId);
+  if (!campo) return;
+  var hidden = form.querySelector('input[name="taxa_individual"]');
+  if (!hidden) {
+    hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'taxa_individual';
+    form.appendChild(hidden);
+  }
+  hidden.value = campo.value;
+}
+function atualizarTaxaIndividual(vendaId, valorBruto) {
+  var campo = document.getElementById('taxa-individual-' + vendaId);
+  var liquido = document.getElementById('liquido-individual-' + vendaId);
+  if (!campo || !liquido) return;
+  var taxa = parseFloat((campo.value || '0').replace(',', '.'));
+  if (!Number.isFinite(taxa)) taxa = 0;
+  var valor = valorBruto * (1 - taxa / 100);
+  liquido.textContent = 'R$ ' + valor.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
 function abrirModalEditar(btn) {
   var form  = document.getElementById('form-editar');
   var modal = document.getElementById('modal-editar');

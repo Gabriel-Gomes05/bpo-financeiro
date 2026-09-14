@@ -27,6 +27,7 @@ from app.models import (
     MovimentacaoBancaria,
     PerfilUsuario,
     PlanoConta,
+    ServicoCadastro,
     StatusConciliacao,
     StatusMovimentacaoBancaria,
     StatusTransferenciaCartao,
@@ -97,7 +98,9 @@ def _carregar_atendimentos_pendentes(db: Session, cliente_id: int):
                 StatusConciliacao.pendente,
                 StatusConciliacao.divergencia,
             ]),
-            Atendimento.forma_pagamento == FormaPagamento.cartao_credito,
+            Atendimento.forma_pagamento.in_([
+                FormaPagamento.cartao_credito, FormaPagamento.cartao_debito,
+            ]),
         )
         .order_by(Atendimento.data_prevista_recebimento.asc())
         .all()
@@ -109,7 +112,9 @@ def _buscar_atendimentos(db: Session, cliente_id: int, venda: VendaCartao, termo
     query = db.query(Atendimento).filter(
         Atendimento.cliente_id == cliente_id,
         Atendimento.status_conciliacao.in_([StatusConciliacao.pendente, StatusConciliacao.divergencia]),
-        Atendimento.forma_pagamento == FormaPagamento.cartao_credito,
+        Atendimento.forma_pagamento.in_([
+            FormaPagamento.cartao_credito, FormaPagamento.cartao_debito,
+        ]),
     )
     candidatos = query.order_by(Atendimento.data_prevista_recebimento.asc()).all()
     if termo:
@@ -300,14 +305,36 @@ async def conciliar_todos_prontos(
 def _aplicar_conciliacao(db: Session, venda: VendaCartao, at: Atendimento):
     at.status_conciliacao = StatusConciliacao.conciliado
     at.data_credito = venda.data_pagamento
-    at.valor_liquido = venda.valor_liquido or venda.valor_bruto
-    if venda.taxa_percentual:
+    at.valor_liquido = (
+        venda.valor_liquido if venda.valor_liquido is not None else venda.valor_bruto
+    )
+    if venda.taxa_percentual is not None:
         at.taxa_cartao = venda.taxa_percentual
     if venda.ultimos_digitos:
         at.ultimos_digitos_cartao = venda.ultimos_digitos
     venda.status = StatusVendaCartao.conciliado
     venda.atendimento_id = at.id
     db.commit()
+
+
+def _aplicar_taxa_individual(venda: VendaCartao, taxa_informada: str | None) -> bool:
+    """Aplica uma taxa somente à venda atual e recalcula seu valor líquido."""
+    if taxa_informada is None or not taxa_informada.strip():
+        return True
+
+    try:
+        taxa = Decimal(taxa_informada.strip().replace(",", "."))
+    except InvalidOperation:
+        return False
+
+    if not Decimal("0") <= taxa <= Decimal("100"):
+        return False
+
+    venda.taxa_percentual = taxa
+    venda.valor_liquido = (
+        Decimal(str(venda.valor_bruto)) * (Decimal("1") - taxa / Decimal("100"))
+    ).quantize(Decimal("0.01"))
+    return True
 
 
 def _conciliar_vendas_prontas(db: Session, cliente_id: int, usuario: Usuario | None = None) -> int:
@@ -397,6 +424,7 @@ async def conciliar_venda(
     cliente_id: int = Form(...),
     atendimento_id: int = Form(...),
     origem: str = Form("sugestao"),
+    taxa_individual: Optional[str] = Form(default=None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
@@ -410,6 +438,10 @@ async def conciliar_venda(
             and venda.cliente_id in ids_ok
             and at.cliente_id == venda.cliente_id == cliente_id
             and venda.status == StatusVendaCartao.pendente):
+        if not _aplicar_taxa_individual(venda, taxa_individual):
+            return RedirectResponse(
+                url=f"/conciliacao?cliente_id={cliente_id}", status_code=303
+            )
         _aplicar_conciliacao(db, venda, at)
         _log(db, "Venda conciliada com atendimento", "conciliacao_cartao",
              usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
@@ -695,7 +727,9 @@ def _calcular_intervalos_lancamento(forma_pagamento: str, parcela_total: int, re
     return [0]
 
 
-def _taxa_cartao_cliente(db: Session, cliente_id: int, bandeira: str | None) -> Decimal | None:
+def _taxa_cartao_cliente(
+    db: Session, cliente_id: int, bandeira: str | None, forma: str = "cartao_credito",
+) -> Decimal | None:
     if not bandeira:
         return None
     cliente = db.query(ClienteBPO).filter(ClienteBPO.id == cliente_id).first()
@@ -708,11 +742,14 @@ def _taxa_cartao_cliente(db: Session, cliente_id: int, bandeira: str | None) -> 
         ).first()
         if ant:
             return Decimal(str(ant.taxa_percentual))
-    taxa = db.query(TaxaCartaoCliente).filter(
+    query = db.query(TaxaCartaoCliente).filter(
         TaxaCartaoCliente.cliente_id == cliente_id,
         TaxaCartaoCliente.bandeira == bandeira,
         TaxaCartaoCliente.ativo == True,
-    ).first()
+    )
+    if forma == "cartao_debito":
+        query = query.filter(TaxaCartaoCliente.faixa_parcelamento == "avista_debito")
+    taxa = query.first()
     return Decimal(str(taxa.taxa_percentual)) if taxa else None
 
 
@@ -765,12 +802,18 @@ async def pagina_lancamentos(
         PlanoConta.ativo == True,
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_valido),
     ).order_by(PlanoConta.codigo.asc(), PlanoConta.nome.asc()).all() if cliente_valido else []
+    servicos = db.query(ServicoCadastro).filter(
+        ServicoCadastro.ativo.is_(True),
+        ServicoCadastro.plano_conta_id.isnot(None),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == cliente_valido),
+    ).order_by(ServicoCadastro.nome).all() if cliente_valido else []
     return templates.TemplateResponse("conciliacao_lancamentos.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_valido,
         "lancamentos": lancamentos,
         "centros_custo": centros_custo,
         "planos_conta": planos_conta,
+        "servicos": servicos,
         "hoje": date_type.today().isoformat(),
         "flash_error": flash,
     })
@@ -824,6 +867,11 @@ async def importar_lancamentos_conciliacao(
         PlanoConta.ativo == True,
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
     ).order_by(PlanoConta.codigo.asc(), PlanoConta.nome.asc()).all()
+    servicos = db.query(ServicoCadastro).filter(
+        ServicoCadastro.ativo.is_(True),
+        ServicoCadastro.plano_conta_id.isnot(None),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == cliente_id),
+    ).order_by(ServicoCadastro.nome).all()
     return templates.TemplateResponse("conciliacao_lancamentos.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes_do_usuario(db, usuario),
@@ -831,6 +879,7 @@ async def importar_lancamentos_conciliacao(
         "lancamentos": lancamentos,
         "centros_custo": centros_custo,
         "planos_conta": planos_conta,
+        "servicos": servicos,
         "flash_success": flash_success,
         "flash_error": flash_error,
         "hoje": date_type.today().isoformat(),
@@ -848,9 +897,11 @@ async def criar_lancamento_manual_conciliacao(
     rateios_json: str = Form("[]"),
     especialidade: str = Form(""),
     descricao_servico: str = Form(""),
+    servico_id: int = Form(...),
     plano_conta_id: Optional[int] = Form(None),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
+    nome_pagador_pix: str = Form(""),
     condicao_pagamento: str = Form("avista"),
     parcela_total: int = Form(1),
     recorrencia: str = Form(""),
@@ -858,6 +909,7 @@ async def criar_lancamento_manual_conciliacao(
     bandeira_cartao: str = Form(""),
     percentual_medico: str = Form(""),
     observacao: str = Form(""),
+    pagamentos_adicionais: str = Form("[]"),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
@@ -872,6 +924,12 @@ async def criar_lancamento_manual_conciliacao(
 
     cliente = next((c for c in clientes if c.id == cliente_id), None)
     forma = forma_pagamento.strip() or None
+    pagador_pix = nome_pagador_pix.strip() or None
+    if forma == FormaPagamento.pix.value and not pagador_pix:
+        return RedirectResponse(
+            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Informe+o+nome+do+pagador+do+Pix",
+            status_code=303,
+        )
     condicao = condicao_pagamento.strip() or "avista"
     is_parcelado = condicao == CondicaoPagamento.parcelado.value
     intervalos = _calcular_intervalos_lancamento(forma or "", parcela_total, recorrencia) if is_parcelado else [0]
@@ -881,7 +939,10 @@ async def criar_lancamento_manual_conciliacao(
     valor_parcela = (valor / Decimal(qtd_parcelas)).quantize(Decimal("0.01"))
     valor_ultima = valor - valor_parcela * (qtd_parcelas - 1)
     bandeira = bandeira_cartao.strip() or None
-    taxa_pct = _taxa_cartao_cliente(db, cliente_id, bandeira) if forma == FormaPagamento.cartao_credito.value else None
+    is_cartao = forma in {
+        FormaPagamento.cartao_credito.value, FormaPagamento.cartao_debito.value,
+    }
+    taxa_pct = _taxa_cartao_cliente(db, cliente_id, bandeira, forma) if is_cartao else None
     pct_medico = _decimal_form(percentual_medico)
     centros_validos = {
         centro.id: centro for centro in db.query(CentroCusto).filter(
@@ -890,9 +951,9 @@ async def criar_lancamento_manual_conciliacao(
         ).all()
     }
     rateios = _rateios_lancamento_manual(rateios_json, centros_validos)
-    if rateios_json not in ("", "[]") and not rateios:
+    if not rateios:
         return RedirectResponse(
-            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+use+centros+diferentes+e+feche+100%25",
+            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+selecione+os+centros+e+feche+100%25",
             status_code=303,
         )
     cc_id = rateios[0]["centro"].id if rateios else (
@@ -904,12 +965,16 @@ async def criar_lancamento_manual_conciliacao(
          if rateio["centro"].is_medico and rateio["centro"].especialidade),
         None,
     )
-    plano = db.query(PlanoConta).filter(
-        PlanoConta.id == plano_conta_id,
-        PlanoConta.tipo == "receita",
-        PlanoConta.ativo == True,
-        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
-    ).first() if plano_conta_id else None
+    servico = db.query(ServicoCadastro).filter(
+        ServicoCadastro.id == servico_id, ServicoCadastro.ativo.is_(True),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == cliente_id),
+    ).first()
+    if not servico:
+        return RedirectResponse(
+            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Servi%C3%A7o+inv%C3%A1lido",
+            status_code=303,
+        )
+    plano = servico.plano_conta
 
     for parcela_numero, dias in enumerate(intervalos, 1):
         valor_item = valor_ultima if parcela_numero == qtd_parcelas else valor_parcela
@@ -931,7 +996,7 @@ async def criar_lancamento_manual_conciliacao(
             centro_custo_id=cc_id,
             medico=cc.nome if cc else None,
             especialidade=especialidade_valor,
-            descricao_servico=descricao_servico.strip() or None,
+            descricao_servico=servico.nome,
             plano_conta_id=plano.id if plano else None,
             valor_servico=valor_item,
             condicao_pagamento=condicao,
@@ -941,6 +1006,7 @@ async def criar_lancamento_manual_conciliacao(
                 data_atendimento, dias, forma, bool(cliente and cliente.antecipa),
             ),
             forma_pagamento=forma,
+            nome_pagador_pix=pagador_pix if forma == FormaPagamento.pix.value else None,
             ultimos_digitos_cartao=ultimos_digitos_cartao.strip() or None,
             bandeira_cartao=bandeira,
             taxa_cartao=taxa_pct,
@@ -968,6 +1034,85 @@ async def criar_lancamento_manual_conciliacao(
                 percentual=rateio["percentual"],
                 valor=valor_rateio,
             ))
+
+    try:
+        pagamentos_extra = json.loads(pagamentos_adicionais or "[]")
+    except json.JSONDecodeError:
+        pagamentos_extra = []
+    if not isinstance(pagamentos_extra, list):
+        pagamentos_extra = []
+
+    for pagamento in pagamentos_extra:
+        if not isinstance(pagamento, dict):
+            continue
+        valor_extra = _decimal_form(str(pagamento.get("valor") or ""))
+        forma_extra = str(pagamento.get("forma") or "").strip()
+        pagador_extra = str(pagamento.get("pagador_pix") or "").strip() or None
+        if not valor_extra or valor_extra <= 0 or forma_extra not in {f.value for f in FormaPagamento}:
+            continue
+        if forma_extra == FormaPagamento.pix.value and not pagador_extra:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Informe+o+nome+do+pagador+do+Pix",
+                status_code=303,
+            )
+        condicao_extra = str(pagamento.get("condicao") or "avista").strip()
+        if condicao_extra not in {c.value for c in CondicaoPagamento}:
+            condicao_extra = CondicaoPagamento.avista.value
+        parcelas_extra = max(1, min(int(pagamento.get("parcelas") or 1), 48))
+        recorrencia_extra = str(pagamento.get("recorrencia") or "").strip()
+        intervalos_extra = (
+            _calcular_intervalos_lancamento(forma_extra, parcelas_extra, recorrencia_extra)
+            if condicao_extra == CondicaoPagamento.parcelado.value else [0]
+        )
+        qtd_extra = len(intervalos_extra)
+        parcela_extra = (valor_extra / Decimal(qtd_extra)).quantize(Decimal("0.01"))
+        ultima_extra = valor_extra - parcela_extra * (qtd_extra - 1)
+        bandeira_extra = str(pagamento.get("bandeira") or "").strip() or None
+        taxa_extra = _taxa_cartao_cliente(
+            db, cliente_id, bandeira_extra, forma_extra,
+        ) if forma_extra in {"cartao_credito", "cartao_debito"} else None
+
+        for numero_extra, dias_extra in enumerate(intervalos_extra, 1):
+            valor_item = ultima_extra if numero_extra == qtd_extra else parcela_extra
+            liquido_extra = valor_item
+            if taxa_extra is not None:
+                liquido_extra = (
+                    valor_item * (Decimal("1") - taxa_extra / Decimal("100"))
+                ).quantize(Decimal("0.01"))
+            atendimento = Atendimento(
+                cliente_id=cliente_id, data_atendimento=data_atendimento,
+                nome_paciente=None, cpf_paciente=None, centro_custo_id=cc_id,
+                medico=cc.nome if cc else None, especialidade=especialidade_valor,
+                descricao_servico=servico.nome,
+                plano_conta_id=plano.id if plano else None, valor_servico=valor_item,
+                condicao_pagamento=condicao_extra, parcela_numero=numero_extra,
+                parcela_total=qtd_extra,
+                data_prevista_recebimento=prever_recebimento(
+                    data_atendimento, dias_extra, forma_extra, bool(cliente and cliente.antecipa),
+                ),
+                forma_pagamento=forma_extra,
+                nome_pagador_pix=pagador_extra if forma_extra == FormaPagamento.pix.value else None,
+                ultimos_digitos_cartao=str(pagamento.get("digitos") or "").strip() or None,
+                bandeira_cartao=bandeira_extra, taxa_cartao=taxa_extra,
+                valor_liquido=liquido_extra, valor_clinica=liquido_extra,
+                status_conciliacao=StatusConciliacao.pendente,
+                observacao=str(pagamento.get("observacao") or "").strip() or None,
+                lancado_por_id=usuario.id,
+            )
+            db.add(atendimento)
+            db.flush()
+            valores_rateio = [(
+                valor_item * rateio["percentual"] / Decimal("100")
+            ).quantize(Decimal("0.01")) for rateio in rateios]
+            if valores_rateio:
+                valores_rateio[-1] += valor_item - sum(valores_rateio, Decimal("0"))
+            for rateio, valor_rateio in zip(rateios, valores_rateio):
+                db.add(AtendimentoCentroCustoRateio(
+                    atendimento_id=atendimento.id,
+                    centro_custo_id=rateio["centro"].id,
+                    percentual=rateio["percentual"], valor=valor_rateio,
+                ))
 
     db.commit()
     _log(db, "Lançamento manual criado", "lancamentos",

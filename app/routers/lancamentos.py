@@ -19,7 +19,7 @@ from app.database import get_db
 from app.services.recebimento_service import prever_recebimento
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
-    PlanoConta, StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
+    PlanoConta, ServicoCadastro, StatusConciliacao, TaxaAntecipacaoCliente, TaxaCartaoCliente,
     Usuario, PerfilUsuario, MovimentacaoBancaria, VendaCartao,
 )
 from app.services.log_service import registrar as _log
@@ -112,7 +112,9 @@ def _int(lst: List[str], i: int, default: int = 1) -> int:
         return default
 
 
-def _taxa_cartao(db: Session, cliente_id: int, bandeira: str) -> Optional[Decimal]:
+def _taxa_cartao(
+    db: Session, cliente_id: int, bandeira: str, forma: str = "cartao_credito",
+) -> Optional[Decimal]:
     if not bandeira:
         return None
     # Para clientes com antecipação: usa a taxa de antecipação selecionada, se houver
@@ -127,11 +129,14 @@ def _taxa_cartao(db: Session, cliente_id: int, bandeira: str) -> Optional[Decima
         if ant:
             return Decimal(str(ant.taxa_percentual))
     # Fallback: taxa normal por bandeira
-    taxa = db.query(TaxaCartaoCliente).filter(
+    query = db.query(TaxaCartaoCliente).filter(
         TaxaCartaoCliente.cliente_id == cliente_id,
         TaxaCartaoCliente.bandeira == bandeira,
         TaxaCartaoCliente.ativo == True,
-    ).first()
+    )
+    if forma == "cartao_debito":
+        query = query.filter(TaxaCartaoCliente.faixa_parcelamento == "avista_debito")
+    taxa = query.first()
     return Decimal(str(taxa.taxa_percentual)) if taxa else None
 
 
@@ -219,6 +224,11 @@ async def pagina_novo_lancamento(
         PlanoConta.ativo == True,
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id.in_(ids_permitidos)),
     ).order_by(PlanoConta.nome).all()
+    servicos = db.query(ServicoCadastro).filter(
+        ServicoCadastro.ativo.is_(True),
+        ServicoCadastro.plano_conta_id.isnot(None),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id.in_(ids_permitidos)),
+    ).order_by(ServicoCadastro.nome).all()
 
     return templates.TemplateResponse("lancamento_novo.html", {
         "request": request,
@@ -228,6 +238,7 @@ async def pagina_novo_lancamento(
         "hoje": date.today().isoformat(),
         "centros_por_cliente": centros_por_cliente,
         "planos_conta_receita": planos_conta_receita,
+        "servicos": servicos,
     })
 
 
@@ -242,9 +253,11 @@ async def criar_lancamentos(
     rateios_json: List[str] = Form(default=[]),
     especialidade: List[str] = Form(default=[]),
     descricao_servico: List[str] = Form(default=[]),
+    servico_id: List[str] = Form(default=[]),
     plano_conta_id: List[str] = Form(default=[]),
     valor_servico: List[str] = Form(default=[]),
     forma_pagamento: List[str] = Form(default=[]),
+    nome_pagador_pix: List[str] = Form(default=[]),
     condicao_pagamento: List[str] = Form(default=[]),
     parcela_total: List[str] = Form(default=[]),
     recorrencia: List[str] = Form(default=[]),
@@ -274,6 +287,12 @@ async def criar_lancamentos(
             or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
         ).all()
     }
+    servicos_validos = {
+        servico.id: servico for servico in db.query(ServicoCadastro).filter(
+            ServicoCadastro.ativo.is_(True),
+            or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == cliente_id),
+        ).all()
+    }
     n = len(valor_servico)
 
     for i in range(n):
@@ -282,6 +301,13 @@ async def criar_lancamentos(
             continue  # linha vazia — ignora
 
         forma = _str(forma_pagamento, i) or None
+        pagador_pix = _str(nome_pagador_pix, i) or None
+        if forma == FormaPagamento.pix.value and not pagador_pix:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Informe+o+nome+do+pagador+do+Pix",
+                status_code=303,
+            )
         condicao = _str(condicao_pagamento, i) or "avista"
         n_parcelas = _int(parcela_total, i, 1)
         rec = _str(recorrencia, i) or None
@@ -298,10 +324,10 @@ async def criar_lancamentos(
         cc_id = int(cc_id_str) if cc_id_str.isdigit() else None
         rateio_raw = _str(rateios_json, i)
         rateios = _parse_rateios_json(rateio_raw, centros_validos, valor)
-        if rateio_raw not in ("", "[]") and not rateios:
+        if not rateios:
             db.rollback()
             return RedirectResponse(
-                url=f"/lancamentos?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+use+centros+diferentes+e+feche+100%25",
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+selecione+os+centros+e+feche+100%25",
                 status_code=303,
             )
         if rateios:
@@ -314,12 +340,22 @@ async def criar_lancamentos(
             (r["centro"].especialidade for r in rateios if r["centro"].is_medico and r["centro"].especialidade),
             None,
         )
-        pc_id_str = _str(plano_conta_id, i)
-        plano = planos_validos.get(int(pc_id_str)) if pc_id_str.isdigit() else None
+        servico_id_str = _str(servico_id, i)
+        servico = servicos_validos.get(int(servico_id_str)) if servico_id_str.isdigit() else None
+        if not servico or servico.plano_conta_id not in planos_validos:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Servi%C3%A7o+inv%C3%A1lido",
+                status_code=303,
+            )
+        plano = planos_validos[servico.plano_conta_id]
 
         pct_medico = _decimal(percentual_medico, i)
         bandeira = _str(bandeira_cartao, i) or None
-        taxa_pct = _taxa_cartao(db, cliente_id, bandeira) if forma == FormaPagamento.cartao_credito.value else None
+        is_cartao = forma in {
+            FormaPagamento.cartao_credito.value, FormaPagamento.cartao_debito.value,
+        }
+        taxa_pct = _taxa_cartao(db, cliente_id, bandeira, forma) if is_cartao else None
 
         for p, dias in enumerate(intervalos, 1):
             v = valor_ultima if p == num else valor_parcela
@@ -341,7 +377,7 @@ async def criar_lancamentos(
                 centro_custo_id=cc_id,
                 medico=cc.nome if cc else None,
                 especialidade=especialidade_valor,
-                descricao_servico=_str(descricao_servico, i) or None,
+                descricao_servico=servico.nome,
                 plano_conta_id=plano.id if plano else None,
                 valor_servico=v,
                 condicao_pagamento=condicao,
@@ -351,6 +387,7 @@ async def criar_lancamentos(
                     data_atendimento, dias, forma, bool(cliente and cliente.antecipa),
                 ),
                 forma_pagamento=forma or None,
+                nome_pagador_pix=pagador_pix if forma == FormaPagamento.pix.value else None,
                 ultimos_digitos_cartao=_str(ultimos_digitos_cartao, i) or None,
                 bandeira_cartao=bandeira,
                 taxa_cartao=taxa_pct,
@@ -408,6 +445,11 @@ async def form_editar_lancamento(
         or_(PlanoConta.ativo == True, PlanoConta.id == at.plano_conta_id),
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).order_by(PlanoConta.nome).all()
+    servicos = db.query(ServicoCadastro).filter(
+        ServicoCadastro.ativo.is_(True),
+        ServicoCadastro.plano_conta_id.isnot(None),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == at.cliente_id),
+    ).order_by(ServicoCadastro.nome).all()
     return templates.TemplateResponse("lancamento_editar.html", {
         "request": request,
         "usuario": usuario,
@@ -417,6 +459,7 @@ async def form_editar_lancamento(
         "formas_pagamento": list(FormaPagamento),
         "centros_custo": centros_custo,
         "planos_conta_receita": planos_conta_receita,
+        "servicos": servicos,
         "hoje": date.today().isoformat(),
         "formatar_brl": formatar_brl,
     })
@@ -432,9 +475,11 @@ async def salvar_edicao_lancamento(
     centro_custo_id: str = Form(""),
     especialidade: str = Form(""),
     descricao_servico: str = Form(""),
+    servico_id: Optional[int] = Form(None),
     plano_conta_id: str = Form(""),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
+    nome_pagador_pix: str = Form(""),
     condicao_pagamento: str = Form("avista"),
     parcela_numero: int = Form(1),
     parcela_total: int = Form(1),
@@ -479,16 +524,20 @@ async def salvar_edicao_lancamento(
     forma = forma_pagamento.strip() or None
     if forma and forma not in {f.value for f in FormaPagamento}:
         raise HTTPException(400, "Forma de pagamento inválida.")
+    pagador_pix = nome_pagador_pix.strip() or None
+    if forma == FormaPagamento.pix.value and not pagador_pix:
+        raise HTTPException(400, "Informe o nome do pagador do Pix.")
     if condicao_pagamento not in {c.value for c in CondicaoPagamento}:
         raise HTTPException(400, "Condição de pagamento inválida.")
     if not 1 <= parcela_numero <= parcela_total <= 48:
         raise HTTPException(400, "Informe uma parcela entre 1 e o total de parcelas (até 48).")
     if condicao_pagamento != "parcelado":
         parcela_numero = parcela_total = 1
-    bandeira = (bandeira_cartao.strip() or None) if forma == "cartao_credito" else None
+    is_cartao = forma in {"cartao_credito", "cartao_debito"}
+    bandeira = (bandeira_cartao.strip() or None) if is_cartao else None
     taxa_pct = None
-    if forma == "cartao_credito":
-        taxa_pct = decimal_campo(taxa_cartao, "Taxa", 100) if taxa_cartao.strip() else _taxa_cartao(db, at.cliente_id, bandeira)
+    if is_cartao:
+        taxa_pct = decimal_campo(taxa_cartao, "Taxa", 100) if taxa_cartao.strip() else _taxa_cartao(db, at.cliente_id, bandeira, forma)
 
     valor_liquido = valor
     if taxa_pct is not None:
@@ -514,14 +563,13 @@ async def salvar_edicao_lancamento(
             status_code=303,
         )
 
-    pc_id = int(plano_conta_id) if plano_conta_id.strip().isdigit() else None
-    plano = db.query(PlanoConta).filter(
-        PlanoConta.id == pc_id, PlanoConta.tipo == "receita", or_(PlanoConta.ativo == True, PlanoConta.id == at.plano_conta_id),
-        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
-    ).first() if pc_id else None
-
-    if plano_conta_id.strip() and not plano:
-        raise HTTPException(400, "Plano de contas inválido para este cliente.")
+    servico = db.query(ServicoCadastro).filter(
+        ServicoCadastro.id == servico_id, ServicoCadastro.ativo.is_(True),
+        or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == at.cliente_id),
+    ).first() if servico_id else None
+    if not servico:
+        raise HTTPException(400, "Serviço inválido para este cliente.")
+    plano = servico.plano_conta
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_id, list):
@@ -572,13 +620,14 @@ async def salvar_edicao_lancamento(
     at.medico = cc.nome if cc else None
     at.especialidade = especialidade.strip() or None
     at.plano_conta_id = plano.id if plano else None
-    at.descricao_servico = descricao_servico.strip() or None
+    at.descricao_servico = servico.nome
     at.valor_servico = valor
     at.condicao_pagamento = condicao_pagamento
     at.parcela_numero = parcela_numero
     at.parcela_total = parcela_total
     at.forma_pagamento = forma or None
-    at.ultimos_digitos_cartao = (ultimos_digitos_cartao.strip() or None) if forma == "cartao_credito" else None
+    at.nome_pagador_pix = pagador_pix if forma == FormaPagamento.pix.value else None
+    at.ultimos_digitos_cartao = (ultimos_digitos_cartao.strip() or None) if is_cartao else None
     at.bandeira_cartao = bandeira
     at.taxa_cartao = taxa_pct
     at.valor_liquido = valor_liquido

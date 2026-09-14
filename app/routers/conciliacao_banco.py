@@ -29,7 +29,9 @@ from app.models import (
     FormaPagamento,
     MovimentacaoBancaria,
     PagamentoParcialContaPagar,
+    PlanoConta,
     PerfilUsuario,
+    RegraNegocioBancaria,
     StatusConciliacao,
     StatusContaPagar,
     StatusExtratoLinha,
@@ -82,6 +84,149 @@ def _filtrar_conta(db, registros):
 router = APIRouter()
 require_conciliacao = require_permission(Permission.CONCILIACAO)
 logger = logging.getLogger(__name__)
+
+
+def _plano_valido(db: Session, cliente_id: int, plano_id: int, tipo: str) -> PlanoConta | None:
+    return db.query(PlanoConta).filter(
+        PlanoConta.id == plano_id, PlanoConta.tipo == tipo, PlanoConta.ativo.is_(True),
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).first()
+
+
+def _aplicar_regras_bancarias(db: Session, cliente_id: int) -> int:
+    regras = db.query(RegraNegocioBancaria).filter(
+        RegraNegocioBancaria.cliente_id == cliente_id,
+        RegraNegocioBancaria.ativo.is_(True),
+    ).all()
+    movimentos = db.query(MovimentacaoBancaria).filter(
+        MovimentacaoBancaria.cliente_id == cliente_id,
+        MovimentacaoBancaria.status != StatusMovimentacaoBancaria.conciliada,
+        MovimentacaoBancaria.conta_bancaria_id.isnot(None),
+    ).all()
+    aplicadas = 0
+    for movimento in movimentos:
+        descricao = (movimento.descricao or "").casefold()
+        for regra in regras:
+            if regra.conta_origem_id and movimento.conta_bancaria_id != regra.conta_origem_id:
+                continue
+            if (regra.padrao_descricao or "").strip().casefold() not in descricao:
+                continue
+            if regra.acao == "conciliar_receita":
+                if movimento.sentido != "recebimento" or not regra.plano_conta_id:
+                    continue
+                candidatos = db.query(Atendimento).filter(
+                    Atendimento.cliente_id == cliente_id,
+                    Atendimento.plano_conta_id == regra.plano_conta_id,
+                    Atendimento.status_conciliacao == StatusConciliacao.pendente,
+                    Atendimento.valor_servico == movimento.valor,
+                ).all()
+                if len(candidatos) != 1:
+                    continue
+                atendimento = candidatos[0]
+                atendimento.status_conciliacao = StatusConciliacao.conciliado
+                atendimento.data_credito = movimento.data_movimento
+                movimento.conciliada_com_atendimento_id = atendimento.id
+                movimento.status = StatusMovimentacaoBancaria.conciliada
+                aplicadas += 1
+                break
+            if regra.acao == "conciliar_despesa":
+                if movimento.sentido != "pagamento" or not regra.plano_conta_id:
+                    continue
+                candidatos = db.query(ContaPagar).filter(
+                    ContaPagar.cliente_id == cliente_id,
+                    ContaPagar.plano_conta_id == regra.plano_conta_id,
+                    ContaPagar.status.in_([StatusContaPagar.agendado, StatusContaPagar.pago_nao_conciliado]),
+                    ContaPagar.valor == movimento.valor,
+                ).all()
+                if len(candidatos) != 1:
+                    continue
+                conta = candidatos[0]
+                conta.status = StatusContaPagar.pago
+                conta.data_pagamento = movimento.data_movimento
+                movimento.conta_pagar_id = conta.id
+                movimento.status = StatusMovimentacaoBancaria.conciliada
+                db.add(PagamentoParcialContaPagar(
+                    conta_pagar_id=conta.id, movimentacao_id=movimento.id,
+                    valor=movimento.valor, data_pagamento=movimento.data_movimento,
+                    observacao=f"Conciliação automática: {regra.nome}",
+                ))
+                aplicadas += 1
+                break
+            if regra.acao != "transferencia" or not regra.conta_destino_id or movimento.sentido != "pagamento":
+                continue
+            identificador = f"regra-bancaria:{regra.id}:{movimento.id}"
+            existente = db.query(MovimentacaoBancaria.id).filter(
+                MovimentacaoBancaria.identificador_externo == identificador,
+            ).first()
+            if existente:
+                break
+            movimento.tipo = "transf_interna"
+            movimento.status = StatusMovimentacaoBancaria.conciliada
+            db.add(MovimentacaoBancaria(
+                cliente_id=cliente_id, conta_bancaria_id=regra.conta_destino_id,
+                identificador_externo=identificador, origem_manual=False,
+                tipo="transf_interna", sentido="recebimento",
+                data_movimento=movimento.data_movimento, valor=movimento.valor,
+                descricao=f"Transferência automática: {regra.nome}",
+                origem_arquivo="Regra de negócio bancária",
+                status=StatusMovimentacaoBancaria.conciliada,
+            ))
+            aplicadas += 1
+            break
+    if aplicadas:
+        db.flush()
+    return aplicadas
+
+
+@router.post("/conciliacao/banco/regras")
+async def criar_regra_bancaria(
+    cliente_id: int = Form(...), nome: str = Form(...), padrao_descricao: str = Form(...),
+    acao: str = Form("transferencia"), conta_origem_id: Optional[int] = Form(None),
+    conta_destino_id: Optional[int] = Form(None), plano_conta_id: Optional[int] = Form(None),
+    db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
+):
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+    if acao not in {"transferencia", "conciliar_receita", "conciliar_despesa"} or not nome.strip() or not padrao_descricao.strip():
+        raise HTTPException(400, "Informe o tipo, nome e texto da regra.")
+    if conta_origem_id:
+        conta_do_cliente(db, cliente_id, conta_origem_id)
+    plano = None
+    if acao == "transferencia":
+        if not conta_origem_id or not conta_destino_id or conta_origem_id == conta_destino_id:
+            raise HTTPException(400, "Informe contas de origem e destino diferentes.")
+        conta_do_cliente(db, cliente_id, conta_destino_id)
+    else:
+        tipo_plano = "receita" if acao == "conciliar_receita" else "despesa"
+        plano = _plano_valido(db, cliente_id, plano_conta_id or 0, tipo_plano)
+        if not plano:
+            raise HTTPException(400, "Selecione um plano de contas compatível.")
+    db.add(RegraNegocioBancaria(
+        cliente_id=cliente_id, nome=nome.strip(), padrao_descricao=padrao_descricao.strip(),
+        acao=acao, conta_origem_id=conta_origem_id,
+        conta_destino_id=conta_destino_id if acao == "transferencia" else None,
+        plano_conta_id=plano.id if plano else None, ativo=True,
+    ))
+    db.flush()
+    _aplicar_regras_bancarias(db, cliente_id)
+    db.commit()
+    return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
+
+
+@router.post("/conciliacao/banco/regras/{regra_id}/excluir")
+async def excluir_regra_bancaria(
+    regra_id: int, cliente_id: int = Form(...), db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404)
+    regra = db.query(RegraNegocioBancaria).filter(
+        RegraNegocioBancaria.id == regra_id, RegraNegocioBancaria.cliente_id == cliente_id,
+    ).first()
+    if regra:
+        regra.ativo = False
+        db.commit()
+    return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
 
 
 @router.post("/conciliacao/banco/contas")
@@ -417,7 +562,10 @@ def _carregar_contas_agendadas(db: Session, cliente_id: int):
         db.query(ContaPagar)
         .filter(
             ContaPagar.cliente_id == cliente_id,
-            ContaPagar.status == StatusContaPagar.agendado,
+            ContaPagar.status.in_([
+                StatusContaPagar.agendado,
+                StatusContaPagar.pago_nao_conciliado,
+            ]),
             ContaPagar.arquivado_conciliacao_banco == False,
         )
         .order_by(ContaPagar.vencimento.asc())
@@ -631,7 +779,8 @@ def _movimentacoes_do_extrato(db: Session, cliente_id: int | None):
     ).order_by(MovimentacaoBancaria.data_movimento.desc(), MovimentacaoBancaria.id.desc()).limit(500).all()
 
 
-def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, mes_conciliado=None):
+def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, mes_conciliado=None,
+                data_inicio=None, data_fim=None):
     clientes = clientes_do_usuario(db, usuario)
     movs  = _carregar_movimentacoes(db, cliente_id) if cliente_id else []
     lancs = _carregar_lancamentos_pendentes(db, cliente_id) if cliente_id else []
@@ -639,6 +788,17 @@ def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, me
     creditos_banco = _carregar_creditos_banco_para_lote(db, cliente_id) if cliente_id else []
     saidas_banco = _carregar_saidas_banco(db, cliente_id) if cliente_id else []
     contas_agendadas = _carregar_contas_agendadas(db, cliente_id) if cliente_id else []
+    def dentro_periodo(data_item):
+        return (not data_inicio or (data_item and data_item >= data_inicio)) and (not data_fim or (data_item and data_item <= data_fim))
+    if data_inicio or data_fim:
+        movs = [m for m in movs if dentro_periodo(m.data_movimento)]
+        creditos_banco = [m for m in creditos_banco if dentro_periodo(m.data_movimento)]
+        saidas_banco = [m for m in saidas_banco if dentro_periodo(m.data_movimento)]
+        lancs = [a for a in lancs if dentro_periodo(a.data_prevista_recebimento)]
+        contas_agendadas = [c for c in contas_agendadas if dentro_periodo(c.vencimento)]
+    extrato_movimentacoes = _movimentacoes_do_extrato(db, cliente_id)
+    if data_inicio or data_fim:
+        extrato_movimentacoes = [m for m in extrato_movimentacoes if dentro_periodo(m.data_movimento)]
     pix_conciliados_todos = _carregar_pix_conciliados(db, cliente_id) if cliente_id else []
     pix_conciliados = pix_conciliados_todos
     if mes_conciliado:
@@ -670,10 +830,24 @@ def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, me
         "contas_arquivadas": arquivados[2],
         "painel": painel,
         "saldos_bancarios": _resumo_saldos_bancarios(db, cliente_id),
-        "extrato_movimentacoes": _movimentacoes_do_extrato(db, cliente_id),
+        "regras_bancarias": db.query(RegraNegocioBancaria).filter(
+            RegraNegocioBancaria.cliente_id == cliente_id,
+            RegraNegocioBancaria.ativo.is_(True),
+        ).order_by(RegraNegocioBancaria.nome).all() if cliente_id else [],
+        "planos_receita_banco": db.query(PlanoConta).filter(
+            PlanoConta.tipo == "receita", PlanoConta.ativo.is_(True),
+            or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+        ).order_by(PlanoConta.codigo, PlanoConta.nome).all() if cliente_id else [],
+        "planos_despesa_banco": db.query(PlanoConta).filter(
+            PlanoConta.tipo == "despesa", PlanoConta.ativo.is_(True),
+            or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+        ).order_by(PlanoConta.codigo, PlanoConta.nome).all() if cliente_id else [],
+        "extrato_movimentacoes": extrato_movimentacoes,
         "resultado": None,
         "tipo_selecionado": "pix_ted",
         "hoje": date.today().isoformat(),
+        "data_inicio_banco": data_inicio.isoformat() if data_inicio else "",
+        "data_fim_banco": data_fim.isoformat() if data_fim else "",
         "centros_custo_banco": db.query(CentroCusto).filter(
             CentroCusto.cliente_id == cliente_id,
             CentroCusto.ativo == True,
@@ -695,6 +869,8 @@ async def pagina_banco(
     mes_conciliado: Optional[str] = Query(default=None),
     arquivados: bool = Query(default=False),
     manual_criado: Optional[str] = Query(default=None),
+    data_inicio: Optional[date] = Query(default=None),
+    data_fim: Optional[date] = Query(default=None),
     db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
@@ -730,7 +906,7 @@ async def pagina_banco(
                 f"R$ {lote.valor_liquido:.2f} aguardando crédito bancário."
             )
 
-    ctx = _ctx_padrao(db, usuario, cliente_id, buscar_mov, termo, mes_conciliado)
+    ctx = _ctx_padrao(db, usuario, cliente_id, buscar_mov, termo, mes_conciliado, data_inicio, data_fim)
     response = templates.TemplateResponse("conciliacao_banco.html", {
         "request": request, "usuario": usuario,
         "flash_success": flash_success,
@@ -754,13 +930,15 @@ async def criar_receita_manual_banco(
     valor: Decimal = Form(...),
     data_recebimento: date = Form(...),
     forma_pagamento: str = Form("pix"),
+    plano_conta_id: int = Form(...),
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
     db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    if cliente_id not in [c.id for c in clientes] or valor <= 0:
+    plano = _plano_valido(db, cliente_id, plano_conta_id, "receita")
+    if cliente_id not in [c.id for c in clientes] or valor <= 0 or not plano:
         return RedirectResponse(url="/conciliacao/banco", status_code=303)
 
     forma = FormaPagamento.transferencia if forma_pagamento == "transferencia" else FormaPagamento.pix
@@ -785,6 +963,7 @@ async def criar_receita_manual_banco(
         observacao=observacao.strip() or None,
         lancado_por_id=usuario.id,
         centro_custo_id=rateios[0]["centro"].id if rateios else None,
+        plano_conta_id=plano.id,
     )
     db.add(atendimento)
     db.flush()
@@ -867,6 +1046,8 @@ async def criar_movimentacao_manual_banco(
         status=StatusMovimentacaoBancaria.importada,
     )
     db.add(movimento)
+    db.flush()
+    _aplicar_regras_bancarias(db, cliente_id)
     db.commit()
     _log(db, "Movimentação manual criada no extrato", "conciliacao_banco",
          usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
@@ -884,13 +1065,15 @@ async def criar_despesa_manual_banco(
     fornecedor: str = Form(""),
     valor: Decimal = Form(...),
     vencimento: date = Form(...),
+    plano_conta_id: int = Form(...),
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
     db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    if cliente_id not in [c.id for c in clientes] or valor <= 0:
+    plano = _plano_valido(db, cliente_id, plano_conta_id, "despesa")
+    if cliente_id not in [c.id for c in clientes] or valor <= 0 or not plano:
         return RedirectResponse(url="/conciliacao/banco", status_code=303)
 
     rateios = _montar_rateios_banco(db, cliente_id, valor, rateios_json)
@@ -908,6 +1091,7 @@ async def criar_despesa_manual_banco(
         observacao=observacao.strip() or None,
         lancado_por_id=usuario.id,
         categoria_dre=_chave_centro_custo(rateios[0]["centro"]) if rateios else None,
+        plano_conta_id=plano.id,
     )
     db.add(conta)
     db.flush()
@@ -945,7 +1129,7 @@ async def criar_pagamento_parcial_banco(
         conta
         and conta.cliente_id == cliente_id
         and cliente_id in [c.id for c in clientes]
-        and conta.status == StatusContaPagar.agendado
+        and conta.status in (StatusContaPagar.agendado, StatusContaPagar.pago_nao_conciliado)
         and not conta.arquivado_conciliacao_banco
     )
     if not autorizado or not _registrar_pagamento_conta(
@@ -1041,6 +1225,7 @@ async def importar_extrato_banco(
             resultado["conciliados"] = []
             resultado["divergencias"] = []
             resultado["importados"] = importacao["importados"]
+            resultado["regras_aplicadas"] = _aplicar_regras_bancarias(db, cliente_id)
             db.commit()
         else:
             if not db.info.get("banco_conta_id"):
@@ -1048,6 +1233,8 @@ async def importar_extrato_banco(
             df = ler_arquivo_extrato(caminho)
             importacao = importar_movimentacoes_bancarias(db, cliente_id, df, nome_original, conta_bancaria_id=db.info["banco_conta_id"])
             resultado["importados"] = importacao["importados"]
+            resultado["regras_aplicadas"] = _aplicar_regras_bancarias(db, cliente_id)
+            db.commit()
     except Exception:
         db.rollback()
         resultado["erro"] = public_import_error(logger, "importar_extrato_banco")

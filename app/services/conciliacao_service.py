@@ -205,6 +205,9 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
         "cartao_credito": FormaPagamento.cartao_credito,
         "cartao_de_credito": FormaPagamento.cartao_credito,
         "credito": FormaPagamento.cartao_credito,
+        "cartao_debito": FormaPagamento.cartao_debito,
+        "cartao_de_debito": FormaPagamento.cartao_debito,
+        "debito": FormaPagamento.cartao_debito,
         "pix": FormaPagamento.pix,
         "transferencia": FormaPagamento.transferencia,
         "ted": FormaPagamento.transferencia,
@@ -413,7 +416,7 @@ def buscar_sugestao(movimentacao: MovimentacaoBancaria, receitas: list):
     candidatos = []
     for at in receitas:
         fp = at.forma_pagamento.value if at.forma_pagamento else ""
-        if movimentacao.tipo == "cartao" and fp != "cartao_credito":
+        if movimentacao.tipo == "cartao" and fp not in {"cartao_credito", "cartao_debito"}:
             continue
         if movimentacao.tipo == "pix_ted" and fp not in {"pix", "transferencia"}:
             continue
@@ -594,7 +597,9 @@ def conciliar_cartao(
         query = db.query(Atendimento).filter(
             Atendimento.cliente_id == cliente_id,
             Atendimento.status_conciliacao == StatusConciliacao.pendente,
-            Atendimento.forma_pagamento == FormaPagamento.cartao_credito,
+            Atendimento.forma_pagamento.in_([
+                FormaPagamento.cartao_credito, FormaPagamento.cartao_debito,
+            ]),
             Atendimento.valor_servico == valor_bruto,
             Atendimento.data_prevista_recebimento >= data_min,
             Atendimento.data_prevista_recebimento <= data_max,
@@ -828,7 +833,7 @@ def gerar_transferencias_cartao(db: Session, cliente_id: int) -> int:
     """
     from sqlalchemy import func
 
-    FORMAS_CARTAO = [FormaPagamento.cartao_credito]
+    FORMAS_CARTAO = [FormaPagamento.cartao_credito, FormaPagamento.cartao_debito]
 
     rows = (
         db.query(
@@ -889,7 +894,7 @@ def buscar_sugestao_venda(venda: "VendaCartao", atendimentos: list) -> dict | No
     candidatos = []
     for at in atendimentos:
         fp = at.forma_pagamento.value if at.forma_pagamento else ""
-        if fp != "cartao_credito":
+        if fp not in ("cartao_credito", "cartao_debito"):
             continue
 
         # Se ambos têm dígitos, exige match

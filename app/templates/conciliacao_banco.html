@@ -222,15 +222,6 @@
         </div>
       </div>
 
-      {# Botões de filtro #}
-      <div class="flex items-center justify-between flex-wrap gap-2">
-        <div class="flex gap-1 flex-wrap">
-          <button onclick="filtrarLancamentos('todos')"         id="filtro-todos"         class="filtro-btn filtro-ativo   rounded-lg px-3 py-1.5 text-sm border transition-colors">Todos os lançamentos ▾</button>
-          <button onclick="filtrarLancamentos('recebimentos')"  id="filtro-recebimentos"  class="filtro-btn filtro-inativo rounded-lg px-3 py-1.5 text-sm border transition-colors">Recebimentos</button>
-          <button onclick="filtrarLancamentos('pagamentos')"    id="filtro-pagamentos"    class="filtro-btn filtro-inativo rounded-lg px-3 py-1.5 text-sm border transition-colors">Pagamentos</button>
-        </div>
-      </div>
-
       {# Cabeçalhos #}
       <div class="grid gap-4 cols-painel">
         <div class="flex items-center gap-2 text-sm font-semibold text-slate-700">
@@ -1069,6 +1060,7 @@
         <input type="text" name="descricao" required placeholder="Ex.: Consulta particular"
                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-400">
       </div>
+      <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plano de contas *</label><select name="plano_conta_id" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="">Selecione...</option>{% for plano in planos_receita_banco %}<option value="{{ plano.id }}">{{ plano.codigo or '—' }} - {{ plano.nome }}</option>{% endfor %}</select></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Pagador</label>
@@ -1130,6 +1122,7 @@
         <input type="text" name="descricao" required placeholder="Ex.: Pagamento de fornecedor"
                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-400">
       </div>
+      <div><label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plano de contas *</label><select name="plano_conta_id" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="">Selecione...</option>{% for plano in planos_despesa_banco %}<option value="{{ plano.id }}">{{ plano.codigo or '—' }} - {{ plano.nome }}</option>{% endfor %}</select></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Fornecedor</label>

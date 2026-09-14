@@ -11,7 +11,7 @@
     <span class="text-gray-700 font-medium">Editar #{{ conta.id }}</span>
   </div>
 
-  <form method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5"
+  <form id="form-conta-editar" method="post" action="/contas-pagar/{{ conta.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5"
         onsubmit="return !this.elements.escopo_valor || this.elements.escopo_valor.value !== 'proximos' || confirm('Aplicar a este e aos proximos da recorrencia? Pagamentos e conciliacoes serao desfeitos. Os anteriores serao mantidos.')">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -106,11 +106,12 @@
             {% endfor %}
           </select>
           <input type="number" name="rateio_percentual" aria-label="Percentual do rateio" min="0.01" max="100" step="0.01" value="{{ rateio.percentual if rateio else '' }}" class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm">
-          <button type="button" onclick="const row=this.parentElement; if(row.parentElement.children.length>1) row.remove(); else {row.querySelector('select').value=''; row.querySelector('input').value='';}" class="text-sm text-red-600">Remover</button>
+          <button type="button" onclick="removerRateioContaEdicao(this)" class="text-sm text-red-600">Remover</button>
         </div>
         {% endfor %}
       </div>
-      <button type="button" onclick="const box=document.getElementById('rateios-edicao'); const row=box.firstElementChild.cloneNode(true); row.querySelector('select').value=''; row.querySelector('input').value=''; box.appendChild(row);" class="mt-2 text-sm text-blue-700">Adicionar centro de custo</button>
+      <p id="rateio-edicao-resumo" class="mt-2 text-xs text-gray-500"></p>
+      <button type="button" onclick="adicionarRateioContaEdicao()" class="mt-2 text-sm text-blue-700">Adicionar centro de custo</button>
     </div>
 
     <div class="flex justify-end gap-3">
@@ -124,4 +125,76 @@
   </form>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function atualizarResumoRateioContaEdicao() {
+  const inputs = Array.from(document.querySelectorAll('#rateios-edicao [name="rateio_percentual"]'));
+  const soma = inputs.reduce((total, input) => total + (parseFloat(input.value || '0') || 0), 0);
+  const restante = 100 - soma;
+  const resumo = document.getElementById('rateio-edicao-resumo');
+  resumo.textContent = `Percentual usado: ${soma.toFixed(2).replace('.', ',')}% | Restante: ${restante.toFixed(2).replace('.', ',')}%`;
+  resumo.className = 'mt-2 text-xs ' + (Math.abs(restante) < 0.01 ? 'text-green-600' : 'text-amber-600');
+}
+
+function distribuirRateioContaEdicaoIgualmente() {
+  const inputs = Array.from(document.querySelectorAll('#rateios-edicao [name="rateio_percentual"]'));
+  if (!inputs.length) return;
+  const base = Math.floor((100 / inputs.length) * 100) / 100;
+  let usado = 0;
+  inputs.forEach((input, indice) => {
+    const percentual = indice === inputs.length - 1
+      ? Math.round((100 - usado) * 100) / 100
+      : base;
+    input.value = percentual.toFixed(2);
+    usado += percentual;
+  });
+  atualizarResumoRateioContaEdicao();
+}
+
+function adicionarRateioContaEdicao() {
+  const box = document.getElementById('rateios-edicao');
+  const row = box.firstElementChild.cloneNode(true);
+  row.querySelector('select').value = '';
+  row.querySelector('input').value = '';
+  box.appendChild(row);
+  distribuirRateioContaEdicaoIgualmente();
+}
+
+function removerRateioContaEdicao(button) {
+  const row = button.parentElement;
+  const box = row.parentElement;
+  if (box.children.length > 1) {
+    row.remove();
+    distribuirRateioContaEdicaoIgualmente();
+  } else {
+    row.querySelector('select').value = '';
+    row.querySelector('input').value = '';
+    atualizarResumoRateioContaEdicao();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const form = document.getElementById('form-conta-editar');
+  form.querySelectorAll('#rateios-edicao [name="rateio_percentual"]').forEach(input => {
+    input.addEventListener('input', atualizarResumoRateioContaEdicao);
+  });
+  document.getElementById('rateios-edicao').addEventListener('input', atualizarResumoRateioContaEdicao);
+  atualizarResumoRateioContaEdicao();
+
+  form.addEventListener('submit', function(event) {
+    const linhas = Array.from(document.querySelectorAll('#rateios-edicao > div'));
+    const preenchidas = linhas.filter(linha => linha.querySelector('select').value || linha.querySelector('input').value);
+    if (!preenchidas.length) return;
+    const centros = preenchidas.map(linha => linha.querySelector('select').value);
+    const soma = preenchidas.reduce((total, linha) => total + (parseFloat(linha.querySelector('input').value || '0') || 0), 0);
+    const incompleto = preenchidas.some(linha => !linha.querySelector('select').value || !(parseFloat(linha.querySelector('input').value || '0') > 0));
+    if (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01) {
+      event.preventDefault();
+      alert('Selecione centros diferentes, informe os percentuais e feche o rateio exatamente em 100%.');
+    }
+  });
+});
+</script>
 {% endblock %}

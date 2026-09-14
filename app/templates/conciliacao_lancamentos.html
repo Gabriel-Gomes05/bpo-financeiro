@@ -124,18 +124,19 @@
         </div>
         <div class="md:col-span-2">
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Serviço</label>
-          <input type="text" name="descricao_servico"
+          <select name="servico_id" required onchange="atualizarPlanoServicoManual(this)" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">Selecione o serviço...</option>
+            {% for servico in servicos %}<option value="{{ servico.id }}" data-plano-nome="{{ (servico.plano_conta.codigo or '—') ~ ' - ' ~ servico.plano_conta.nome }}">{% if servico.codigo %}{{ servico.codigo }} - {% endif %}{{ servico.nome }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor *</label>
+          <input type="number" name="valor_servico" step="0.01" min="0.01" required placeholder="0,00"
                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
         </div>
-        <div class="md:col-span-2">
+        <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plano de contas</label>
-          <select name="plano_conta_id"
-                  class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">
-            <option value="">Selecione...</option>
-            {% for pc in planos_conta %}
-            <option value="{{ pc.id }}">{{ pc.codigo or '—' }} - {{ pc.nome }}</option>
-            {% endfor %}
-          </select>
+          <input id="plano-servico-manual" value="Selecione um serviço" readonly tabindex="-1" class="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-600">
         </div>
       </div>
 
@@ -154,16 +155,12 @@
 
       <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Valor *</label>
-          <input type="number" name="valor_servico" step="0.01" min="0.01" required placeholder="0,00"
-                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
-        </div>
-        <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Forma</label>
           <select name="forma_pagamento" onchange="atualizarManualLancamento()"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
             <option value="">-</option>
-            <option value="cartao_credito">Cartão</option>
+            <option value="cartao_credito">Cartão de crédito</option>
+            <option value="cartao_debito">Cartão de débito</option>
             <option value="pix">Pix</option>
             <option value="transferencia">Transferência</option>
             <option value="dinheiro">Dinheiro</option>
@@ -207,17 +204,24 @@
           <input type="text" name="recorrencia" placeholder="30/60/90"
                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono outline-none focus:border-sky-400">
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">% Centro de Custo</label>
-          <input type="number" name="percentual_medico" step="0.01" min="0" max="100"
-                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
-        </div>
         <div class="md:col-span-2">
           <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Observação</label>
           <input type="text" name="observacao"
                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
         </div>
+        <div class="manual-pix hidden md:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Nome do Pagador *</label>
+          <input type="text" name="nome_pagador_pix" placeholder="Nome do pagador"
+                 class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
+        </div>
       </div>
+
+      <input type="hidden" name="pagamentos_adicionais" value="[]">
+      <div id="pagamentos-adicionais" class="space-y-3"></div>
+      <button type="button" onclick="adicionarPagamentoManual()"
+              class="rounded-lg border border-dashed border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100">
+        + Adicionar outra forma de pagamento
+      </button>
 
       <div class="flex justify-end">
         <button type="submit"
@@ -538,10 +542,24 @@ function adicionarRateioManual(percentual) {
   input.addEventListener('input', atualizarRateioManual);
   linha.querySelector('button').addEventListener('click', function() {
     linha.remove();
+    distribuirRateioManualIgualmente();
     atualizarRateioManual();
   });
   container.appendChild(linha);
+  if (percentual === undefined) distribuirRateioManualIgualmente();
   atualizarRateioManual();
+}
+
+function distribuirRateioManualIgualmente() {
+  var inputs = Array.from(document.querySelectorAll('#rateios-manual .rateio-manual-percentual'));
+  if (!inputs.length) return;
+  var unidadesBase = Math.floor(10000 / inputs.length);
+  var usados = 0;
+  inputs.forEach(function(input, indice) {
+    var unidades = indice === inputs.length - 1 ? 10000 - usados : unidadesBase;
+    usados += unidades;
+    input.value = (unidades / 100).toFixed(2);
+  });
 }
 
 function atualizarRateioManual() {
@@ -584,10 +602,15 @@ function atualizarManualLancamento() {
   if (!form) return;
   var forma = form.querySelector('[name="forma_pagamento"]').value;
   var condicao = form.querySelector('[name="condicao_pagamento"]').value;
-  var isCartao = forma === 'cartao_credito';
+  var isCartao = forma === 'cartao_credito' || forma === 'cartao_debito';
   var isParcelado = condicao === 'parcelado';
   form.querySelectorAll('.manual-cartao').forEach(function(el) {
     el.classList.toggle('hidden', !isCartao);
+  });
+  form.querySelectorAll('.manual-pix').forEach(function(el) {
+    el.classList.toggle('hidden', forma !== 'pix');
+    var input = el.querySelector('[name="nome_pagador_pix"]');
+    if (input) input.required = forma === 'pix';
   });
   form.querySelectorAll('.manual-parcelas-cartao').forEach(function(el) {
     el.classList.toggle('hidden', !(isCartao && isParcelado));
@@ -597,6 +620,51 @@ function atualizarManualLancamento() {
   });
 }
 
+function atualizarPlanoServicoManual(select) {
+  var option = select.options[select.selectedIndex];
+  var display = document.getElementById('plano-servico-manual');
+  if (display) display.value = option?.dataset.planoNome || 'Selecione um serviço';
+}
+
+function adicionarPagamentoManual() {
+  var container = document.getElementById('pagamentos-adicionais');
+  if (!container) return;
+  var linha = document.createElement('div');
+  linha.className = 'pagamento-adicional rounded-xl border border-sky-200 bg-sky-50 p-3';
+  linha.innerHTML = `
+    <div class="mb-2 flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase text-sky-700">Outra forma de pagamento</span>
+      <button type="button" class="remover-pagamento text-lg text-slate-400 hover:text-red-500">×</button>
+    </div>
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-6">
+      <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Valor desta forma *</label><input data-pag="valor" type="number" min="0.01" step="0.01" required class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+      <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Forma *</label><select data-pag="forma" required onchange="atualizarPagamentoAdicional(this.closest('.pagamento-adicional'))" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">-</option><option value="cartao_credito">Cartão de crédito</option><option value="cartao_debito">Cartão de débito</option><option value="pix">Pix</option><option value="transferencia">Transferência</option><option value="dinheiro">Dinheiro</option></select></div>
+      <div><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Condição</label><select data-pag="condicao" onchange="atualizarPagamentoAdicional(this.closest('.pagamento-adicional'))" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="avista">À vista</option><option value="parcelado">Parcelado</option></select></div>
+      <div class="pag-extra-cartao hidden"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">4 dígitos</label><input data-pag="digitos" maxlength="4" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+      <div class="pag-extra-cartao hidden"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Bandeira</label><select data-pag="bandeira" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">-</option><option>Visa</option><option>Mastercard</option><option>Elo</option><option>Amex</option><option>Hipercard</option></select></div>
+      <div class="pag-extra-pix hidden md:col-span-2"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Nome do Pagador *</label><input data-pag="pagador_pix" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+      <div class="pag-extra-parcelas hidden"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Parcelas</label><input data-pag="parcelas" type="number" min="2" max="48" value="2" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+      <div class="pag-extra-recorrencia hidden md:col-span-2"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Recorrência em dias</label><input data-pag="recorrencia" placeholder="30/60/90" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+      <div class="md:col-span-2"><label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Observação</label><input data-pag="observacao" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"></div>
+    </div>`;
+  linha.querySelector('.remover-pagamento').addEventListener('click', function() { linha.remove(); });
+  container.appendChild(linha);
+}
+
+function atualizarPagamentoAdicional(linha) {
+  var forma = linha.querySelector('[data-pag="forma"]').value;
+  var condicao = linha.querySelector('[data-pag="condicao"]').value;
+  var cartao = forma === 'cartao_credito' || forma === 'cartao_debito';
+  linha.querySelectorAll('.pag-extra-cartao').forEach(function(el) { el.classList.toggle('hidden', !cartao); });
+  linha.querySelectorAll('.pag-extra-pix').forEach(function(el) {
+    el.classList.toggle('hidden', forma !== 'pix');
+    var input = el.querySelector('[data-pag="pagador_pix"]');
+    if (input) input.required = forma === 'pix';
+  });
+  linha.querySelector('.pag-extra-parcelas').classList.toggle('hidden', !(forma === 'cartao_credito' && condicao === 'parcelado'));
+  linha.querySelector('.pag-extra-recorrencia').classList.toggle('hidden', !(!cartao && condicao === 'parcelado'));
+}
+
 atualizarManualLancamento();
 var formManual = document.getElementById('form-manual-lancamento');
 if (formManual) {
@@ -604,9 +672,14 @@ if (formManual) {
   formManual.querySelector('[name="valor_servico"]').addEventListener('input', atualizarRateioManual);
   formManual.addEventListener('submit', function(evento) {
     atualizarRateioManual();
+    var pagamentos = Array.from(formManual.querySelectorAll('.pagamento-adicional')).map(function(linha) {
+      var item = {};
+      linha.querySelectorAll('[data-pag]').forEach(function(campo) { item[campo.dataset.pag] = campo.value; });
+      return item;
+    });
+    formManual.querySelector('[name="pagamentos_adicionais"]').value = JSON.stringify(pagamentos);
     var linhas = Array.from(formManual.querySelectorAll('#rateios-manual > div'));
     var preenchidas = linhas.filter(function(linha) { return linha.querySelector('.rateio-manual-centro').value; });
-    if (!preenchidas.length) return;
     var centros = preenchidas.map(function(linha) { return linha.querySelector('.rateio-manual-centro').value; });
     var soma = preenchidas.reduce(function(total, linha) {
       return total + (parseFloat(linha.querySelector('.rateio-manual-percentual').value || '0') || 0);
@@ -614,9 +687,9 @@ if (formManual) {
     var incompleto = linhas.some(function(linha) {
       return Boolean(linha.querySelector('.rateio-manual-centro').value) !== Boolean(parseFloat(linha.querySelector('.rateio-manual-percentual').value || '0'));
     });
-    if (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01) {
+    if (!preenchidas.length || incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01) {
       evento.preventDefault();
-      alert('Selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
+      alert('Selecione os centros, use centros diferentes e feche o rateio exatamente em 100%.');
     }
   });
 }

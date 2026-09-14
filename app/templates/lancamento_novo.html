@@ -59,8 +59,16 @@
   <div class="linha-servico rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
     <div class="flex items-center justify-between mb-1">
       <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide linha-numero">Serviço</span>
-      <button type="button" onclick="removerLinha(this)"
-              class="text-gray-400 hover:text-red-500 text-lg leading-none transition">×</button>
+      <div class="flex items-center gap-3">
+        <button type="button" onclick="adicionarFormaPagamento(this)"
+                class="text-[11px] font-semibold text-[#5e93cc] hover:underline">+ Outra forma de pagamento</button>
+        <button type="button" onclick="removerLinha(this)"
+                class="text-gray-400 hover:text-red-500 text-lg leading-none transition">×</button>
+      </div>
+    </div>
+
+    <div class="aviso-pagamento-dividido hidden rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+      Pagamento dividido: informe abaixo somente o valor correspondente a esta forma.
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -89,24 +97,20 @@
       </div>
       <div class="lg:col-span-2">
         <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Descrição da receita</label>
-        <input type="text" name="descricao_servico" placeholder="Ex: Consulta cardiológica"
+        <select name="servico_id" required onchange="atualizarPlanoDoServico(this)" class="servico-select w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Selecione o serviço...</option>
+          {% for servico in servicos %}<option value="{{ servico.id }}" data-cliente-id="{{ servico.cliente_id or '' }}" data-plano-nome="{{ (servico.plano_conta.codigo or '—') ~ ' - ' ~ servico.plano_conta.nome }}">{% if servico.codigo %}{{ servico.codigo }} - {% endif %}{{ servico.nome }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1 valor-label">Valor (R$) *</label>
+        <input type="number" name="valor_servico" step="0.01" min="0" placeholder="0,00"
+               oninput="calcularPreviewLinha(this)"
                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div class="lg:col-span-2">
         <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Plano de contas</label>
-        <select name="plano_conta_id"
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          <option value="">Selecione a conta...</option>
-          {% for pc in planos_conta_receita %}
-          <option value="{{ pc.id }}" data-cliente-id="{{ pc.cliente_id or '' }}">{{ pc.codigo or '—' }} - {{ pc.nome }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Valor (R$) *</label>
-        <input type="number" name="valor_servico" step="0.01" min="0" placeholder="0,00"
-               oninput="calcularPreviewLinha(this)"
-               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        <input type="text" class="plano-servico-display w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600" value="Selecione um serviço" readonly tabindex="-1">
       </div>
     </div>
 
@@ -126,7 +130,8 @@
         <select name="forma_pagamento" onchange="atualizarLinha(this)"
                 class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
           <option value="">—</option>
-          <option value="cartao_credito">Cartão</option>
+          <option value="cartao_credito">Cartão de crédito</option>
+          <option value="cartao_debito">Cartão de débito</option>
           <option value="pix">Pix</option>
           <option value="transferencia">Transferência</option>
           <option value="dinheiro">Dinheiro</option>
@@ -144,6 +149,11 @@
         <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">4 dígitos</label>
         <input type="text" name="ultimos_digitos_cartao" maxlength="4" placeholder="0000"
                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+      </div>
+      <div class="campo-pix hidden lg:col-span-2">
+        <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Nome do Pagador *</label>
+        <input type="text" name="nome_pagador_pix" placeholder="Nome do pagador"
+               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
       </div>
       <div class="campo-cartao hidden">
         <label class="block text-[11px] font-semibold text-gray-400 uppercase mb-1">Bandeira</label>
@@ -262,12 +272,44 @@
     `;
     container.appendChild(row);
     popularRateioSelect(row.querySelector('.rateio-centro-select'), document.querySelector('[name="cliente_id"]').value);
+    if (percentual === '') distribuirRateioServicoIgualmente(linha);
     atualizarRateioServico(linha);
+  }
+
+  function filtrarServicos(clienteId) {
+    document.querySelectorAll('.servico-select').forEach(sel => {
+      Array.from(sel.options).forEach(opt => {
+        if (!opt.value) return;
+        const pertence = !opt.dataset.clienteId || opt.dataset.clienteId === String(clienteId);
+        opt.hidden = !pertence;
+        opt.disabled = !pertence;
+        if (!pertence && opt.selected) sel.value = '';
+      });
+    });
+  }
+
+  function atualizarPlanoDoServico(select) {
+    const display = select.closest('.linha-servico')?.querySelector('.plano-servico-display');
+    const option = select.options[select.selectedIndex];
+    if (display) display.value = option?.dataset.planoNome || 'Selecione um serviço';
+  }
+
+  function distribuirRateioServicoIgualmente(linha) {
+    const inputs = Array.from(linha.querySelectorAll('.rateio-percentual'));
+    if (!inputs.length) return;
+    const centavosPercentuais = Math.floor(10000 / inputs.length);
+    let usados = 0;
+    inputs.forEach((input, indice) => {
+      const unidades = indice === inputs.length - 1 ? 10000 - usados : centavosPercentuais;
+      usados += unidades;
+      input.value = (unidades / 100).toFixed(2);
+    });
   }
 
   function removerRateioServico(botao) {
     const linha = botao.closest('.linha-servico');
     botao.closest('.rateios-servico > div').remove();
+    distribuirRateioServicoIgualmente(linha);
     atualizarRateioServico(linha);
   }
 
@@ -316,6 +358,7 @@
 
   function onClienteChange(clienteId) {
     filtrarPlanosConta(clienteId);
+    filtrarServicos(clienteId);
     document.querySelectorAll('.centro-custo-select').forEach(sel => {
       popularCentrosCusto(sel, clienteId);
     });
@@ -358,6 +401,74 @@
     atualizarBotao();
   }
 
+  function adicionarFormaPagamento(botao) {
+    const origem = botao.closest('.linha-servico');
+    if (!origem) return;
+
+    contador++;
+    const clone = document.querySelector('#linha-template .linha-servico').cloneNode(true);
+    const servicoOrigem = origem.querySelector('[name="servico_id"]')?.value || '';
+    const servicoClone = clone.querySelector('[name="servico_id"]');
+    if (servicoClone) {
+      servicoClone.value = servicoOrigem;
+      atualizarPlanoDoServico(servicoClone);
+    }
+
+    const rateiosOrigem = origem.querySelector('.rateios-servico');
+    const rateiosClone = clone.querySelector('.rateios-servico');
+    if (rateiosOrigem && rateiosClone) {
+      rateiosClone.replaceChildren(...Array.from(rateiosOrigem.children).map(item => item.cloneNode(true)));
+      const camposOrigem = rateiosOrigem.querySelectorAll('select, input');
+      const camposClone = rateiosClone.querySelectorAll('select, input');
+      camposOrigem.forEach((campo, indice) => {
+        if (camposClone[indice]) camposClone[indice].value = campo.value;
+      });
+    }
+    clone.querySelector('.linha-numero').textContent = 'Pagamento ' + contador;
+    clone.querySelector('.aviso-pagamento-dividido')?.classList.remove('hidden');
+    const avisoOrigem = origem.querySelector('.aviso-pagamento-dividido');
+    if (avisoOrigem) avisoOrigem.classList.remove('hidden');
+    origem.querySelector('.valor-label').textContent = 'Valor desta forma (R$) *';
+    clone.querySelector('.valor-label').textContent = 'Valor desta forma (R$) *';
+
+    const valor = clone.querySelector('[name="valor_servico"]');
+    if (valor) valor.value = '';
+    const forma = clone.querySelector('[name="forma_pagamento"]');
+    if (forma) forma.value = '';
+    const condicao = clone.querySelector('[name="condicao_pagamento"]');
+    if (condicao) condicao.value = 'avista';
+    const parcelas = clone.querySelector('[name="parcela_total"]');
+    if (parcelas) parcelas.value = '2';
+    const recorrencia = clone.querySelector('[name="recorrencia"]');
+    if (recorrencia) recorrencia.value = '';
+    const digitos = clone.querySelector('[name="ultimos_digitos_cartao"]');
+    if (digitos) digitos.value = '';
+    const bandeira = clone.querySelector('[name="bandeira_cartao"]');
+    if (bandeira) bandeira.value = '';
+
+    clone.querySelectorAll('.campo-cartao, .campo-parcelas-cartao, .campo-recorrencia, .campo-preview')
+      .forEach(el => el.classList.add('hidden'));
+    const preview = clone.querySelector('.preview-valor');
+    if (preview) preview.textContent = '—';
+
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(clone);
+    origem.parentElement.after(wrapper);
+    const clienteId = document.querySelector('[name="cliente_id"]').value;
+    const ccSel = clone.querySelector('.centro-custo-select');
+    if (ccSel) popularCentrosCusto(ccSel, clienteId);
+    if (!clone.querySelector('.rateios-servico')?.children.length) {
+      adicionarRateioServico(clone, '100');
+    }
+    if (valor) {
+      valor.addEventListener('input', () => atualizarRateioServico(clone));
+    }
+    atualizarRateioServico(clone);
+    renumerar();
+    atualizarBotao();
+    valor?.focus();
+  }
+
   function removerLinha(btn) {
     const container = document.getElementById('linhas-container');
     if (container.querySelectorAll('.linha-servico').length <= 1) return;
@@ -368,7 +479,7 @@
 
   function renumerar() {
     document.querySelectorAll('#linhas-container .linha-numero').forEach((el, i) => {
-      el.textContent = 'Serviço ' + (i + 1);
+      el.textContent = 'Recebimento ' + (i + 1);
     });
     contador = document.querySelectorAll('#linhas-container .linha-servico').length;
   }
@@ -377,10 +488,15 @@
     const bloco = select.closest('.linha-servico');
     const forma = bloco.querySelector('[name="forma_pagamento"]').value;
     const condicao = bloco.querySelector('[name="condicao_pagamento"]').value;
-    const isCartao = forma === 'cartao_credito';
+    const isCartao = forma === 'cartao_credito' || forma === 'cartao_debito';
     const isParcelado = condicao === 'parcelado';
 
     bloco.querySelectorAll('.campo-cartao').forEach(el => el.classList.toggle('hidden', !isCartao));
+    bloco.querySelectorAll('.campo-pix').forEach(el => {
+      el.classList.toggle('hidden', forma !== 'pix');
+      const input = el.querySelector('[name="nome_pagador_pix"]');
+      if (input) input.required = forma === 'pix';
+    });
     bloco.querySelector('.campo-parcelas-cartao').classList.toggle('hidden', !(isCartao && isParcelado));
     bloco.querySelector('.campo-recorrencia').classList.toggle('hidden', !(!isCartao && isParcelado));
     bloco.querySelector('.campo-preview').classList.toggle('hidden', !isParcelado);
@@ -445,8 +561,8 @@
         const input = select.closest('.rateios-servico > div').querySelector('.rateio-percentual');
         return Boolean(select.value) !== Boolean(parseFloat(input?.value || '0'));
       });
-      if (preenchidos.length && (incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01)) {
-        alert('Em cada receita, selecione centros diferentes, informe os percentuais e feche o rateio em 100%.');
+      if (!preenchidos.length || incompleto || new Set(centros).size !== centros.length || Math.abs(soma - 100) >= 0.01) {
+        alert('Em cada receita, selecione os centros, use centros diferentes e feche o rateio exatamente em 100%.');
         e.preventDefault();
         return;
       }
@@ -456,5 +572,6 @@
 
   adicionarLinha();
   filtrarPlanosConta(document.querySelector('[name="cliente_id"]').value);
+  filtrarServicos(document.querySelector('[name="cliente_id"]').value);
 </script>
 {% endblock %}
