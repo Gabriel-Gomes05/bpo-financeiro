@@ -34,6 +34,7 @@
         {% endfor %}
       </select>
     </div>
+    <div><label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Regime</label><select name="regime" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="competencia" {% if regime == 'competencia' %}selected{% endif %}>Competência</option><option value="caixa" {% if regime == 'caixa' %}selected{% endif %}>Caixa</option></select></div>
     <button type="submit"
             class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
       Filtrar
@@ -70,7 +71,7 @@
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase text-gray-500">
           <tr>
-            <th class="px-4 py-3 text-left">Data</th>
+            <th class="px-4 py-3 text-left">{% if regime == 'caixa' %}Recebimento{% else %}Competência{% endif %}</th>
             <th class="px-4 py-3 text-left">Descrição / Paciente</th>
             <th class="px-4 py-3 text-left">Forma de Recebimento</th>
             <th class="px-4 py-3 text-left">Bandeira</th>
@@ -82,7 +83,7 @@
         <tbody class="divide-y divide-gray-100">
           {% for a in atendimentos %}
           <tr class="hover:bg-gray-50">
-            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
+            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ (a.data_credito if regime == 'caixa' else a.data_atendimento).strftime('%d/%m/%Y') }}</td>
             <td class="px-4 py-3 text-gray-700">
               <p class="font-medium">{{ a.nome_paciente or '—' }}</p>
               {% if a.descricao_servico or a.tipo_servico %}
@@ -106,7 +107,7 @@
             </td>
             <td class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">R$ {{ brl(a.valor_servico) }}</td>
             <td class="px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">
-              R$ {{ brl(a.valor_liquido or a.valor_servico) }}
+              R$ {{ brl(a.valor_liquido if a.valor_liquido is not none else a.valor_servico) }}
             </td>
           </tr>
           {% endfor %}

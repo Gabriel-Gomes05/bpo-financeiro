@@ -15,7 +15,7 @@ from app.database import get_db
 from app.utils import cliente_ativo as _ca
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, ContaPagar, ContaPagarCentroCustoRateio, OrcamentoValor,
-    FechamentoDiario, PerfilUsuario, StatusConciliacao, StatusContaPagar, Usuario,
+    FechamentoDiario, PagamentoParcialContaPagar, PerfilUsuario, StatusConciliacao, StatusContaPagar, Usuario,
 )
 
 router = APIRouter()
@@ -131,6 +131,50 @@ def _grupos_dre_cliente(db: Session, cliente_id: int | None) -> list[dict]:
     return grupos
 
 
+def _receitas_periodo(db, cliente_id, inicio, fim, regime):
+    data_filtro = Atendimento.data_credito if regime == "caixa" else Atendimento.data_atendimento
+    query = db.query(Atendimento).filter(
+        Atendimento.cliente_id == cliente_id,
+        data_filtro >= inicio, data_filtro <= fim,
+    )
+    if regime == "caixa":
+        query = query.filter(Atendimento.status_conciliacao == StatusConciliacao.conciliado)
+    return query.order_by(data_filtro.desc(), Atendimento.id.desc()).all()
+
+
+def _despesas_periodo(db, cliente_id, inicio, fim, regime):
+    query = db.query(ContaPagar).filter(ContaPagar.cliente_id == cliente_id)
+    if regime != "caixa":
+        data_filtro = func.coalesce(ContaPagar.data_competencia, ContaPagar.vencimento) if regime == "competencia" else ContaPagar.vencimento
+        contas = query.filter(
+            ContaPagar.status != StatusContaPagar.cancelado,
+            data_filtro >= inicio, data_filtro <= fim,
+        ).order_by(data_filtro.desc(), ContaPagar.id.desc()).all()
+        return contas, {c.id: c.valor for c in contas}, {}
+
+    # Cada pagamento pertence ao seu mes; uma quitacao nao repete parcelas anteriores.
+    pagamentos = db.query(PagamentoParcialContaPagar).join(ContaPagar).filter(
+        ContaPagar.cliente_id == cliente_id,
+        PagamentoParcialContaPagar.data_pagamento >= inicio,
+        PagamentoParcialContaPagar.data_pagamento <= fim,
+    ).all()
+    valores, datas, por_id = {}, {}, {}
+    for pagamento in pagamentos:
+        key = pagamento.conta_pagar_id
+        valores[key] = valores.get(key, Decimal("0")) + pagamento.valor
+        datas[key] = max(datas.get(key, pagamento.data_pagamento), pagamento.data_pagamento)
+        por_id[key] = pagamento.conta
+    legadas = query.filter(
+        ~ContaPagar.pagamentos_parciais.any(),
+        ContaPagar.status.in_([StatusContaPagar.pago, StatusContaPagar.pago_nao_conciliado]),
+        ContaPagar.data_pagamento >= inicio, ContaPagar.data_pagamento <= fim,
+    ).all()
+    for conta in legadas:
+        por_id[conta.id], valores[conta.id], datas[conta.id] = conta, conta.valor, conta.data_pagamento
+    contas = sorted(por_id.values(), key=lambda c: (datas[c.id], c.id), reverse=True)
+    return contas, valores, datas
+
+
 def _carregar_dre_periodo(
     db: Session,
     cliente_id: int,
@@ -138,6 +182,7 @@ def _carregar_dre_periodo(
     ano: int,
     inicio: date | None = None,
     fim: date | None = None,
+    regime: str = "caixa",
 ) -> dict:
     inicio = inicio or date(ano, mes, 1)
     fim = fim or date(ano, mes, monthrange(ano, mes)[1])
@@ -156,19 +201,14 @@ def _carregar_dre_periodo(
                 + (r.valor_orcado or Decimal("0"))
             )
 
-    ats = db.query(Atendimento).filter(
-        Atendimento.cliente_id == cliente_id,
-        Atendimento.status_conciliacao == StatusConciliacao.conciliado,
-        Atendimento.data_credito >= inicio,
-        Atendimento.data_credito <= fim,
-    ).all()
+    ats = _receitas_periodo(db, cliente_id, inicio, fim, regime)
     total_real_rec = sum(
-        (a.valor_liquido or a.valor_servico or Decimal("0")) for a in ats
+        ((a.valor_liquido if a.valor_liquido is not None else a.valor_servico) or Decimal("0")) for a in ats
     )
     real_rec_por_cat: dict[str, Decimal] = {}
     for a in ats:
         if a.rateios_centro_custo:
-            total_base = a.valor_liquido or a.valor_servico or Decimal("0")
+            total_base = (a.valor_liquido if a.valor_liquido is not None else a.valor_servico) or Decimal("0")
             for rateio in a.rateios_centro_custo:
                 cat_key = _key_centro_custo(rateio.centro_custo)
                 if cat_key:
@@ -179,16 +219,11 @@ def _carregar_dre_periodo(
             if cat_key:
                 real_rec_por_cat[cat_key] = (
                     real_rec_por_cat.get(cat_key, Decimal("0"))
-                    + (a.valor_liquido or a.valor_servico or Decimal("0"))
+                    + ((a.valor_liquido if a.valor_liquido is not None else a.valor_servico) or Decimal("0"))
                 )
 
-    cps = db.query(ContaPagar).filter(
-        ContaPagar.cliente_id == cliente_id,
-        ContaPagar.status == StatusContaPagar.pago,
-        ContaPagar.data_pagamento >= inicio,
-        ContaPagar.data_pagamento <= fim,
-    ).all()
-    total_real_desp = sum((c.valor or Decimal("0")) for c in cps)
+    cps, valores_despesas, _ = _despesas_periodo(db, cliente_id, inicio, fim, regime)
+    total_real_desp = sum(valores_despesas.values(), Decimal("0"))
 
     real_por_cat: dict[str, Decimal] = {}
     for cp in cps:
@@ -196,12 +231,12 @@ def _carregar_dre_periodo(
             for rateio in cp.rateios_centro_custo:
                 real_por_cat[rateio.categoria_key] = (
                     real_por_cat.get(rateio.categoria_key, Decimal("0"))
-                    + (rateio.valor or Decimal("0"))
+                    + (valores_despesas[cp.id] * rateio.percentual / Decimal("100")).quantize(Decimal("0.01"))
                 )
         elif cp.categoria_dre:
             real_por_cat[cp.categoria_dre] = (
                 real_por_cat.get(cp.categoria_dre, Decimal("0"))
-                + (cp.valor or Decimal("0"))
+                + valores_despesas[cp.id]
             )
 
     grupos_dre = []
@@ -447,9 +482,11 @@ async def gestao_receitas(
     cliente_id: Optional[int] = None,
     mes: Optional[int] = None,
     ano: Optional[int] = None,
+    regime: str = "competencia",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_gestao),
 ):
+    regime = regime if regime in {"caixa", "competencia"} else "competencia"
     cliente_id = _ca(request, cliente_id)
     hoje = date.today()
     mes = mes or hoje.month
@@ -466,25 +503,16 @@ async def gestao_receitas(
         inicio = date(ano, mes, 1)
         fim = date(ano, mes, ultimo)
 
-        atendimentos = (
-            db.query(Atendimento)
-            .filter(
-                Atendimento.cliente_id == cliente_id,
-                Atendimento.data_atendimento >= inicio,
-                Atendimento.data_atendimento <= fim,
-            )
-            .order_by(Atendimento.data_atendimento.desc())
-            .all()
-        )
+        atendimentos = _receitas_periodo(db, cliente_id, inicio, fim, regime)
         total = sum(
-            (a.valor_liquido or a.valor_servico or Decimal("0")) for a in atendimentos
+            ((a.valor_liquido if a.valor_liquido is not None else a.valor_servico) or Decimal("0")) for a in atendimentos
         )
 
     return templates.TemplateResponse("gestao_receitas.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_id,
         "mes": mes, "ano": ano,
-        "atendimentos": atendimentos,
+        "atendimentos": atendimentos, "regime": regime,
         "total": total, "brl": _brl,
     })
 
@@ -513,6 +541,7 @@ async def gestao_despesas(
     ids = [c.id for c in clientes]
 
     contas = []
+    valores_periodo, datas_pagamento = {}, {}
     total = Decimal("0")
 
     if cliente_id and cliente_id in ids:
@@ -521,30 +550,14 @@ async def gestao_despesas(
         inicio = date(ano, mes, 1)
         fim = date(ano, mes, ultimo)
 
-        if regime == "competencia":
-            data_filtro = func.coalesce(ContaPagar.data_competencia, ContaPagar.vencimento)
-        elif regime == "caixa":
-            data_filtro = ContaPagar.data_pagamento
-        else:
-            data_filtro = ContaPagar.vencimento
-
-        contas = (
-            db.query(ContaPagar)
-            .filter(
-                ContaPagar.cliente_id == cliente_id,
-                data_filtro >= inicio,
-                data_filtro <= fim,
-            )
-            .order_by(data_filtro.desc())
-            .all()
-        )
-        total = sum((c.valor or Decimal("0")) for c in contas)
+        contas, valores_periodo, datas_pagamento = _despesas_periodo(db, cliente_id, inicio, fim, regime)
+        total = sum(valores_periodo.values(), Decimal("0"))
 
     return templates.TemplateResponse("gestao_despesas.html", {
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_id,
         "mes": mes, "ano": ano, "regime": regime,
-        "contas": contas,
+        "contas": contas, "valores_periodo": valores_periodo, "datas_pagamento": datas_pagamento,
         "total": total, "brl": _brl,
     })
 
@@ -693,6 +706,7 @@ async def gestao_dre_apresentacao(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     periodo: str = "mes",
+    regime: str = "caixa",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_gestao),
 ):
@@ -704,10 +718,11 @@ async def gestao_dre_apresentacao(
     if not cliente:
         return RedirectResponse(url="/gestao/dre", status_code=303)
 
+    regime = regime if regime in {"caixa", "competencia"} else "caixa"
     inicio, fim, periodo = _resolver_periodo(periodo, mes, ano, hoje)
-    atual = _carregar_dre_periodo(db, cliente_id, mes, ano, inicio, fim)
+    atual = _carregar_dre_periodo(db, cliente_id, mes, ano, inicio, fim, regime=regime)
     mes_ant, ano_ant = _retroceder_mes(mes, ano, 1)
-    anterior = _carregar_dre_periodo(db, cliente_id, mes_ant, ano_ant)
+    anterior = _carregar_dre_periodo(db, cliente_id, mes_ant, ano_ant, regime=regime)
     comparativo = {
         "mes": mes_ant,
         "ano": ano_ant,
@@ -723,7 +738,7 @@ async def gestao_dre_apresentacao(
     serie_mensal = []
     for deslocamento in range(5, -1, -1):
         mes_ref, ano_ref = _retroceder_mes(mes, ano, deslocamento)
-        ref = _carregar_dre_periodo(db, cliente_id, mes_ref, ano_ref)
+        ref = _carregar_dre_periodo(db, cliente_id, mes_ref, ano_ref, regime=regime)
         serie_mensal.append({
             "label": f"{mes_ref:02d}/{ano_ref}",
             "receita": ref["total_real_rec"],
@@ -738,7 +753,7 @@ async def gestao_dre_apresentacao(
         "cliente": cliente,
         "mes": mes,
         "ano": ano,
-        "periodo": periodo,
+        "periodo": periodo, "regime": regime,
         "dre": atual,
         "comparativo": comparativo,
         "serie_mensal": serie_mensal,
@@ -754,6 +769,7 @@ async def gestao_dre(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     periodo: str = "mes",
+    regime: str = "caixa",
     visao: str = "simples",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_gestao),
@@ -762,6 +778,7 @@ async def gestao_dre(
     hoje = date.today()
     mes = mes or hoje.month
     ano = ano or hoje.year
+    regime = regime if regime in {"caixa", "competencia"} else "caixa"
     inicio_periodo, fim_periodo, periodo = _resolver_periodo(periodo, mes, ano, hoje)
     clientes = clientes_do_usuario(db, usuario)
     ids = [c.id for c in clientes]
@@ -790,6 +807,7 @@ async def gestao_dre(
             ano,
             inicio_periodo,
             fim_periodo,
+            regime=regime,
         )
         grupos_dre = atual["grupos_dre"]
         total_orcado_rec = atual["total_orcado_rec"]
@@ -804,7 +822,7 @@ async def gestao_dre(
         vencimentos = _proximos_vencimentos(db, cliente_id, hoje)
 
         mes_ant, ano_ant = _retroceder_mes(mes, ano, 1)
-        anterior = _carregar_dre_periodo(db, cliente_id, mes_ant, ano_ant)
+        anterior = _carregar_dre_periodo(db, cliente_id, mes_ant, ano_ant, regime=regime)
 
         comparativo = {
             "mes": mes_ant,
@@ -820,7 +838,7 @@ async def gestao_dre(
         }
         for deslocamento in range(5, -1, -1):
             mes_ref, ano_ref = _retroceder_mes(mes, ano, deslocamento)
-            ref = _carregar_dre_periodo(db, cliente_id, mes_ref, ano_ref)
+            ref = _carregar_dre_periodo(db, cliente_id, mes_ref, ano_ref, regime=regime)
             serie_mensal.append({
                 "mes": mes_ref,
                 "ano": ano_ref,
@@ -836,7 +854,7 @@ async def gestao_dre(
         "request": request, "usuario": usuario,
         "clientes": clientes, "cliente_selecionado": cliente_id,
         "mes": mes, "ano": ano,
-        "periodo": periodo,
+        "periodo": periodo, "regime": regime,
         "visao": visao,
         "grupos_dre": grupos_dre,
         "total_orcado_rec": total_orcado_rec,

@@ -288,6 +288,25 @@
       display: none;
     }
 
+    .mobile-nav-button { display: none; }
+    .app-sidebar .include-link { color: rgba(244,244,244,.8); }
+    .app-sidebar .include-link[aria-current="page"] { color: white; background: rgba(94,147,204,.2); }
+    .app-content-shell .grid > * { min-width: 0; }
+    @media (max-width: 767px) {
+      .mobile-nav-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; }
+      #sidebar { position: fixed; inset: 0 auto 0 0; height: 100dvh; min-height: 0; overflow-y: auto; z-index: 50; transform: translateX(-100%); transition: transform .2s ease; }
+      #sidebar[data-open="true"] { transform: translateX(0); }
+      .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; }
+      .app-topbar { padding: 10px 12px; gap: 8px; }
+      .app-topbar > div { flex: 1; flex-wrap: wrap; gap: 8px; }
+      .app-topbar h2 { flex-shrink: 1; font-size: 14px; overflow-wrap: anywhere; }
+      .app-topbar > span { display: none; }
+      .app-content-shell { padding: 12px; min-width: 0; max-width: 100vw; }
+      .app-content-shell form input, .app-content-shell form select { max-width: 100%; min-width: 0; }
+      .linha-servico > div:first-child { flex-wrap: wrap; gap: 8px; }
+      .linha-servico > div:first-child > div { flex-wrap: wrap; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *,
       *::before,
@@ -304,6 +323,7 @@
 
 <body class="bg-[#f4f4f4] text-gray-800 min-h-screen flex app-shell">
 
+  <button type="button" class="mobile-nav-overlay" id="mobile-nav-overlay" hidden aria-label="Fechar menu" tabindex="-1"></button>
   <!-- =========================================================
        SIDEBAR
   ========================================================== -->
@@ -360,10 +380,13 @@
       <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
         <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Receber</p>
 
-        <a href="/conciliacao/lancamentos"
+        {% if usuario.perfil != 'medico' %}
+        <a href="/lancamentos/novo" class="include-link flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg hover:text-white" {% if request.url.path == '/lancamentos/novo' %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> Incluir</a>
+        {% endif %}
+        <a href="/lancamentos"
            class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/conciliacao/lancamentos') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/conciliacao/lancamentos') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
+                  {% if (request.url.path == '/lancamentos' or request.url.path.startswith('/conciliacao/lancamentos')) %}font-semibold text-white{% else %}hover:text-white{% endif %}"
+           style="{% if (request.url.path == '/lancamentos' or request.url.path.startswith('/conciliacao/lancamentos')) %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
           <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
@@ -431,6 +454,9 @@
       <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
         <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Pagar</p>
 
+        {% if usuario.perfil != 'medico' %}
+        <a href="/contas-pagar/novo" class="include-link flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg hover:text-white" {% if request.url.path == '/contas-pagar/novo' %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> Incluir</a>
+        {% endif %}
         <a href="/contas-pagar"
            class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
                   {% if request.url.path == '/contas-pagar' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
@@ -645,6 +671,7 @@
 
     <!-- Topbar -->
     <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between app-topbar">
+      <button type="button" id="mobile-nav-toggle" class="mobile-nav-button rounded-lg border border-gray-200" aria-label="Abrir menu" title="Menu" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
       <div class="flex items-center gap-3 min-w-0">
         <h2 class="text-base font-semibold flex-shrink-0" style="color:#222049;">{% block page_title %}{% endblock %}</h2>
         {% if _ns.nome %}
@@ -677,6 +704,29 @@
   </div>
 
   <script>
+    (() => {
+      const sidebar = document.getElementById('sidebar');
+      const button = document.getElementById('mobile-nav-toggle');
+      const overlay = document.getElementById('mobile-nav-overlay');
+      const mobile = matchMedia('(max-width: 767px)');
+      function setOpen(open) {
+        const shown = open && mobile.matches;
+        sidebar.dataset.open = String(shown);
+        sidebar.inert = mobile.matches && !shown;
+        button.setAttribute('aria-expanded', String(shown));
+        button.setAttribute('aria-label', shown ? 'Fechar menu' : 'Abrir menu');
+        overlay.hidden = !shown;
+        document.body.style.overflow = shown ? 'hidden' : '';
+        if (shown) sidebar.querySelector('a')?.focus();
+      }
+      button.addEventListener('click', () => setOpen(sidebar.dataset.open !== 'true'));
+      overlay.addEventListener('click', () => { setOpen(false); button.focus(); });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && sidebar.dataset.open === 'true') { setOpen(false); button.focus(); }
+      });
+      mobile.addEventListener('change', () => setOpen(false));
+      setOpen(false);
+    })();
     (function () {
       const PAGE_SIZE_DEFAULT = 25;
 

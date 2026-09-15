@@ -81,7 +81,7 @@ def _contas_para_aprovacao(db: Session, cliente_id: int, data_obj: date) -> list
         .filter(
             ContaPagar.cliente_id == cliente_id,
             ContaPagar.vencimento <= data_obj,
-            ContaPagar.status == StatusContaPagar.aguardando_aprovacao,
+            ContaPagar.status == StatusContaPagar.agendado,
         )
         .order_by(ContaPagar.vencimento.asc(), ContaPagar.descricao.asc())
         .all()
@@ -290,7 +290,7 @@ async def pagina_fechamento(
     if cliente:
         linhas = [
             f"*{cliente.nome} - Aprovação de pagamentos*",
-            f"Contas pendentes até {date.fromisoformat(data_selecionada).strftime('%d/%m/%Y')}",
+            f"Contas agendadas até {date.fromisoformat(data_selecionada).strftime('%d/%m/%Y')}",
             "",
         ]
         for conta in contas:
@@ -310,7 +310,7 @@ async def pagina_fechamento(
         db.query(ContaPagar)
         .filter(
             ContaPagar.cliente_id.in_(ids_permitidos),
-            ContaPagar.status != StatusContaPagar.pago,
+            ContaPagar.status == StatusContaPagar.agendado,
         )
         .order_by(ContaPagar.vencimento.asc())
         .limit(10)

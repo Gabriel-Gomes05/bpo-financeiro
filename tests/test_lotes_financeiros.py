@@ -454,9 +454,16 @@ def test_recorrencia_copia_dados_rateios_e_anexo(db, monkeypatch, tmp_path, inte
     db.expire_all()
     itens = db.query(ContaPagar).order_by(ContaPagar.id).all()
     assert [item.vencimento for item in itens] == esperadas
+    competencias = {
+        "mensal": [date(2026, 1, 15), date(2026, 2, 15), date(2026, 3, 15)],
+        "semanal": [date(2026, 1, 15), date(2026, 1, 22), date(2026, 1, 29)],
+        "quinzenal": [date(2026, 1, 15), date(2026, 1, 30), date(2026, 2, 14)],
+        "personalizado": [date(2026, 1, 15), date(2026, 1, 25), date(2026, 2, 4)],
+    }
+    assert [item.data_competencia for item in itens] == competencias[intervalo]
     original = itens[0]
     campos = [c.name for c in ContaPagar.__table__.columns if c.name not in {
-        "id", "public_id", "vencimento", "documento_path", "criado_em", "updated_at", "created_at",
+        "id", "public_id", "vencimento", "data_competencia", "documento_path", "criado_em", "updated_at", "created_at",
     }]
     def rateios(item):
         return sorted((r.centro_custo_id, r.categoria_key, r.percentual, r.valor) for r in item.rateios_centro_custo)

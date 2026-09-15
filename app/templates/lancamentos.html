@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Lançamentos — FLIC{% endblock %}
-{% block page_title %}Lançamentos de Atendimento{% endblock %}
+{% block page_title %}Contas a Receber - Lançamentos{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
@@ -12,21 +12,10 @@
   {% endif %}
 
 
-  {% if usuario.perfil != 'medico' %}
-  <div class="bg-white rounded-xl border border-gray-200 p-5">
-    <h3 class="font-semibold">Importar lançamentos de contas a receber</h3>
-    <a href="/static/modelos/modelo_lancamentos_lote.xlsx" download class="text-sm text-blue-600 hover:underline">Baixar modelo de lançamentos (.xlsx)</a>
-    <p class="text-xs text-gray-500 my-2">A importação adiciona receitas e mantém os lançamentos existentes. Cada envio inclui novos registros.</p>
-    <form method="post" action="/lancamentos/importar" enctype="multipart/form-data" class="flex flex-wrap gap-3" onsubmit="return confirm('Autoriza a inclusão dos lançamentos de contas a receber desta planilha?')">
-      <select name="cliente_id" required class="rounded-lg border border-gray-300 px-3 py-2 text-sm" style="display:none" aria-hidden="true" tabindex="-1">
-<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
-</select>
-{% include "partials/empresa_atual.html" %}
-      <input type="file" name="arquivo" accept=".xlsx,.xls,.csv" required aria-label="Planilha de lançamentos">
-      <button type="submit" class="rounded-lg bg-[#222049] text-white px-4 py-2 text-sm">Importar lançamentos</button>
-    </form>
-  </div>
+  {% if usuario.perfil not in ['medico', 'secretaria'] %}
+  <a href="/importacoes" class="text-sm text-blue-700 hover:underline">Importar planilha</a>
   {% endif %}
+
   <!-- Lista de lançamentos -->
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
@@ -36,8 +25,8 @@
       </div>
 
       <div class="flex items-center gap-2 flex-wrap">
-        <a href="/lancamentos/novo"
-           class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Novo lançamento</a>
+        {% if usuario.perfil != 'medico' %}<a href="/lancamentos/novo"
+           class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Incluir</a>{% endif %}
 
         <!-- Filtro por cliente + datas -->
         <form method="get" action="/lancamentos" class="flex items-center gap-2 flex-wrap">

@@ -123,10 +123,10 @@
                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-400">
         </div>
         <div class="md:col-span-2">
-          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Serviço</label>
-          <select name="servico_id" required onchange="atualizarPlanoServicoManual(this)" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">
-            <option value="">Selecione o serviço...</option>
-            {% for servico in servicos %}<option value="{{ servico.id }}" data-plano-nome="{{ (servico.plano_conta.codigo or '—') ~ ' - ' ~ servico.plano_conta.nome }}">{% if servico.codigo %}{{ servico.codigo }} - {% endif %}{{ servico.nome }}</option>{% endfor %}
+          <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Plano de contas (receita)</label>
+          <select name="plano_conta_id" required onchange="atualizarPlanoServicoManual(this)" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400">
+            <option value="">Selecione a conta de receita...</option>
+            {% for plano in planos_conta %}<option value="{{ plano.id }}" data-plano-nome="{{ plano.nome }}">{{ plano.codigo or '' }} {{ plano.nome }}</option>{% endfor %}
           </select>
         </div>
         <div>

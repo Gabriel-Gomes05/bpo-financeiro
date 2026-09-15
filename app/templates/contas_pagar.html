@@ -5,6 +5,8 @@
 {% block content %}
 <div class="space-y-6">
 
+  {% if flash_error %}<div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{{ flash_error }}</div>{% endif %}
+  {% if flash_success %}<div role="status" class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">{{ flash_success }}</div>{% endif %}
   {% if flash %}
   <div class="rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-800">
     {{ flash }}
@@ -14,41 +16,8 @@
   {% set somente_leitura = usuario.perfil in ['medico'] %}
 
 
-  <!-- Card importar planilha -->
-  {% if not somente_leitura and cliente_selecionado %}
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
-    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-      <div>
-        <h3 class="font-semibold text-gray-700">Importar planilha</h3>
-        <p class="text-xs text-gray-400 mt-0.5">Colunas: <span class="font-mono">descricao, valor, vencimento, plano_de_contas</span> (+ fornecedor, tipo, observacao)</p>
-        <a href="/static/modelos/modelo_contas_pagar.xlsx" download class="mt-1 inline-block text-xs font-semibold text-[#5e93cc] hover:underline">Baixar planilha modelo</a>
-      </div>
-      <button onclick="document.getElementById('form-importar').classList.toggle('hidden')"
-              class="text-sm text-[#5e93cc] hover:underline">Expandir / Recolher</button>
-    </div>
-    <form id="form-importar" onsubmit="return confirm('Autoriza a inclusão das contas a pagar desta planilha?')" method="post" action="/contas-pagar/importar"
-          enctype="multipart/form-data"
-          class="hidden p-6 flex flex-wrap gap-4 items-end">
-      <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Cliente *</label>
-        <select name="cliente_id" required
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" style="display:none" aria-hidden="true" tabindex="-1">
-<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
-</select>
-{% include "partials/empresa_atual.html" %}
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Arquivo *</label>
-        <input type="file" name="arquivo" required accept=".xlsx,.xls,.csv"
-               class="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
-                      file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200" />
-      </div>
-      <button type="submit"
-              class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-5 py-2 rounded-lg text-sm">
-        Importar
-      </button>
-    </form>
-  </div>
+  {% if usuario.perfil not in ['medico', 'secretaria'] %}
+  <a href="/importacoes" class="text-sm text-blue-700 hover:underline">Importar planilha</a>
   {% endif %}
 
   <!-- Filtros -->
@@ -67,7 +36,7 @@
         <option value="">Status: todos</option>
         <option value="pendente" {% if status_selecionado == 'pendente' %}selected{% endif %}>Pendente</option>
         <option value="aguardando_aprovacao" {% if status_selecionado == 'aguardando_aprovacao' %}selected{% endif %}>Aguardando aprovação</option>
-        <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Aprovado — pendente de saída</option>
+        <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Agendado</option>
         <option value="pago_nao_conciliado" {% if status_selecionado == 'pago_nao_conciliado' %}selected{% endif %}>Pago — não conciliado</option>
         <option value="pago" {% if status_selecionado == 'pago' %}selected{% endif %}>Pago</option>
         <option value="cancelado" {% if status_selecionado == 'cancelado' %}selected{% endif %}>Cancelado</option>
@@ -92,7 +61,7 @@
     </form>
     {% if not somente_leitura %}
     <a href="/contas-pagar/novo"
-       class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Nova conta</a>
+       class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Incluir</a>
     {% endif %}
   </div>
 
@@ -105,7 +74,7 @@
       <span id="total-selecionados" class="text-sm text-gray-500">0 selecionados</span>
       <label class="text-xs">Categoria / plano de contas<select name="plano_conta_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter categoria</option>{% for p in planos_lote %}<option value="{{ p.id }}">{{ p.codigo or '' }} - {{ p.nome }}{% if p.cliente_id %} (cliente #{{ p.cliente_id }}){% endif %}</option>{% endfor %}</select></label>
       <label class="text-xs">Centro de custo<select name="centro_custo_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter centros de custo</option>{% for cc in centros_lote %}<option value="{{ cc.id }}">{{ cc.nome }} (cliente #{{ cc.cliente_id }})</option>{% endfor %}</select></label>
-      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Aprovado — pendente de saída</option><option value="pago_nao_conciliado">Pago — não conciliado</option><option value="cancelado">Cancelado</option></select></label>
+      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Agendado</option><option value="pago_nao_conciliado">Pago — não conciliado</option><option value="cancelado">Cancelado</option></select></label>
       <button type="submit" name="acao" value="editar" class="rounded-lg bg-[#222049] text-white px-3 py-2 text-sm">Editar selecionados</button>
       <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button><p class="w-full text-xs text-gray-500">O centro escolhido substituirá o rateio por 100% nesse centro. A baixa como pago é feita na conciliação bancária.</p>
     </form>
@@ -184,7 +153,7 @@
               {% if conta.status == 'pago' %}
                 <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago</span>
               {% elif conta.status == 'agendado' %}
-                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">Aprovado — pendente de saída</span>
+                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">Agendado</span>
               {% elif conta.status == 'pago_nao_conciliado' %}
                 <span class="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago — não conciliado</span>
               {% elif conta.status == 'aguardando_aprovacao' %}
@@ -217,7 +186,7 @@
                           class="text-xs rounded-lg border border-gray-300 px-2 py-1 focus:border-[#5e93cc] outline-none">
                     <option value="">Mudar status...</option>
                     {% for opcao in opcoes %}
-                    <option value="{{ opcao }}">{% if opcao == 'agendado' %}Aprovado — pendente de saída{% elif opcao == 'pago_nao_conciliado' %}Pago — não conciliado{% else %}{{ opcao | replace('_',' ') | capitalize }}{% endif %}</option>
+                    <option value="{{ opcao }}">{% if opcao == 'agendado' %}Agendado{% elif opcao == 'pago_nao_conciliado' %}Pago — não conciliado{% else %}{{ opcao | replace('_',' ') | capitalize }}{% endif %}</option>
                     {% endfor %}
                   </select>
                 </form>

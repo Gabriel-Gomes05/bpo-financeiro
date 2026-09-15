@@ -88,6 +88,8 @@
       </select>
     </div>
     <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Regime</label>
+      <select name="regime" aria-label="Regime" class="mb-2 rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="caixa" {% if regime == 'caixa' %}selected{% endif %}>Caixa</option><option value="competencia" {% if regime == 'competencia' %}selected{% endif %}>Competência</option></select>
       <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Ano</label>
       <select name="ano" class="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none">
         {% for a in range(2023, 2028) %}
@@ -109,7 +111,7 @@
         ('mes', 'Personalizado')
       ] %}
       {% for key, label in filtros %}
-      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ key }}&visao={{ visao }}"
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}&periodo={{ key }}&visao={{ visao }}"
          class="rounded-lg border px-3 py-2 text-xs font-semibold transition {% if periodo == key %}border-[#222049] bg-[#222049] text-white{% else %}border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
         {{ label }}
       </a>
@@ -119,17 +121,17 @@
 
   <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
     <div class="grid grid-cols-2 gap-2 md:max-w-md md:flex-1">
-      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}&visao=simples"
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}&periodo={{ periodo }}&visao=simples"
          class="rounded-lg px-4 py-3 text-sm font-semibold text-center transition {% if visao == 'simples' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">
         DRE simples
       </a>
-      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}&visao=cliente"
+      <a href="/gestao/dre?cliente_id={{ cliente_selecionado or '' }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}&periodo={{ periodo }}&visao=cliente"
          class="rounded-lg px-4 py-3 text-sm font-semibold text-center transition {% if visao == 'cliente' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">
         DRE cliente
       </a>
     </div>
     {% if cliente_selecionado and grupos_dre %}
-    <a href="/gestao/dre/apresentacao?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&periodo={{ periodo }}"
+    <a href="/gestao/dre/apresentacao?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}&periodo={{ periodo }}"
        class="rounded-lg bg-gradient-to-r from-[#222049] to-[#5e93cc] px-5 py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
       Modo apresentação →
     </a>
@@ -219,7 +221,7 @@
               data-panel-tone="Receita"
               data-panel-text="Receitas conciliadas no periodo. Compare o ritmo atual com o mes anterior e investigue quedas antes do fechamento."
               data-panel-action="Abrir lancamentos de receita"
-              data-panel-url="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+              data-panel-url="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}">
         <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Receita real</p>
         <p class="mt-3 text-2xl font-semibold text-slate-900">R$ {{ brl(total_real_rec) }}</p>
         <p class="mt-2 text-sm {% if comparativo.delta_receitas >= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
@@ -237,7 +239,7 @@
               data-panel-tone="Despesa"
               data-panel-text="Despesas pagas no periodo. Use este painel para encontrar categorias que cresceram e contas que precisam de renegociacao."
               data-panel-action="Ver despesas"
-              data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+              data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}">
         <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">Despesa real</p>
         <p class="mt-3 text-2xl font-semibold text-slate-900">R$ {{ brl(total_real_desp) }}</p>
         <p class="mt-2 text-sm {% if comparativo.delta_despesas <= 0 %}text-emerald-600{% else %}text-rose-600{% endif %}">
@@ -325,7 +327,7 @@
             <h3 class="mt-2 text-xl font-semibold text-slate-900" id="dre-panel-title">Receita total</h3>
             <p class="mt-1 text-3xl font-semibold text-slate-950" id="dre-panel-value">R$ {{ brl(total_real_rec) }}</p>
           </div>
-          <a href="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}"
+          <a href="/gestao/receitas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}"
              id="dre-panel-action"
              class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
             Abrir lancamentos de receita
@@ -472,7 +474,7 @@
                     data-panel-tone="Fluxo mensal"
                     data-panel-text="Receita de R$ {{ brl(item.receita) }}, despesa de R$ {{ brl(item.despesa) }} e margem de {{ item.margem_pct }}% em {{ item.label }}."
                     data-panel-action="Ver DRE do mes"
-                    data-panel-url="/gestao/dre?cliente_id={{ cliente_selecionado }}&mes={{ item.mes }}&ano={{ item.ano }}&periodo=mes&visao=cliente"
+                    data-panel-url="/gestao/dre?cliente_id={{ cliente_selecionado }}&mes={{ item.mes }}&ano={{ item.ano }}&regime={{ regime }}&periodo=mes&visao=cliente"
                     data-detail-periodo="{{ item.label }}"
                     data-detail-receita="R$ {{ brl(item.receita) }}"
                     data-detail-receita-num="{{ item.receita }}"
@@ -573,7 +575,7 @@
                   data-panel-tone="Despesa por categoria"
                   data-panel-text="{{ item.nome }} representa {{ '%.1f'|format(pct|float) }}% das despesas do periodo. Grupo: {{ item.grupo_nome }}."
                   data-panel-action="Ver despesas"
-                  data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+                  data-panel-url="/gestao/despesas?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}">
             <div class="flex items-center justify-between gap-3 text-sm">
               <div>
                 <p class="font-medium text-slate-800">{{ item.nome }}</p>
@@ -613,7 +615,7 @@
                   data-panel-tone="Desvio orcamentario"
                   data-panel-text="Orcado: R$ {{ brl(item.orcado) }}. Real: R$ {{ brl(item.real) }}. Este desvio mostra onde o planejamento mais se afastou da execucao."
                   data-panel-action="Revisar orcamento"
-                  data-panel-url="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}">
+                  data-panel-url="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="font-medium text-slate-800">{{ item.nome }}</p>
@@ -800,7 +802,7 @@
   {% elif cliente_selecionado %}
   <div class="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
     <p class="text-sm text-gray-400">Nenhum dado encontrado. Cadastre o orcamento primeiro.</p>
-    <a href="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}"
+    <a href="/gestao/orcamento?cliente_id={{ cliente_selecionado }}&mes={{ mes }}&ano={{ ano }}&regime={{ regime }}"
        class="inline-block mt-3 text-sm text-[#5e93cc] hover:underline">Ir para Orcamento</a>
   </div>
   {% endif %}

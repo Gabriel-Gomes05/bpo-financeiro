@@ -897,7 +897,7 @@ async def criar_lancamento_manual_conciliacao(
     rateios_json: str = Form("[]"),
     especialidade: str = Form(""),
     descricao_servico: str = Form(""),
-    servico_id: int = Form(...),
+    servico_id: Optional[int] = Form(None),
     plano_conta_id: Optional[int] = Form(None),
     valor_servico: str = Form(...),
     forma_pagamento: str = Form(""),
@@ -968,13 +968,18 @@ async def criar_lancamento_manual_conciliacao(
     servico = db.query(ServicoCadastro).filter(
         ServicoCadastro.id == servico_id, ServicoCadastro.ativo.is_(True),
         or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == cliente_id),
-    ).first()
-    if not servico:
+    ).first() if servico_id else None
+    plano_id = plano_conta_id or (servico.plano_conta_id if servico else None)
+    plano = db.query(PlanoConta).filter(
+        PlanoConta.id == plano_id, PlanoConta.tipo == "receita", PlanoConta.ativo.is_(True),
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == cliente_id),
+    ).first() if plano_id else None
+    if not plano:
         return RedirectResponse(
-            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Servi%C3%A7o+inv%C3%A1lido",
+            url=f"/conciliacao/lancamentos?cliente_id={cliente_id}&flash=Selecione+um+plano+de+receita+valido",
             status_code=303,
         )
-    plano = servico.plano_conta
+    descricao_receita = descricao_servico.strip() or (servico.nome if servico else plano.nome)
 
     for parcela_numero, dias in enumerate(intervalos, 1):
         valor_item = valor_ultima if parcela_numero == qtd_parcelas else valor_parcela
@@ -996,7 +1001,7 @@ async def criar_lancamento_manual_conciliacao(
             centro_custo_id=cc_id,
             medico=cc.nome if cc else None,
             especialidade=especialidade_valor,
-            descricao_servico=servico.nome,
+            descricao_servico=descricao_receita,
             plano_conta_id=plano.id if plano else None,
             valor_servico=valor_item,
             condicao_pagamento=condicao,
@@ -1084,7 +1089,7 @@ async def criar_lancamento_manual_conciliacao(
                 cliente_id=cliente_id, data_atendimento=data_atendimento,
                 nome_paciente=None, cpf_paciente=None, centro_custo_id=cc_id,
                 medico=cc.nome if cc else None, especialidade=especialidade_valor,
-                descricao_servico=servico.nome,
+                descricao_servico=descricao_receita,
                 plano_conta_id=plano.id if plano else None, valor_servico=valor_item,
                 condicao_pagamento=condicao_extra, parcela_numero=numero_extra,
                 parcela_total=qtd_extra,

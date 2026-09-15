@@ -48,13 +48,13 @@
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
       </div>
       <div>
-        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Serviço</label>
-        <select name="servico_id" required onchange="atualizarPlanoServicoEdicao(this)" class="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
-          {% set nomes_servicos = servicos|map(attribute='nome')|list %}
-          {% for servico in servicos %}<option value="{{ servico.id }}" data-plano-nome="{{ (servico.plano_conta.codigo or '—') ~ ' - ' ~ servico.plano_conta.nome }}" {% if at.descricao_servico == servico.nome %}selected{% endif %}>{% if servico.codigo %}{{ servico.codigo }} - {% endif %}{{ servico.nome }}</option>{% endfor %}
-        </select>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Plano de contas (receita)</label>
-        <input id="plano-servico-edicao" readonly tabindex="-1" value="{{ (at.plano_conta.codigo or '—') ~ ' - ' ~ at.plano_conta.nome if at.plano_conta else 'Selecione um serviço' }}" class="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600">
+        <select name="plano_conta_id" required class="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none">
+          <option value="">Selecione a conta de receita...</option>
+          {% for plano in planos_conta_receita %}<option value="{{ plano.id }}" {% if at.plano_conta_id == plano.id %}selected{% endif %}>{{ plano.codigo or '' }} {{ plano.nome }}</option>{% endfor %}
+        </select>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Descrição</label>
+        <input name="descricao_servico" value="{{ at.descricao_servico or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
       </div>
     </div>
 

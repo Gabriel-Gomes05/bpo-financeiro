@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_usuario_atual
 from app.authorization import Permission, require_permission
 from app.database import get_db
+from app.utils import cliente_ativo as _ca
 from app.services.recebimento_service import prever_recebimento
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
@@ -23,6 +24,7 @@ from app.models import (
     Usuario, PerfilUsuario, MovimentacaoBancaria, VendaCartao,
 )
 from app.services.log_service import registrar as _log
+from app.security import secure_cookie_for
 
 
 def formatar_brl(valor) -> str:
@@ -152,6 +154,7 @@ async def listar_lancamentos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
 ):
+    cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
@@ -205,6 +208,9 @@ async def pagina_novo_lancamento(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
@@ -268,6 +274,8 @@ async def criar_lancamentos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
 ):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
     if cliente_id not in ids_permitidos:
@@ -342,13 +350,15 @@ async def criar_lancamentos(
         )
         servico_id_str = _str(servico_id, i)
         servico = servicos_validos.get(int(servico_id_str)) if servico_id_str.isdigit() else None
-        if not servico or servico.plano_conta_id not in planos_validos:
+        plano_id_str = _str(plano_conta_id, i)
+        plano_id = int(plano_id_str) if plano_id_str.isdigit() else (servico.plano_conta_id if servico else None)
+        plano = planos_validos.get(plano_id)
+        if not plano:
             db.rollback()
             return RedirectResponse(
-                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Servi%C3%A7o+inv%C3%A1lido",
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Selecione+um+plano+de+receita+valido",
                 status_code=303,
             )
-        plano = planos_validos[servico.plano_conta_id]
 
         pct_medico = _decimal(percentual_medico, i)
         bandeira = _str(bandeira_cartao, i) or None
@@ -377,7 +387,7 @@ async def criar_lancamentos(
                 centro_custo_id=cc_id,
                 medico=cc.nome if cc else None,
                 especialidade=especialidade_valor,
-                descricao_servico=servico.nome,
+                descricao_servico=_str(descricao_servico, i) or (servico.nome if servico else plano.nome),
                 plano_conta_id=plano.id if plano else None,
                 valor_servico=v,
                 condicao_pagamento=condicao,
@@ -567,9 +577,14 @@ async def salvar_edicao_lancamento(
         ServicoCadastro.id == servico_id, ServicoCadastro.ativo.is_(True),
         or_(ServicoCadastro.cliente_id.is_(None), ServicoCadastro.cliente_id == at.cliente_id),
     ).first() if servico_id else None
-    if not servico:
-        raise HTTPException(400, "Serviço inválido para este cliente.")
-    plano = servico.plano_conta
+    plano_id = int(plano_conta_id) if plano_conta_id.isdigit() else (servico.plano_conta_id if servico else at.plano_conta_id)
+    plano = db.query(PlanoConta).filter(
+        PlanoConta.id == plano_id, PlanoConta.tipo == "receita",
+        or_(PlanoConta.ativo.is_(True), PlanoConta.id == at.plano_conta_id),
+        or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
+    ).first() if plano_id else None
+    if (plano_id or plano_conta_id.strip()) and not plano:
+        raise HTTPException(400, "Plano de receita invalido para este cliente.")
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_id, list):
@@ -620,7 +635,7 @@ async def salvar_edicao_lancamento(
     at.medico = cc.nome if cc else None
     at.especialidade = especialidade.strip() or None
     at.plano_conta_id = plano.id if plano else None
-    at.descricao_servico = servico.nome
+    at.descricao_servico = descricao_servico.strip() or (servico.nome if servico else (plano.nome if plano else at.descricao_servico))
     at.valor_servico = valor
     at.condicao_pagamento = condicao_pagamento
     at.parcela_numero = parcela_numero
@@ -751,7 +766,9 @@ async def importar_planilha_lancamentos(
     finally:
         if caminho:
             Path(caminho).unlink(missing_ok=True)
-    return RedirectResponse(f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
+    response = RedirectResponse(f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem), status_code=303)
+    response.set_cookie("cliente_ativo", str(cliente_id), httponly=True, samesite="strict", secure=secure_cookie_for(request), path="/")
+    return response
 
 
 @router.post("/lancamentos/{at_id}/desconciliar")

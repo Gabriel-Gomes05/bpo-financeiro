@@ -42,6 +42,7 @@ from app.models import (
 )
 from app.services.log_service import registrar as _log
 from app.errors import public_import_error
+from app.security import secure_cookie_for
 
 router = APIRouter()
 require_contas_pagar = require_permission(Permission.CONTAS_PAGAR)
@@ -188,7 +189,7 @@ FORMAS_PAGAMENTO_VALIDAS = {f.value for f in FormaPagamento}
 # Matriz de transição manual de status — "pago" nunca aparece aqui: só é setado
 # via conciliação bancária, que também cuida do estorno (PagamentoParcialContaPagar).
 TRANSICOES_STATUS_CONTA_PAGAR: dict[StatusContaPagar, set[StatusContaPagar]] = {
-    StatusContaPagar.pendente: {StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
+    StatusContaPagar.pendente: {StatusContaPagar.aguardando_aprovacao, StatusContaPagar.agendado, StatusContaPagar.cancelado},
     StatusContaPagar.aguardando_aprovacao: {StatusContaPagar.agendado, StatusContaPagar.cancelado},
     StatusContaPagar.agendado: {StatusContaPagar.pago_nao_conciliado, StatusContaPagar.aguardando_aprovacao, StatusContaPagar.cancelado},
     StatusContaPagar.pago_nao_conciliado: {StatusContaPagar.agendado, StatusContaPagar.cancelado},
@@ -689,8 +690,12 @@ async def criar_conta(
     if cliente_id not in [c.id for c in clientes]:
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
     if recorrente and recorrencia_intervalo not in FREQUENCIAS_RECORRENCIA:
-        recorrencia_intervalo = "mensal"
+        raise HTTPException(400, "Intervalo de recorrencia invalido.")
+    if recorrente and (not 1 <= recorrencia_qtd <= RECORRENCIA_QTD_MAXIMA or (recorrencia_intervalo == "personalizado" and (not recorrencia_dias or not 1 <= recorrencia_dias <= 3660))):
+        raise HTTPException(400, "Revise a quantidade e os dias da recorrencia.")
     qtd_ocorrencias = max(1, min(recorrencia_qtd or 1, RECORRENCIA_QTD_MAXIMA)) if recorrente else 1
     tipo = TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual
     forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
@@ -768,7 +773,7 @@ async def criar_conta(
                 tipo=conta.tipo,
                 valor=conta.valor,
                 vencimento=data_ocorrencia,
-                data_competencia=conta.data_competencia,
+                data_competencia=_data_recorrencia(data_competencia, recorrencia_intervalo, recorrencia_dias, indice),
                 forma_pagamento=conta.forma_pagamento,
                 categoria_dre=conta.categoria_dre,
                 plano_conta_id=conta.plano_conta_id,
@@ -816,6 +821,9 @@ async def importar_contas(
     if cliente_id not in [c.id for c in clientes]:
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+
     def _norm(nome: str) -> str:
         nome = unicodedata.normalize("NFKD", nome)
         nome = "".join(c for c in nome if not unicodedata.combining(c))
@@ -850,6 +858,12 @@ async def importar_contas(
         c_valor = _col(df, ["valor", "value", "amount", "vlr"])
         c_venc  = _col(df, ["vencimento", "data_vencimento", "vence", "due_date", "data"])
         c_obs   = _col(df, ["observacao", "obs", "nota", "note"])
+        c_comp = _col(df, ["data_competencia", "competencia"])
+        c_forma = _col(df, ["forma_pagamento", "forma_de_pagamento"])
+        c_recorrente = _col(df, ["recorrente"])
+        c_intervalo = _col(df, ["recorrencia_intervalo", "intervalo"])
+        c_dias = _col(df, ["recorrencia_dias"])
+        c_qtd = _col(df, ["recorrencia_qtd", "quantidade"])
         c_plano = _col(df, ["plano_de_contas", "plano_contas", "plano_de_conta", "plano_conta", "codigo_plano_conta"])
 
         planos_importacao = _planos_despesa(db, [cliente_id])
@@ -865,45 +879,91 @@ async def importar_contas(
                 f"(encontradas: {list(df.columns)})"
             )
 
+        novas_series = []
         importadas = 0
-        for _, row in df.iterrows():
-            try:
-                descricao = str(row[c_desc]).strip()
-                if not descricao or descricao.lower() in ("nan", "none", ""):
-                    continue
-
-                valor = Decimal(str(row[c_valor]).replace(",", ".")).quantize(Decimal("0.01"))
-                vencimento = pd.to_datetime(row[c_venc]).date()
-
-                fornecedor = str(row[c_forn]).strip() if c_forn and pd.notna(row[c_forn]) else None
-                if fornecedor and fornecedor.lower() in ("nan", "none", ""):
-                    fornecedor = None
-
-                observacao = str(row[c_obs]).strip() if c_obs and pd.notna(row[c_obs]) else None
-                if observacao and observacao.lower() in ("nan", "none", ""):
-                    observacao = None
-
-                tipo_raw = str(row[c_tipo]).strip().lower() if c_tipo and pd.notna(row[c_tipo]) else "pontual"
-                tipo = TipoContaPagar.fixa if "fix" in tipo_raw or "recor" in tipo_raw else TipoContaPagar.pontual
-                referencia_plano = str(row[c_plano]).strip() if c_plano and pd.notna(row[c_plano]) else ""
-                plano = planos_por_referencia.get(_norm(referencia_plano)) if referencia_plano else None
-
-                db.add(ContaPagar(
-                    cliente_id=cliente_id,
-                    descricao=descricao,
-                    fornecedor=fornecedor,
-                    tipo=tipo,
-                    valor=valor,
-                    vencimento=vencimento,
-                    plano_conta_id=plano.id if plano else None,
-                    categoria_dre=plano.chave if plano else None,
-                    observacao=observacao,
-                    status=StatusContaPagar.aguardando_aprovacao,
-                    lancado_por_id=usuario.id,
-                ))
-                importadas += 1
-            except (InvalidOperation, ValueError, Exception):
+        for numero, (_, row) in enumerate(df.iterrows(), start=2):
+            if row.isna().all():
                 continue
+
+            def texto(coluna):
+                return str(row[coluna]).strip() if coluna and pd.notna(row[coluna]) else ""
+
+            try:
+                descricao = texto(c_desc)
+                if not descricao:
+                    raise ValueError("Informe a descricao.")
+                valor_raw = texto(c_valor).replace("R$", "").replace(" ", "")
+                if "," in valor_raw:
+                    valor_raw = valor_raw.replace(".", "").replace(",", ".")
+                valor = Decimal(valor_raw)
+                if not valor.is_finite() or valor <= 0 or valor > Decimal("9999999999.99"):
+                    raise ValueError("Valor deve ser positivo e finito.")
+                valor = valor.quantize(Decimal("0.01"))
+                vencimento = pd.to_datetime(row[c_venc], dayfirst=isinstance(row[c_venc], str) and "/" in row[c_venc]).date()
+                if pd.isna(vencimento):
+                    raise ValueError("Informe o vencimento.")
+                competencia_raw = texto(c_comp)
+                competencia = pd.to_datetime(competencia_raw, dayfirst="/" in competencia_raw).date() if competencia_raw else vencimento
+                if pd.isna(competencia):
+                    raise ValueError("Data de competencia invalida.")
+                referencia_plano = texto(c_plano)
+                plano = planos_por_referencia.get(_norm(referencia_plano)) if referencia_plano else None
+                if referencia_plano and not plano:
+                    raise ValueError("Plano de despesa nao encontrado para esta empresa.")
+                forma = _norm(texto(c_forma))
+                if forma and forma not in FORMAS_PAGAMENTO_VALIDAS:
+                    raise ValueError("Forma de pagamento invalida.")
+                intervalo = _norm(texto(c_intervalo))
+                tipo_raw = _norm(texto(c_tipo))
+                recorrente_raw = _norm(texto(c_recorrente))
+                if recorrente_raw and recorrente_raw not in {"sim", "true", "1", "1_0", "nao", "false", "0", "0_0"}:
+                    raise ValueError("Recorrente deve ser sim ou nao.")
+                recorrente = recorrente_raw in {"sim", "true", "1", "1_0"} or bool(intervalo) or tipo_raw in {"fixa", "recorrente"}
+                intervalo = intervalo or "mensal"
+                if recorrente and intervalo not in FREQUENCIAS_RECORRENCIA:
+                    raise ValueError("Intervalo de recorrencia invalido.")
+                quantidade_raw = Decimal(texto(c_qtd) or "1")
+                if not quantidade_raw.is_finite() or quantidade_raw != quantidade_raw.to_integral_value() or not 1 <= quantidade_raw <= RECORRENCIA_QTD_MAXIMA:
+                    raise ValueError("Quantidade deve ser inteira, de 1 a 60.")
+                quantidade = int(quantidade_raw)
+                if not recorrente and quantidade != 1:
+                    raise ValueError("Marque recorrente para gerar mais de uma ocorrencia.")
+                dias_raw = Decimal(texto(c_dias) or "0")
+                if not dias_raw.is_finite() or dias_raw != dias_raw.to_integral_value() or not 0 <= dias_raw <= 3660:
+                    raise ValueError("Dias de recorrencia invalidos.")
+                dias = int(dias_raw)
+                if recorrente and intervalo == "personalizado" and dias < 1:
+                    raise ValueError("Informe os dias do intervalo personalizado.")
+                serie = []
+                for indice in range(quantidade):
+                    serie.append(ContaPagar(
+                        cliente_id=cliente_id, descricao=descricao,
+                        fornecedor=texto(c_forn) or None,
+                        tipo=TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual,
+                        valor=valor,
+                        vencimento=_data_recorrencia(vencimento, intervalo, dias, indice),
+                        data_competencia=_data_recorrencia(competencia, intervalo, dias, indice),
+                        forma_pagamento=forma or None,
+                        plano_conta_id=plano.id if plano else None,
+                        categoria_dre=plano.chave if plano else None,
+                        observacao=texto(c_obs) or None,
+                        status=StatusContaPagar.aguardando_aprovacao,
+                        lancado_por_id=usuario.id,
+                        recorrencia_intervalo=intervalo if recorrente else None,
+                        recorrencia_dias=dias if recorrente and intervalo == "personalizado" else None,
+                    ))
+                novas_series.append(serie)
+            except (ValueError, InvalidOperation, OverflowError) as exc:
+                raise ValueError(f"Linha {numero}: {exc}") from exc
+
+        for serie in novas_series:
+            db.add(serie[0])
+            db.flush()
+            if serie[0].recorrencia_intervalo:
+                for conta in serie:
+                    conta.recorrencia_grupo_id = serie[0].id
+            db.add_all(serie[1:])
+            importadas += len(serie)
 
         db.commit()
         flash_success = f"{importadas} conta(s) importada(s) de '{nome_original}'."
@@ -914,7 +974,11 @@ async def importar_contas(
             detalhes=f"{importadas} conta(s) de '{nome_original}'",
         )
 
+    except ValueError as exc:
+        db.rollback()
+        flash_error = f"Nenhuma conta importada. {exc}"
     except Exception:
+        db.rollback()
         flash_error = public_import_error(logger, "importar_contas_pagar")
     finally:
         try:
@@ -923,29 +987,12 @@ async def importar_contas(
         except OSError:
             pass
 
-    clientes_lista = clientes_do_usuario(db, usuario)
-    ids_permitidos = [c.id for c in clientes_lista]
-    query = db.query(ContaPagar).filter(ContaPagar.cliente_id.in_(ids_permitidos))
-    if cliente_id:
-        query = query.filter(ContaPagar.cliente_id == cliente_id)
-    contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
-    centros_por_cliente = _centros_custo_por_cliente(db, ids_permitidos)
-    status_permitidos_por_conta = {c.id: [s.value for s in _status_permitidos(c.status)] for c in contas}
-
-    return templates.TemplateResponse("contas_pagar.html", {
-        "request": request,
-        "usuario": usuario,
-        "clientes": clientes_lista,
-        "contas": contas,
-        "hoje": date.today(),
-        "cliente_selecionado": cliente_id,
-        "flash_success": flash_success,
-        "flash_error": flash_error,
-        "categorias_despesa": CATEGORIAS_DESPESA,
-        "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
-        "status_permitidos_por_conta": status_permitidos_por_conta,
-    })
-
+    response = RedirectResponse(
+        url="/contas-pagar?cliente_id=" + str(cliente_id) + "&flash=" + quote_plus(flash_error or flash_success or ""),
+        status_code=303,
+    )
+    response.set_cookie("cliente_ativo", str(cliente_id), httponly=True, samesite="strict", secure=secure_cookie_for(request), path="/")
+    return response
 
 @router.post("/contas-pagar/{conta_id}/status")
 async def alterar_status_conta_rota(

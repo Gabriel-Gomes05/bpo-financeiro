@@ -95,8 +95,6 @@ async def editar_plano_conta(request: Request, conta_id: int, grupo: str = Form(
     nome: str = Form(...), codigo: Optional[str] = Form(None), db: Session = Depends(get_db),
     usuario: Usuario = Depends(requer_coordenador)):
     cliente_id = _contexto_cliente(request, db)
-    if cliente_id is None:
-        raise HTTPException(status_code=403, detail="Contas padrao protegidas.")
     conta = db.query(PlanoConta).filter(PlanoConta.id == conta_id, PlanoConta.cliente_id == cliente_id).first()
     grupo, nome = grupo.strip(), nome.strip()
     if conta and grupo and nome:

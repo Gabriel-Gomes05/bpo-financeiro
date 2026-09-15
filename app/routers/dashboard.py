@@ -17,6 +17,10 @@ from app.services.alertas_service import _proximo_vencimento
 
 router = APIRouter()
 
+STATUS_PAGAR_EM_ABERTO = [
+    StatusContaPagar.pendente, StatusContaPagar.aguardando_aprovacao, StatusContaPagar.agendado,
+]
+
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(
@@ -128,7 +132,7 @@ def _blocos_processo(db: Session, hoje: date, ids_clientes: list) -> list:
     vencendo_pagar = db.query(ContaPagar).filter(
         ContaPagar.cliente_id.in_(ids_clientes),
         ContaPagar.vencimento <= hoje,
-        ContaPagar.status == StatusContaPagar.pendente,
+        ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
     ).count()
     pago_mes = db.query(func.sum(ContaPagar.valor)).filter(
         ContaPagar.cliente_id.in_(ids_clientes),
@@ -186,7 +190,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
             contas_vencendo = db.query(ContaPagar).filter(
                 ContaPagar.cliente_id == cliente_ativo_id,
                 ContaPagar.vencimento <= hoje,
-                ContaPagar.status == StatusContaPagar.pendente,
+                ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
             ).order_by(ContaPagar.vencimento.asc()).all()
 
             total_divergencias = db.query(DivergenciaConciliacao).filter(
@@ -223,7 +227,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
     total_clientes = db.query(ClienteBPO).filter(ClienteBPO.ativo == True).count()
     total_tarefas  = db.query(TarefaRotina).filter(TarefaRotina.data == hoje).count()
     total_vencendo = db.query(ContaPagar).filter(
-        ContaPagar.vencimento <= hoje, ContaPagar.status == StatusContaPagar.pendente,
+        ContaPagar.vencimento <= hoje, ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
     ).count()
     total_divergencias = db.query(DivergenciaConciliacao).filter(
         DivergenciaConciliacao.resolvida == False,
@@ -248,7 +252,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
         vencendo = db.query(ContaPagar).filter(
             ContaPagar.cliente_id.in_(ids_clientes),
             ContaPagar.vencimento <= hoje,
-            ContaPagar.status == StatusContaPagar.pendente,
+            ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
         ).count() if ids_clientes else 0
 
         divergencias = db.query(DivergenciaConciliacao).filter(
@@ -317,7 +321,7 @@ def _dashboard_funcionario(
     contas_vencendo_q = db.query(ContaPagar).filter(
         ContaPagar.cliente_id.in_(ids_filtro),
         ContaPagar.vencimento <= hoje,
-        ContaPagar.status == StatusContaPagar.pendente,
+        ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
     ).order_by(ContaPagar.vencimento.asc())
 
     contas_vencendo = contas_vencendo_q.all() if cliente_foco else []
@@ -336,7 +340,7 @@ def _dashboard_funcionario(
         vencendo = db.query(ContaPagar).filter(
             ContaPagar.cliente_id == cliente.id,
             ContaPagar.vencimento <= hoje,
-            ContaPagar.status == StatusContaPagar.pendente,
+            ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
         ).count()
 
         divergencias = db.query(DivergenciaConciliacao).filter(

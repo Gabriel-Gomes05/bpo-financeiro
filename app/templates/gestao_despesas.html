@@ -115,10 +115,10 @@
               {% endif %}
             </td>
             <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-              {{ c.data_pagamento.strftime('%d/%m/%Y') if c.data_pagamento else '—' }}
+              {% set data_pgto = datas_pagamento.get(c.id, c.data_pagamento) %}{{ data_pgto.strftime('%d/%m/%Y') if data_pgto else '—' }}
             </td>
             <td class="px-4 py-3 text-right font-semibold text-rose-700 whitespace-nowrap">
-              R$ {{ brl(c.valor) }}
+              R$ {{ brl(valores_periodo.get(c.id, c.valor)) }}
             </td>
           </tr>
           {% endfor %}
