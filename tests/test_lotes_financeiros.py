@@ -512,3 +512,11 @@ def test_formulario_edicao_exibe_rateios(db):
     html = response.body.decode()
     assert 'value="ADM" selected' in html
     assert 'name="rateio_percentual"' in html
+
+
+def test_rota_exclusao_em_lote_nao_e_capturada_pela_exclusao_individual():
+    from starlette.routing import Match
+
+    scope = {"type": "http", "method": "POST", "path": "/lancamentos/lote/excluir"}
+    rota = next(r for r in lancamentos.router.routes if r.matches(scope)[0] == Match.FULL)
+    assert rota.endpoint is lancamentos.excluir_lote_lancamentos

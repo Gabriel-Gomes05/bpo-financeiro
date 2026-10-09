@@ -665,7 +665,7 @@ async def salvar_edicao_lancamento(
     )
 
 
-@router.post("/lancamentos/{at_id}/excluir")
+@router.post("/lancamentos/{at_id:int}/excluir")
 async def excluir_lancamento(
     at_id: int,
     request: Request,
