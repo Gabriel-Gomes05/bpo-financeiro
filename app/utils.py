@@ -16,7 +16,8 @@ ASSINATURAS_PERMITIDAS = {
     ".jpg": (b"\xff\xd8\xff",),
     ".jpeg": (b"\xff\xd8\xff",),
     ".xlsx": (b"PK\x03\x04",),
-    ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    # Alguns relatórios .xls são planilhas OOXML (.xlsx) apenas com a extensão errada.
+    ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", b"PK\x03\x04"),
 }
 
 

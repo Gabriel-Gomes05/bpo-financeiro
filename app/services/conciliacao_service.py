@@ -37,6 +37,65 @@ def ler_arquivo_extrato(caminho: str) -> pd.DataFrame:
     return df
 
 
+def ler_planilha_bpo_receitas(caminho: str) -> pd.DataFrame:
+    """Lê a aba RECEITA do arquivo BPO atualizado (cabeçalho na linha 6)."""
+    try:
+        df = pd.read_excel(caminho, sheet_name="RECEITA", header=5)
+    except ValueError as exc:
+        raise ValueError("A planilha não contém a aba RECEITA esperada.") from exc
+
+    df = df.dropna(how="all").copy()
+    df.columns = [_norm_col(c) for c in df.columns]
+    if "taxa_do_cartao" in df.columns:
+        # No arquivo BPO, a taxa é armazenada como fração (0,0185 = 1,85%).
+        df["taxa_do_cartao"] = pd.to_numeric(df["taxa_do_cartao"], errors="coerce") * 100
+    if "destino_do_credito" in df.columns:
+        df["banco_recebimento"] = df["destino_do_credito"]
+    return df
+
+
+def ler_visao_contas_a_receber(caminho: str) -> pd.DataFrame:
+    """Converte o relatório Visão Contas a Receber para o padrão de lançamentos."""
+    import openpyxl
+
+    try:
+        with open(caminho, "rb") as arquivo:
+            workbook = openpyxl.load_workbook(arquivo, read_only=True, data_only=True)
+            planilha = next(
+                (ws for ws in workbook.worksheets if _norm_col(ws.title) == "visao_contas_a_receber"),
+                None,
+            )
+            if planilha is None:
+                raise ValueError("A planilha não contém a aba Visão Contas a Receber esperada.")
+            linhas = list(planilha.iter_rows(values_only=True))
+    except (OSError, ValueError) as exc:
+        raise ValueError("Não foi possível ler o relatório Excel enviado.") from exc
+
+    if not linhas or not linhas[0]:
+        raise ValueError("O relatório está vazio.")
+
+    cabecalhos = [_norm_col(str(valor or "")) for valor in linhas[0]]
+    df = pd.DataFrame(linhas[1:], columns=cabecalhos).dropna(how="all")
+    aliases = {
+        "nome_do_cliente": "nome_paciente",
+        "data_de_competencia": "data",
+        "valor_original_da_parcela_r": "valor_servico",
+        "data_prevista": "data_prevista_recebimento",
+        "forma_de_recebimento": "forma_pagamento",
+        "conta_bancaria": "banco_recebimento",
+        "data_do_ultimo_pagamento": "data_credito",
+        "categoria_1": "plano_de_contas",
+        "centro_de_custo_1": "medico",
+    }
+    df = df.rename(columns=aliases)
+    if not {"data", "valor_servico"}.issubset(df.columns):
+        raise ValueError("O relatório não contém as colunas de competência e valor esperadas.")
+    for coluna in ("data", "data_prevista_recebimento", "data_credito"):
+        if coluna in df.columns:
+            df[coluna] = pd.to_datetime(df[coluna], dayfirst=True, errors="coerce")
+    return df
+
+
 def _extrair_coluna(df: pd.DataFrame, candidatas: list, padrao=None):
     for nome in candidatas:
         if nome in df.columns:
@@ -187,6 +246,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
     c_bandeira = _col("bandeira_cartao", "bandeira_do_cartao", "bandeira")
     c_liquido  = _col("valor_liquido")
     c_credito  = _col("data_credito", "data_do_credito")
+    c_banco    = _col("banco_recebimento", "destino_do_credito")
     c_obs      = _col("observacao")
     c_plano    = _col("plano_de_contas", "plano_contas", "plano_de_conta", "plano_conta", "codigo_plano_conta")
 
@@ -207,8 +267,12 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
         "credito": FormaPagamento.cartao_credito,
         "cartao_debito": FormaPagamento.cartao_debito,
         "cartao_de_debito": FormaPagamento.cartao_debito,
+        "cartao_debito_a_vista": FormaPagamento.cartao_debito,
         "debito": FormaPagamento.cartao_debito,
+        "cartao_credito_a_vista": FormaPagamento.cartao_credito,
+        "cartao_credito_parcelado": FormaPagamento.cartao_credito,
         "pix": FormaPagamento.pix,
+        "pagamento_instantaneo": FormaPagamento.pix,
         "transferencia": FormaPagamento.transferencia,
         "ted": FormaPagamento.transferencia,
         "doc": FormaPagamento.transferencia,
@@ -320,6 +384,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
             taxa_cartao=taxa,
             valor_liquido=liquido,
             data_credito=data_cred,
+            banco_recebimento=_v(c_banco),
             status_conciliacao=StatusConciliacao.pendente,
             observacao=_v(c_obs),
         ))

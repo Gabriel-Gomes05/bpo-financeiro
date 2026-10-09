@@ -38,13 +38,53 @@
     {{ card("Lançamentos de contas a receber", "Inclusão de receitas sem substituir lançamentos existentes.", "modelo_lancamentos_lote.xlsx", "/lancamentos/importar") }}
     {{ card("Contas a pagar em lote", "Cadastro de contas a pagar, incluindo o plano de contas.", "modelo_contas_pagar.xlsx", "/contas-pagar/importar") }}
   </div>
-  <div class="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
+  <article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <h4 class="font-bold text-[#222049]">Planilha BPO atualizado — receitas</h4>
+    <p class="mt-1 text-xs text-slate-500">Importa os lançamentos da aba RECEITA da planilha BPO atualizado. A aba EXTRATO e as demais abas não são importadas.</p>
+    <p class="mt-2 text-xs text-slate-500">O cabeçalho deve permanecer na linha 6. Os lançamentos serão incluídos sem substituir os existentes.</p>
+    <form method="post" action="/lancamentos/importar-bpo-atualizado" enctype="multipart/form-data" class="mt-3 space-y-2 form-importacao">
+      <input type="hidden" name="cliente_id" class="cliente-hidden" value="">
+      <input type="file" name="arquivo" accept=".xlsx" required
+             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs focus:border-[#5e93cc] outline-none" />
+      <button type="submit" class="w-full rounded-lg bg-[#222049] hover:bg-[#1a1836] px-3 py-2 text-xs font-semibold text-white">Importar aba RECEITA</button>
+    </form>
+  </article>
+
+  <article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <h4 class="font-bold text-[#222049]">Visão Contas a Receber — Contábil Azul</h4>
+    <p class="mt-1 text-xs text-slate-500">Importa o relatório Visão Contas a Receber, incluindo vencimento, descrição, forma de recebimento, conta bancária, categoria e centro de custo.</p>
+    <p class="mt-2 text-xs text-slate-500">O arquivo enviado usa conteúdo XLSX com extensão .xls. Os lançamentos serão incluídos sem substituir os existentes.</p>
+    <form method="post" action="/lancamentos/importar-visao-contas-receber" enctype="multipart/form-data" class="mt-3 space-y-2 form-importacao">
+      <input type="hidden" name="cliente_id" class="cliente-hidden" value="">
+      <input type="file" name="arquivo" accept=".xls,.xlsx" required
+             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs focus:border-[#5e93cc] outline-none" />
+      <button type="submit" class="w-full rounded-lg bg-[#222049] hover:bg-[#1a1836] px-3 py-2 text-xs font-semibold text-white">Importar relatório</button>
+    </form>
+  </article>
+  {% macro card_modelo(titulo, descricao, modelos, acao) %}
+  <article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <h4 class="font-bold text-[#222049]">{{ titulo }}</h4>
+    <p class="mt-1 text-xs text-slate-500">{{ descricao }}</p>
+    <div class="mt-3 flex flex-col gap-1">
+      {% for nome, arquivo in modelos %}
+      <a href="/static/modelos/{{ arquivo }}" download
+         class="text-xs font-semibold text-[#5e93cc] hover:underline">Baixar modelo: {{ nome }} (.xlsx)</a>
+      {% endfor %}
+    </div>
+    <a href="{{ acao }}"
+       class="mt-3 inline-block w-full rounded-lg bg-[#222049] hover:bg-[#1a1836] px-3 py-2 text-center text-xs font-semibold text-white">Ir para o envio</a>
+  </article>
+  {% endmacro %}
+
+  <div class="rounded-xl border border-slate-200 bg-white p-5 space-y-1">
     <h3 class="font-semibold">Importações de conciliação</h3>
-    <p class="text-sm text-gray-500">Os modelos e o envio de extratos estão disponíveis nos respectivos módulos:</p>
-    <a class="block text-sm text-blue-600" href="/conciliacao">Conciliação cartão — contas a receber</a>
-    <a class="block text-sm text-blue-600" href="/conciliacao/banco">Conciliação banco — contas a receber</a>
-    <a class="block text-sm text-blue-600" href="/contas-pagar/conciliacao-cartao">Conciliação cartão — contas a pagar</a>
-    <a class="block text-sm text-blue-600" href="/contas-pagar/conciliacao-banco">Conciliação banco — contas a pagar</a>
+    <p class="text-sm text-gray-500">O envio dos extratos é feito no módulo correspondente; os modelos podem ser baixados aqui.</p>
+  </div>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    {{ card_modelo("Conciliação cartão — contas a receber", "Extrato de maquininha para conciliar recebimentos por cartão.", [("extrato maquininha", "modelo_extrato_maquininha.xlsx")], "/conciliacao") }}
+    {{ card_modelo("Conciliação banco — contas a receber", "Extrato de conta corrente ou Pix/TED para conciliar recebimentos.", [("extrato pix ted", "modelo_extrato_pix_ted.xlsx"), ("conta corrente", "modelo_conta_corrente.xlsx")], "/conciliacao/banco") }}
+    {{ card_modelo("Conciliação cartão — contas a pagar", "Extrato de cartão para conciliar pagamentos.", [("extrato cartão", "modelo_extrato_cartao.xlsx")], "/contas-pagar/conciliacao-cartao") }}
+    {{ card_modelo("Conciliação banco — contas a pagar", "Extrato bancário para conciliar pagamentos.", [("banco contas a pagar", "modelo_banco_contas_pagar.xlsx")], "/contas-pagar/conciliacao-banco") }}
   </div>
 
 </div>

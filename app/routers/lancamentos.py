@@ -771,6 +771,128 @@ async def importar_planilha_lancamentos(
     return response
 
 
+@router.post("/lancamentos/importar-bpo-atualizado")
+async def importar_planilha_bpo_atualizado(
+    request: Request,
+    cliente_id: int = Form(...),
+    arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_lancamentos),
+):
+    from app.errors import public_import_error
+    from app.services.conciliacao_service import importar_lancamentos, ler_planilha_bpo_receitas
+    from app.utils import salvar_upload_temporario
+
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+
+    caminho = None
+    try:
+        caminho, nome, _ = await salvar_upload_temporario(arquivo, {".xlsx"})
+        total = importar_lancamentos(
+            db,
+            cliente_id,
+            ler_planilha_bpo_receitas(caminho),
+            substituir_pendentes=False,
+        )
+        mensagem = f"{total} lançamento(s) importado(s) da aba RECEITA de '{nome}'."
+        _log(
+            db,
+            "Lançamentos BPO importados",
+            "lancamentos",
+            usuario_id=usuario.id,
+            usuario_nome=usuario.nome,
+            cliente_id=cliente_id,
+            detalhes=f"{total} linha(s) da aba RECEITA de {nome}",
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        mensagem = public_import_error(logging.getLogger(__name__), "importar_planilha_bpo_atualizado")
+    finally:
+        if caminho:
+            Path(caminho).unlink(missing_ok=True)
+
+    response = RedirectResponse(
+        f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem),
+        status_code=303,
+    )
+    response.set_cookie(
+        "cliente_ativo",
+        str(cliente_id),
+        httponly=True,
+        samesite="strict",
+        secure=secure_cookie_for(request),
+        path="/",
+    )
+    return response
+
+
+@router.post("/lancamentos/importar-visao-contas-receber")
+async def importar_visao_contas_a_receber(
+    request: Request,
+    cliente_id: int = Form(...),
+    arquivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_lancamentos),
+):
+    from app.errors import public_import_error
+    from app.services.conciliacao_service import importar_lancamentos, ler_visao_contas_a_receber
+    from app.utils import salvar_upload_temporario
+
+    if usuario.perfil == PerfilUsuario.medico:
+        raise HTTPException(403, "Perfil somente leitura.")
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise HTTPException(404, "Cliente indisponível.")
+
+    caminho = None
+    try:
+        caminho, nome, _ = await salvar_upload_temporario(arquivo, {".xls", ".xlsx"})
+        total = importar_lancamentos(
+            db,
+            cliente_id,
+            ler_visao_contas_a_receber(caminho),
+            substituir_pendentes=False,
+        )
+        mensagem = f"{total} lançamento(s) importado(s) do relatório '{nome}'."
+        _log(
+            db,
+            "Visão de contas a receber importada",
+            "lancamentos",
+            usuario_id=usuario.id,
+            usuario_nome=usuario.nome,
+            cliente_id=cliente_id,
+            detalhes=f"{total} linha(s) do arquivo {nome}",
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        mensagem = public_import_error(logging.getLogger(__name__), "importar_visao_contas_a_receber")
+    finally:
+        if caminho:
+            Path(caminho).unlink(missing_ok=True)
+
+    response = RedirectResponse(
+        f"/lancamentos?cliente_id={cliente_id}&flash=" + quote_plus(mensagem),
+        status_code=303,
+    )
+    response.set_cookie(
+        "cliente_ativo",
+        str(cliente_id),
+        httponly=True,
+        samesite="strict",
+        secure=secure_cookie_for(request),
+        path="/",
+    )
+    return response
+
+
 @router.post("/lancamentos/{at_id}/desconciliar")
 async def desconciliar_lancamento(at_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_lancamentos)):
     if usuario.perfil == PerfilUsuario.medico:
