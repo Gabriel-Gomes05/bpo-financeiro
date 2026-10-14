@@ -1,9 +1,10 @@
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
+from urllib.parse import parse_qsl, quote_plus, urlencode
 
-from fastapi import Request, UploadFile
+from fastapi import HTTPException, Request, UploadFile
 
 from app.config import UPLOAD_DIR
 
@@ -19,6 +20,47 @@ ASSINATURAS_PERMITIDAS = {
     # Alguns relatórios .xls são planilhas OOXML (.xlsx) apenas com a extensão errada.
     ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", b"PK\x03\x04"),
 }
+
+
+def ids_do_lote(valores: Iterable) -> list[int]:
+    """Aceita IDs repetidos no form ou agrupados em "1,2,3" (evita o limite de campos do form)."""
+    ids = []
+    for valor in valores:
+        for parte in str(valor).split(","):
+            parte = parte.strip()
+            if parte:
+                try:
+                    ids.append(int(parte))
+                except ValueError:
+                    raise HTTPException(400, "Seleção inválida.")
+    return list(dict.fromkeys(ids))
+
+
+def em_blocos(ids: list[int], tamanho: int = 1000):
+    """Divide listas de IDs para não estourar o limite de parâmetros do banco."""
+    for inicio in range(0, len(ids), tamanho):
+        yield ids[inicio:inicio + tamanho]
+
+
+def serializar_filtros_lote(filtros: dict) -> str:
+    """Filtros já validados da listagem, enviados de volta na exclusão "todos do filtro"."""
+    return urlencode({k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in filtros.items() if v not in (None, "")})
+
+
+def ler_filtros_lote(texto: str) -> dict:
+    filtros = dict(parse_qsl(texto if isinstance(texto, str) else ""))
+    try:
+        filtros["cliente_id"] = int(filtros["cliente_id"]) if filtros.get("cliente_id") else None
+    except ValueError:
+        raise HTTPException(400, "Filtro inválido.")
+    return filtros
+
+
+def url_retorno_lote(caminho: str, filtros: Optional[str], mensagem: str) -> str:
+    """Volta para a listagem com os filtros que estavam aplicados, trocando apenas o flash."""
+    params = [(k, v) for k, v in parse_qsl(filtros if isinstance(filtros, str) else "") if k != "flash"]
+    query = urlencode(params)
+    return f"{caminho}?{query + '&' if query else ''}flash={quote_plus(mensagem)}"
 
 
 def cliente_ativo(request: Request, cliente_id: Optional[int]) -> Optional[int]:

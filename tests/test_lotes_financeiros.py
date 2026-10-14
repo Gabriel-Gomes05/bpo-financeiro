@@ -520,3 +520,92 @@ def test_rota_exclusao_em_lote_nao_e_capturada_pela_exclusao_individual():
     scope = {"type": "http", "method": "POST", "path": "/lancamentos/lote/excluir"}
     rota = next(r for r in lancamentos.router.routes if r.matches(scope)[0] == Match.FULL)
     assert rota.endpoint is lancamentos.excluir_lote_lancamentos
+
+
+def test_exclusao_lote_aceita_ids_agrupados_e_preserva_filtros(db):
+    a, b, c = conta(db), conta(db), conta(db)
+    response = aplicar(db, [f"{a.id},{b.id}"], acao="excluir", filtros="situacao=aberto&cliente_id=1&flash=antigo")
+    assert [item.id for item in db.query(ContaPagar).all()] == [c.id]
+    assert response.headers["location"].startswith("/contas-pagar?situacao=aberto&cliente_id=1&flash=2+conta")
+    assert "antigo" not in response.headers["location"]
+    assert "exclu" in response.headers["location"]
+
+
+def test_exclusao_lote_receber_acima_de_mil_registros(db):
+    db.add_all([Atendimento(cliente_id=1, data_atendimento=date.today(), condicao_pagamento="avista", valor_servico=10) for _ in range(1200)])
+    db.commit()
+    ids = ",".join(str(i) for (i,) in db.query(Atendimento.id).all())
+    response = asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[ids], db=db, usuario=USUARIO, filtros="data_inicio=2026-01-01&data_fim=2026-01-31"))
+    assert db.query(Atendimento).count() == 0
+    assert response.headers["location"].startswith("/lancamentos?data_inicio=2026-01-01&data_fim=2026-01-31&flash=1200+")
+
+
+def test_exclusao_lote_rejeita_id_invalido(db):
+    with pytest.raises(HTTPException) as exc:
+        aplicar(db, ["1,abc"], acao="excluir")
+    assert exc.value.status_code == 400
+
+
+def test_exclusao_por_filtro_contas_sem_limite_e_respeita_filtro(db):
+    hoje = date.today()
+    db.add_all([ContaPagar(cliente_id=1, descricao="Lote", valor=Decimal("10"), vencimento=hoje) for _ in range(450)])
+    fora = ContaPagar(cliente_id=1, descricao="Fora", valor=Decimal("10"), vencimento=hoje + timedelta(days=40))
+    outro_cliente = ContaPagar(cliente_id=2, descricao="Outro", valor=Decimal("10"), vencimento=hoje)
+    paga = ContaPagar(cliente_id=1, descricao="Paga", valor=Decimal("10"), vencimento=hoje, status=StatusContaPagar.pago)
+    db.add_all([fora, outro_cliente, paga])
+    db.commit()
+    filtros_lote = f"cliente_id=1&vencimento_inicio={hoje}&vencimento_fim={hoje}"
+    response = aplicar(db, [], acao="excluir", modo="filtro", filtros_lote=filtros_lote, total_esperado=451)
+    assert {c.id for c in db.query(ContaPagar).all()} == {fora.id, outro_cliente.id, paga.id}
+    assert "450+conta" in response.headers["location"]
+
+
+def test_exclusao_por_filtro_aborta_se_lista_mudou(db):
+    conta(db), conta(db)
+    response = aplicar(db, [], acao="excluir", modo="filtro", filtros_lote="cliente_id=1", total_esperado=1)
+    assert db.query(ContaPagar).count() == 2
+    assert "lista+mudou" in response.headers["location"]
+
+
+def test_exclusao_por_filtro_preserva_restante_da_recorrencia(db):
+    primeiro, segundo, terceiro = recorrencia(db)
+    terceiro.vencimento = date.today() + timedelta(days=60)
+    db.commit()
+    aplicar(db, [], acao="excluir", modo="filtro", total_esperado=2,
+            filtros_lote=f"cliente_id=1&vencimento_fim={date.today()}")
+    assert [c.id for c in db.query(ContaPagar).all()] == [terceiro.id]
+    assert terceiro.recorrencia_grupo_id == terceiro.id
+
+
+def test_exclusao_por_filtro_receber_desconcilia_vinculados(db):
+    hoje = date.today()
+    atendimentos = [Atendimento(cliente_id=1, data_atendimento=hoje, condicao_pagamento="avista", valor_servico=10) for _ in range(3)]
+    fora = Atendimento(cliente_id=1, data_atendimento=hoje - timedelta(days=400), condicao_pagamento="avista", valor_servico=10)
+    db.add_all([*atendimentos, fora])
+    db.flush()
+    mov = MovimentacaoBancaria(cliente_id=1, tipo="pix_ted", data_movimento=hoje, valor=10, conciliada_com_atendimento_id=atendimentos[0].id, status=StatusMovimentacaoBancaria.conciliada)
+    db.add(mov)
+    db.commit()
+    filtros_lote = f"data_inicio={hoje}&data_fim={hoje}"
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[], db=db, usuario=USUARIO, modo="filtro", filtros_lote=filtros_lote, total_esperado=3))
+    assert exc.value.status_code == 409
+    db.rollback()
+    asyncio.run(lancamentos.excluir_lote_lancamentos(ids=[], db=db, usuario=USUARIO, modo="filtro", filtros_lote=filtros_lote, total_esperado=3, confirmar_conciliacao=True))
+    assert [a.id for a in db.query(Atendimento).all()] == [fora.id]
+    assert mov.conciliada_com_atendimento_id is None and mov.status == StatusMovimentacaoBancaria.importada
+
+
+@pytest.mark.parametrize("path,funcao", [
+    ("/contas-pagar", contas_pagar.listar_contas),
+    ("/lancamentos", lancamentos.listar_lancamentos),
+])
+def test_telas_enviam_filtros_para_selecao_total(db, path, funcao):
+    conta(db)
+    db.add(Atendimento(cliente_id=1, data_atendimento=date.today(), condicao_pagamento="avista", valor_servico=50))
+    db.commit()
+    request = Request({"type": "http", "method": "GET", "scheme": "http", "server": ("testserver", 80), "path": path, "headers": [], "query_string": b""})
+    html = asyncio.run(funcao(request=request, db=db, usuario=USUARIO)).body.decode()
+    assert 'data-total-filtro="1"' in html
+    assert 'name="filtros_lote"' in html
+    assert 'id="lote-todos"' in html

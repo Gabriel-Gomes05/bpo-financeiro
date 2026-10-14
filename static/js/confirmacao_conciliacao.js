@@ -58,8 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!previous) form.onsubmit = () => window.confirm('Tem certeza que deseja desfazer esta conciliação? Os vínculos e saldos serão atualizados.');
       return;
     }
-    if (!/^\/(lancamentos|contas-pagar)\/\d+\/(editar|excluir|desconciliar)$/.test(path)
-        && path !== '/lancamentos/lote/excluir' && path !== '/contas-pagar/lote/aplicar') return;
+    // Formulários em lote têm confirmação única em lote.js.
+    if (!/^\/(lancamentos|contas-pagar)\/\d+\/(editar|excluir|desconciliar)$/.test(path)) return;
     const previous = form.onsubmit;
     form.onsubmit = event => {
       if (previous && previous.call(form, event) === false) return false;

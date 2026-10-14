@@ -10,13 +10,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_usuario_atual
 from app.authorization import Permission, require_permission
 from app.database import get_db
-from app.utils import cliente_ativo as _ca
+from app.database import aplicar_contexto_auditoria
+from app.utils import (
+    cliente_ativo as _ca, em_blocos, ids_do_lote, ler_filtros_lote, serializar_filtros_lote, url_retorno_lote,
+)
 from app.services.recebimento_service import prever_recebimento
 from app.models import (
     Atendimento, AtendimentoCentroCustoRateio, CentroCusto, ClienteBPO, CondicaoPagamento, FormaPagamento,
@@ -142,6 +145,38 @@ def _taxa_cartao(
     return Decimal(str(taxa.taxa_percentual)) if taxa else None
 
 
+def _filtros_lancamentos(cliente_id=None, data_inicio=None, data_fim=None, status_conciliacao=None, forma_pagamento=None) -> dict:
+    """Valida os filtros da listagem; a exclusão "todos do filtro" reaplica exatamente os mesmos."""
+    hoje = date.today()
+    try:
+        di = date.fromisoformat(data_inicio) if data_inicio else hoje.replace(day=1)
+        df = date.fromisoformat(data_fim) if data_fim else hoje
+    except ValueError:
+        di, df = hoje.replace(day=1), hoje
+    return {
+        "cliente_id": cliente_id,
+        "data_inicio": di,
+        "data_fim": df,
+        "status_conciliacao": status_conciliacao if status_conciliacao in {s.value for s in StatusConciliacao} else None,
+        "forma_pagamento": forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None,
+    }
+
+
+def _query_lancamentos(db: Session, ids_permitidos: list[int], filtros: dict):
+    query = db.query(Atendimento).filter(
+        Atendimento.cliente_id.in_(ids_permitidos),
+        Atendimento.data_atendimento >= filtros["data_inicio"],
+        Atendimento.data_atendimento <= filtros["data_fim"],
+    )
+    if filtros["cliente_id"] and filtros["cliente_id"] in ids_permitidos:
+        query = query.filter(Atendimento.cliente_id == filtros["cliente_id"])
+    if filtros["status_conciliacao"]:
+        query = query.filter(Atendimento.status_conciliacao == filtros["status_conciliacao"])
+    if filtros["forma_pagamento"]:
+        query = query.filter(Atendimento.forma_pagamento == filtros["forma_pagamento"])
+    return query
+
+
 @router.get("/lancamentos", response_class=HTMLResponse)
 async def listar_lancamentos(
     request: Request,
@@ -154,36 +189,10 @@ async def listar_lancamentos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
 ):
-    cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
-
-    hoje = date.today()
-    di_str = data_inicio or hoje.replace(day=1).isoformat()
-    df_str = data_fim or hoje.isoformat()
-    try:
-        di = date.fromisoformat(di_str)
-        df = date.fromisoformat(df_str)
-    except ValueError:
-        di = hoje.replace(day=1)
-        df = hoje
-        di_str, df_str = di.isoformat(), df.isoformat()
-
-    status_conciliacao = status_conciliacao if status_conciliacao in {s.value for s in StatusConciliacao} else None
-    forma_pagamento = forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None
-
-    query = db.query(Atendimento).filter(Atendimento.cliente_id.in_(ids_permitidos))
-    if cliente_id and cliente_id in ids_permitidos:
-        query = query.filter(Atendimento.cliente_id == cliente_id)
-    query = query.filter(
-        Atendimento.data_atendimento >= di,
-        Atendimento.data_atendimento <= df,
-    )
-    if status_conciliacao:
-        query = query.filter(Atendimento.status_conciliacao == status_conciliacao)
-    if forma_pagamento:
-        query = query.filter(Atendimento.forma_pagamento == forma_pagamento)
-
+    filtros = _filtros_lancamentos(_ca(request, cliente_id), data_inicio, data_fim, status_conciliacao, forma_pagamento)
+    query = _query_lancamentos(db, ids_permitidos, filtros)
     atendimentos = query.order_by(Atendimento.data_atendimento.desc(), Atendimento.criado_em.desc()).all()
 
     return templates.TemplateResponse("lancamentos.html", {
@@ -191,11 +200,13 @@ async def listar_lancamentos(
         "usuario": usuario,
         "clientes": clientes,
         "atendimentos": atendimentos,
-        "cliente_selecionado": cliente_id,
-        "data_inicio": di_str,
-        "data_fim": df_str,
-        "status_conciliacao_selecionado": status_conciliacao,
-        "forma_pagamento_selecionada": forma_pagamento,
+        "total_filtro": len(atendimentos),
+        "filtros_lote": serializar_filtros_lote(filtros),
+        "cliente_selecionado": filtros["cliente_id"],
+        "data_inicio": filtros["data_inicio"].isoformat(),
+        "data_fim": filtros["data_fim"].isoformat(),
+        "status_conciliacao_selecionado": filtros["status_conciliacao"],
+        "forma_pagamento_selecionada": filtros["forma_pagamento"],
         "flash": flash,
         "formatar_brl": formatar_brl,
     })
@@ -709,31 +720,64 @@ def _lancamento_vinculado(db: Session, at: Atendimento) -> bool:
         or db.query(VendaCartao.id).filter(VendaCartao.atendimento_id == at.id).first())
 
 
+def _excluir_atendimentos(db: Session, ids: list[int], confirmar_conciliacao) -> None:
+    """Exclui em massa: desconcilia só os vinculados e apaga o restante com DELETEs em bloco."""
+    vinculado = or_(
+        Atendimento.status_conciliacao == StatusConciliacao.conciliado,
+        exists().where(MovimentacaoBancaria.conciliada_com_atendimento_id == Atendimento.id),
+        exists().where(VendaCartao.atendimento_id == Atendimento.id),
+    )
+    vinculados = []
+    for bloco in em_blocos(ids):
+        vinculados += db.query(Atendimento).filter(Atendimento.id.in_(bloco), vinculado).all()
+    if vinculados:
+        exigir_confirmacao(confirmar_conciliacao)
+        for at in vinculados:
+            desconciliar_recebimento(db, at)
+        db.flush()
+    aplicar_contexto_auditoria(db)
+    for bloco in em_blocos(ids):
+        db.query(AtendimentoCentroCustoRateio).filter(AtendimentoCentroCustoRateio.atendimento_id.in_(bloco)).delete(synchronize_session=False)
+        db.query(Atendimento).filter(Atendimento.id.in_(bloco)).delete(synchronize_session=False)
+
+
 @router.post("/lancamentos/lote/excluir")
 async def excluir_lote_lancamentos(
-    ids: List[int] = Form(...),
+    ids: List[str] = Form([]),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
     confirmar_conciliacao: bool = Form(False),
+    filtros: str = Form(""),
+    modo: str = Form("ids"),
+    filtros_lote: str = Form(""),
+    total_esperado: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
-    if not ids or len(set(ids)) > 1000:
-        raise HTTPException(400, "Selecione até 1000 lançamentos.")
     permitidos = [c.id for c in clientes_do_usuario(db, usuario)]
-    registros = db.query(Atendimento).filter(Atendimento.id.in_(set(ids)), Atendimento.cliente_id.in_(permitidos)).all()
-    if len(registros) != len(set(ids)):
-        raise HTTPException(404, "Seleção contém lançamentos indisponíveis.")
-    if any(_lancamento_vinculado(db, at) for at in registros):
-        exigir_confirmacao(confirmar_conciliacao)
-    for at in registros:
-        if _lancamento_vinculado(db, at):
-            desconciliar_recebimento(db, at)
-    for at in registros:
-        db.delete(at)
+    if modo == "filtro":
+        query = _query_lancamentos(db, permitidos, _filtros_lancamentos(**ler_filtros_lote(filtros_lote)))
+        ids = [i for (i,) in query.with_entities(Atendimento.id).all()]
+        if not ids or len(ids) != total_esperado:
+            return RedirectResponse(url_retorno_lote("/lancamentos", filtros, (
+                f"A lista mudou desde a seleção (eram {total_esperado}, agora são {len(ids)}). "
+                "Confira e selecione novamente. Nenhum lançamento foi excluído."
+            )), status_code=303)
+    else:
+        ids = ids_do_lote(ids)
+        if not ids:
+            raise HTTPException(400, "Selecione ao menos um lançamento.")
+        encontrados = sum(
+            db.query(Atendimento).filter(Atendimento.id.in_(bloco), Atendimento.cliente_id.in_(permitidos)).count()
+            for bloco in em_blocos(ids)
+        )
+        if encontrados != len(ids):
+            raise HTTPException(404, "Seleção contém lançamentos indisponíveis.")
+    _excluir_atendimentos(db, ids, confirmar_conciliacao)
     db.commit()
-    _log(db, "Lançamentos excluídos em lote", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, detalhes=f"IDs: {sorted(set(ids))}")
-    return RedirectResponse("/lancamentos?flash=" + quote_plus(f"{len(registros)} lançamento(s) excluído(s)."), status_code=303)
+    _log(db, "Lançamentos excluídos em lote", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome,
+         detalhes=f"Modo: {'filtro' if modo == 'filtro' else 'seleção'}; total: {len(ids)}; IDs: {sorted(ids)}")
+    return RedirectResponse(url_retorno_lote("/lancamentos", filtros, f"{len(ids)} lançamento(s) excluído(s)."), status_code=303)
 
 
 @router.post("/lancamentos/importar")
