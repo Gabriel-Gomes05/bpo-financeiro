@@ -89,12 +89,16 @@
 
 
     {% if usuario.perfil != 'medico' %}
-    <form id="form-lote" method="post" action="/lancamentos/lote/excluir" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
+    <form id="form-lote" data-total-filtro="{{ total_filtro }}" method="post" action="/lancamentos/lote/excluir" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
       <strong class="text-sm">Ações em lote</strong>
-      <span id="total-selecionados" class="text-sm text-gray-500">0 selecionados</span>
+      <input type="hidden" name="filtros" value="{{ request.url.query }}">
+      <input type="hidden" name="filtros_lote" value="{{ filtros_lote }}">
+      <input type="hidden" name="total_esperado" value="{{ total_filtro }}">
+      <span id="total-selecionados" class="text-sm text-gray-500">0 selecionado(s)</span>
       <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button>
     </form>
-    <p class="px-4 pb-3 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação não podem ser excluídos.</p>
+    <div id="lote-todos" class="mx-4 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900" role="status" hidden></div>
+    <p class="px-4 pb-3 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação serão desconciliados antes, após sua confirmação.</p>
     {% endif %}
     <div class="overflow-x-auto">
       <table id="tbl-lancamentos" class="w-full text-sm">

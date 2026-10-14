@@ -55,9 +55,8 @@ def schema_esta_atualizado(connection) -> bool:
     return True
 
 
-@event.listens_for(Session, "before_flush")
-def _preencher_auditoria(session: Session, _flush_context, _instances) -> None:
-    """Propaga ator e request ID para a auditoria de aplicação e banco."""
+def aplicar_contexto_auditoria(session: Session) -> None:
+    """Informa ator e request ID aos triggers de auditoria; chame antes de UPDATE/DELETE em massa."""
     actor_id = session.info.get("actor_id")
     if actor_id and session.bind and session.bind.dialect.name == "postgresql":
         session.connection().execute(
@@ -70,6 +69,13 @@ def _preencher_auditoria(session: Session, _flush_context, _instances) -> None:
                 text("SELECT set_config('app.request_id', :request_id, true)"),
                 {"request_id": str(request_id)},
             )
+
+
+@event.listens_for(Session, "before_flush")
+def _preencher_auditoria(session: Session, _flush_context, _instances) -> None:
+    """Propaga ator e request ID para a auditoria de aplicação e banco."""
+    aplicar_contexto_auditoria(session)
+    actor_id = session.info.get("actor_id")
     for obj in session.new:
         if hasattr(obj, "created_by") and getattr(obj, "created_by", None) is None:
             obj.created_by = actor_id

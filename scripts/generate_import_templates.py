@@ -1,4 +1,4 @@
-"""Gera o modelo de contas a pagar com as colunas aceitas pelo importador."""
+"""Gera os modelos de importacao com as colunas aceitas pelos importadores."""
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -59,5 +59,68 @@ def gerar(destino: Path) -> None:
     wb.save(destino)
 
 
+BPO_RECEITA = [
+    "Data do atendimento", "Paciente", "CPF paciente/responsável", "Médico", "Especialidade",
+    "Tipo de serviço", "Descrição do serviço", "Valor do serviço", "Condições do pagamento",
+    "Parcela", "Data prevista de recebimento", "Forma de pagamento", "Taxa do cartão",
+    "4 últimos dígitos do cartão", "Bandeira do cartão", "Valor líquido", "Data do crédito",
+    "Destino do crédito", "Observação", "Plano de contas",
+]
+
+VISAO_CONTAS_RECEBER = [
+    "Nome do cliente", "Data de competência", "Descrição", "Valor original da parcela (R$)",
+    "Data prevista", "Forma de recebimento", "Conta bancária", "Data do último pagamento",
+    "Categoria 1", "Centro de custo 1", "Observação",
+]
+
+
+def _cabecalho(ws, linha: int) -> None:
+    for cell in ws[linha]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="245A72")
+        ws.column_dimensions[cell.column_letter].width = max(18, len(str(cell.value)) + 3)
+
+
+def gerar_bpo_receitas(destino: Path) -> None:
+    """Aba RECEITA com cabecalho na linha 6; taxa do cartao em fracao (0,0185 = 1,85%)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "RECEITA"
+    ws["A1"] = "Planilha BPO atualizado - receitas"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = "Mantenha o cabecalho na linha 6 e preencha a partir da linha 7."
+    ws["A3"] = "Taxa do cartao em percentual do Excel (ex.: 1,85%). Datas em DD/MM/AAAA."
+    ws.append([])
+    ws.append([])
+    ws.append(BPO_RECEITA)
+    _cabecalho(ws, 6)
+    ws.freeze_panes = "A7"
+    for row in ws.iter_rows(min_row=7, max_row=1006):
+        for idx in (0, 10, 16):
+            row[idx].number_format = "dd/mm/yyyy"
+        row[7].number_format = row[15].number_format = "#,##0.00"
+        row[12].number_format = "0.00%"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(destino)
+
+
+def gerar_visao_contas_receber(destino: Path) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visão Contas a Receber"
+    ws.append(VISAO_CONTAS_RECEBER)
+    _cabecalho(ws, 1)
+    ws.freeze_panes = "A2"
+    for row in ws.iter_rows(min_row=2, max_row=1001):
+        for idx in (1, 4, 7):
+            row[idx].number_format = "dd/mm/yyyy"
+        row[3].number_format = "#,##0.00"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(destino)
+
+
 if __name__ == "__main__":
-    gerar(Path(__file__).resolve().parents[1] / "static/modelos/modelo_contas_pagar.xlsx")
+    modelos = Path(__file__).resolve().parents[1] / "static/modelos"
+    gerar(modelos / "modelo_contas_pagar.xlsx")
+    gerar_bpo_receitas(modelos / "modelo_bpo_receitas.xlsx")
+    gerar_visao_contas_receber(modelos / "modelo_visao_contas_receber.xlsx")

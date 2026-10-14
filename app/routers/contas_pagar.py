@@ -25,7 +25,11 @@ from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
 from app.database import get_db
-from app.utils import cliente_ativo as _ca, salvar_upload_temporario
+from app.database import aplicar_contexto_auditoria
+from app.utils import (
+    cliente_ativo as _ca, em_blocos, ids_do_lote, ler_filtros_lote, salvar_upload_temporario,
+    serializar_filtros_lote, url_retorno_lote,
+)
 from app.models import (
     CentroCusto,
     ClienteBPO,
@@ -34,6 +38,7 @@ from app.models import (
     ExtratoLinhaBancaria,
     FormaPagamento,
     MovimentacaoBancaria,
+    PagamentoParcialContaPagar,
     PerfilUsuario,
     PlanoConta,
     StatusContaPagar,
@@ -242,6 +247,44 @@ def _data_recorrencia(origem: date, intervalo: str, dias_personalizado: Optional
     return date(ano, mes, min(origem.day, ultimo_dia))
 
 
+def _filtros_contas(cliente_id=None, situacao=None, status=None, forma_pagamento=None, vencimento_inicio=None, vencimento_fim=None) -> dict:
+    """Valida os filtros da listagem; a ação "todos do filtro" reaplica exatamente os mesmos."""
+    def data(valor):
+        try:
+            return date.fromisoformat(valor) if valor else None
+        except ValueError:
+            return None
+    return {
+        "cliente_id": cliente_id,
+        "situacao": situacao if situacao in {"aberto", "a_vencer", "vencidas"} else None,
+        "status": status if status in {s.value for s in StatusContaPagar} else None,
+        "forma_pagamento": forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None,
+        "vencimento_inicio": data(vencimento_inicio),
+        "vencimento_fim": data(vencimento_fim),
+    }
+
+
+def _query_contas(db: Session, ids_permitidos: list[int], filtros: dict):
+    query = db.query(ContaPagar).filter(ContaPagar.cliente_id.in_(ids_permitidos))
+    if filtros["cliente_id"]:
+        query = query.filter(ContaPagar.cliente_id == filtros["cliente_id"])
+    if filtros["status"]:
+        query = query.filter(ContaPagar.status == filtros["status"])
+    if filtros["forma_pagamento"]:
+        query = query.filter(ContaPagar.forma_pagamento == filtros["forma_pagamento"])
+    if filtros["vencimento_inicio"]:
+        query = query.filter(ContaPagar.vencimento >= filtros["vencimento_inicio"])
+    if filtros["vencimento_fim"]:
+        query = query.filter(ContaPagar.vencimento <= filtros["vencimento_fim"])
+    if filtros["situacao"]:
+        query = query.filter(ContaPagar.status.notin_([StatusContaPagar.pago, StatusContaPagar.cancelado]))
+        if filtros["situacao"] == "a_vencer":
+            query = query.filter(ContaPagar.vencimento >= date.today())
+        elif filtros["situacao"] == "vencidas":
+            query = query.filter(ContaPagar.vencimento < date.today())
+    return query
+
+
 @router.get("/contas-pagar", response_class=HTMLResponse)
 async def listar_contas(
     request: Request,
@@ -255,41 +298,13 @@ async def listar_contas(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    cliente_id = _ca(request, None)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
-
-    status = status if status in {s.value for s in StatusContaPagar} else None
-    forma_pagamento = forma_pagamento if forma_pagamento in {f.value for f in FormaPagamento} else None
-    try:
-        venc_inicio = date.fromisoformat(vencimento_inicio) if vencimento_inicio else None
-    except ValueError:
-        venc_inicio = None
-    try:
-        venc_fim = date.fromisoformat(vencimento_fim) if vencimento_fim else None
-    except ValueError:
-        venc_fim = None
-
-    query = db.query(ContaPagar).filter(
-        ContaPagar.cliente_id.in_(ids_permitidos)
+    filtros = _filtros_contas(_ca(request, None), situacao, status, forma_pagamento, vencimento_inicio, vencimento_fim)
+    query = _query_contas(db, ids_permitidos, filtros)
+    cliente_id, situacao, status, forma_pagamento = (
+        filtros["cliente_id"], filtros["situacao"], filtros["status"], filtros["forma_pagamento"],
     )
-    if cliente_id:
-        query = query.filter(ContaPagar.cliente_id == cliente_id)
-    if status:
-        query = query.filter(ContaPagar.status == status)
-    if forma_pagamento:
-        query = query.filter(ContaPagar.forma_pagamento == forma_pagamento)
-    if venc_inicio:
-        query = query.filter(ContaPagar.vencimento >= venc_inicio)
-    if venc_fim:
-        query = query.filter(ContaPagar.vencimento <= venc_fim)
-
-    if situacao in {"aberto", "a_vencer", "vencidas"}:
-        query = query.filter(ContaPagar.status.notin_([StatusContaPagar.pago, StatusContaPagar.cancelado]))
-        if situacao == "a_vencer":
-            query = query.filter(ContaPagar.vencimento >= date.today())
-        elif situacao == "vencidas":
-            query = query.filter(ContaPagar.vencimento < date.today())
 
     # Ordena: vencidas primeiro, depois por vencimento
     contas = query.order_by(ContaPagar.vencimento.asc()).limit(200).all()
@@ -338,6 +353,8 @@ async def listar_contas(
         "usuario": usuario,
         "clientes": clientes,
         "contas": contas,
+        "total_filtro": query.count(),
+        "filtros_lote": serializar_filtros_lote(filtros),
         "situacao_selecionada": situacao,
         "planos_lote": _planos_despesa(db, ids_permitidos),
         "centros_lote": db.query(CentroCusto).filter(CentroCusto.cliente_id.in_(ids_permitidos), CentroCusto.ativo == True).order_by(CentroCusto.nome).all(),
@@ -345,8 +362,8 @@ async def listar_contas(
         "cliente_selecionado": cliente_id,
         "status_selecionado": status,
         "forma_pagamento_selecionada": forma_pagamento,
-        "vencimento_inicio": vencimento_inicio or "",
-        "vencimento_fim": vencimento_fim or "",
+        "vencimento_inicio": filtros["vencimento_inicio"].isoformat() if filtros["vencimento_inicio"] else "",
+        "vencimento_fim": filtros["vencimento_fim"].isoformat() if filtros["vencimento_fim"] else "",
         "categorias_despesa": CATEGORIAS_DESPESA,
         "categoria_nome": _categoria_nome_com_centros(centros_por_cliente),
         "status_permitidos_por_conta": status_permitidos_por_conta,
@@ -503,7 +520,7 @@ async def salvar_edicao_conta(
                 (ContaPagar.vencimento == conta.vencimento) & (ContaPagar.id >= conta.id),
             ),
         ).order_by(ContaPagar.vencimento, ContaPagar.id).all()
-    protegidos = _ids_protegidos(db, contas_valor)
+    protegidos = _ids_protegidos(db, [item.id for item in contas_valor])
     if protegidos and confirmar_conciliacao is True:
         for item in contas_valor:
             if item.id in protegidos:
@@ -556,44 +573,66 @@ async def salvar_edicao_conta(
     return RedirectResponse(url=destino, status_code=303)
 
 
-def _ids_protegidos(db: Session, contas: list[ContaPagar]) -> set[int]:
+def _ids_protegidos(db: Session, ids: list[int]) -> set[int]:
     """IDs de contas com pagamento ou conciliação, que não podem ser alteradas/excluídas."""
-    if not contas:
-        return set()
-    ids = [conta.id for conta in contas]
-    protegidos = {conta.id for conta in contas if conta.status == StatusContaPagar.pago or conta.pagamentos_parciais}
-    protegidos.update(
-        row[0] for row in db.query(MovimentacaoBancaria.conta_pagar_id)
-        .filter(MovimentacaoBancaria.conta_pagar_id.in_(ids)).all()
-    )
-    protegidos.update(
-        row[0] for row in db.query(ExtratoLinhaBancaria.conta_pagar_id)
-        .filter(ExtratoLinhaBancaria.conta_pagar_id.in_(ids)).all()
-    )
+    db.flush()
+    protegidos = set()
+    for bloco in em_blocos(list(ids)):
+        protegidos.update(i for (i,) in db.query(ContaPagar.id).filter(ContaPagar.id.in_(bloco), ContaPagar.status == StatusContaPagar.pago))
+        for coluna in (PagamentoParcialContaPagar.conta_pagar_id, MovimentacaoBancaria.conta_pagar_id, ExtratoLinhaBancaria.conta_pagar_id):
+            protegidos.update(i for (i,) in db.query(coluna).filter(coluna.in_(bloco)).distinct())
     return protegidos
 
 
-def _preparar_exclusao_recorrencias(db: Session, contas: list[ContaPagar]) -> None:
+def _preparar_exclusao_recorrencias(db: Session, ids: list[int]) -> None:
     """Preserva o grupo restante quando seu lançamento de referência é excluído."""
-    ids = {conta.id for conta in contas}
-    dependentes = db.query(ContaPagar).filter(
-        ContaPagar.recorrencia_grupo_id.in_(ids),
-    ).order_by(ContaPagar.id).all()
-    grupos: dict[int, list[ContaPagar]] = {}
-    clientes = {conta.id: conta.cliente_id for conta in contas}
-    for dependente in dependentes:
-        if dependente.cliente_id != clientes[dependente.recorrencia_grupo_id]:
-            raise HTTPException(409, "Recorrência inconsistente entre clientes.")
-        if dependente.id not in ids:
-            grupos.setdefault(dependente.recorrencia_grupo_id, []).append(dependente)
+    alvo = set(ids)
+    clientes, grupos = {}, {}
+    for bloco in em_blocos(ids):
+        clientes.update(db.query(ContaPagar.id, ContaPagar.cliente_id).filter(ContaPagar.id.in_(bloco)).all())
+    for bloco in em_blocos(ids):
+        dependentes = db.query(ContaPagar.id, ContaPagar.recorrencia_grupo_id, ContaPagar.cliente_id).filter(
+            ContaPagar.recorrencia_grupo_id.in_(bloco),
+        )
+        for dependente_id, grupo_id, cliente_id in dependentes:
+            if cliente_id != clientes[grupo_id]:
+                raise HTTPException(409, "Recorrência inconsistente entre clientes.")
+            if dependente_id not in alvo:
+                grupos.setdefault(grupo_id, []).append(dependente_id)
     for restantes in grupos.values():
-        novo_grupo_id = restantes[0].id
-        for restante in restantes:
-            restante.recorrencia_grupo_id = novo_grupo_id
-    for conta in contas:
-        conta.recorrencia_grupo_id = None
+        restantes.sort()
+        for bloco in em_blocos(restantes):
+            db.query(ContaPagar).filter(ContaPagar.id.in_(bloco)).update(
+                {ContaPagar.recorrencia_grupo_id: restantes[0]}, synchronize_session=False)
     # Atualiza as referências antes dos DELETEs, inclusive a autorreferência do grupo.
+    for bloco in em_blocos(ids):
+        db.query(ContaPagar).filter(ContaPagar.id.in_(bloco), ContaPagar.recorrencia_grupo_id.isnot(None)).update(
+            {ContaPagar.recorrencia_grupo_id: None}, synchronize_session=False)
+
+
+def _apagar_contas(db: Session, ids: list[int]) -> list[str]:
+    """Apaga contas já liberadas com DELETEs em bloco; devolve os anexos para remoção após o commit."""
     db.flush()
+    aplicar_contexto_auditoria(db)
+    _preparar_exclusao_recorrencias(db, ids)
+    documentos = []
+    for bloco in em_blocos(ids):
+        documentos += [d for (d,) in db.query(ContaPagar.documento_path).filter(ContaPagar.id.in_(bloco)) if d]
+        for modelo in (ContaPagarCentroCustoRateio, PagamentoParcialContaPagar):
+            db.query(modelo).filter(modelo.conta_pagar_id.in_(bloco)).delete(synchronize_session=False)
+        db.query(ContaPagar).filter(ContaPagar.id.in_(bloco)).delete(synchronize_session=False)
+    return documentos
+
+
+def _remover_documentos(documentos: list[str]) -> None:
+    upload_dir = Path(UPLOAD_DIR).resolve()
+    for documento in documentos:
+        caminho = Path(documento).resolve()
+        if upload_dir in caminho.parents and caminho.is_file():
+            try:
+                caminho.unlink()
+            except OSError:
+                logger.warning("conta_documento_delete_failed")
 
 
 @router.post("/contas-pagar/{conta_id}/excluir")
@@ -624,7 +663,7 @@ async def excluir_conta(
             or_(ContaPagar.id == grupo_id, ContaPagar.recorrencia_grupo_id == grupo_id),
         ).order_by(ContaPagar.id).all()
 
-    protegidos = _ids_protegidos(db, contas)
+    protegidos = _ids_protegidos(db, [item.id for item in contas])
     if protegidos and confirmar_conciliacao is True:
         for item in contas:
             if item.id in protegidos:
@@ -639,18 +678,9 @@ async def excluir_conta(
         return RedirectResponse(url=f"{destino}&flash=" + quote_plus(mensagem), status_code=303)
 
     ids = [item.id for item in elegiveis]
-    documentos = [item.documento_path for item in elegiveis if item.documento_path]
-    _preparar_exclusao_recorrencias(db, elegiveis)
-    for item in elegiveis:
-        db.delete(item)
+    documentos = _apagar_contas(db, ids)
     db.commit()
-    for documento in documentos:
-        caminho = Path(documento).resolve()
-        if Path(UPLOAD_DIR).resolve() in caminho.parents and caminho.is_file():
-            try:
-                caminho.unlink()
-            except OSError:
-                logger.warning("conta_documento_delete_failed", extra={"conta_id": conta_id})
+    _remover_documentos(documentos)
     _log(
         db, "Conta a pagar excluída", "contas_pagar",
         usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
@@ -1081,7 +1111,7 @@ async def cancelar_conta(
 @router.post("/contas-pagar/lote/aplicar")
 async def aplicar_lote_contas(
     request: Request,
-    ids: List[int] = Form(...),
+    ids: List[str] = Form([]),
     acao: str = Form(...),
     plano_conta_id: Optional[int] = Form(None),
     centro_custo_id: Optional[int] = Form(None),
@@ -1089,53 +1119,76 @@ async def aplicar_lote_contas(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
     confirmar_conciliacao: bool = Form(False),
+    filtros: str = Form(""),
+    modo: str = Form("ids"),
+    filtros_lote: str = Form(""),
+    total_esperado: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
-    if acao not in {"editar", "excluir"} or not ids or len(set(ids)) > 200:
+    if acao not in {"editar", "excluir"}:
         raise HTTPException(400, "Seleção ou ação inválida.")
-    contas = db.query(ContaPagar).filter(ContaPagar.id.in_(set(ids)), ContaPagar.cliente_id.in_(_ids_clientes_do_usuario(db, usuario))).all()
-    if len(contas) != len(set(ids)):
-        raise HTTPException(404, "Seleção contém contas indisponíveis.")
     def erro(mensagem):
-        return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem + " Nenhuma conta foi alterada."), status_code=303)
+        return RedirectResponse(url_retorno_lote("/contas-pagar", filtros, mensagem + " Nenhuma conta foi alterada."), status_code=303)
     if acao == "editar" and not (plano_conta_id or centro_custo_id or novo_status):
         return erro("Escolha ao menos um campo para editar.")
 
-    protegidos = _ids_protegidos(db, contas)
-    elegiveis = contas if confirmar_conciliacao is True else [conta for conta in contas if conta.id not in protegidos]
-    if not elegiveis:
+    ids_permitidos = _ids_clientes_do_usuario(db, usuario)
+    if modo == "filtro":
+        query = _query_contas(db, ids_permitidos, _filtros_contas(**ler_filtros_lote(filtros_lote)))
+        ids = [i for (i,) in query.with_entities(ContaPagar.id).all()]
+        if not ids or len(ids) != total_esperado:
+            return erro(f"A lista mudou desde a seleção (eram {total_esperado}, agora são {len(ids)}). Confira e selecione novamente.")
+    else:
+        ids = ids_do_lote(ids)
+        if not ids:
+            raise HTTPException(400, "Seleção ou ação inválida.")
+        encontrados = sum(
+            db.query(ContaPagar).filter(ContaPagar.id.in_(bloco), ContaPagar.cliente_id.in_(ids_permitidos)).count()
+            for bloco in em_blocos(ids)
+        )
+        if encontrados != len(ids):
+            raise HTTPException(404, "Seleção contém contas indisponíveis.")
+
+    protegidos = _ids_protegidos(db, ids)
+    if confirmar_conciliacao is not True and len(protegidos) == len(ids):
         return erro("Todas as contas selecionadas têm pagamento ou conciliação.")
 
-    planos, centros = {}, {}
-    for conta in elegiveis:
-        if acao == "excluir":
-            continue
-        if plano_conta_id:
-            planos[conta.id] = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
-            if not planos[conta.id]:
-                return erro("Categoria inválida para um dos clientes selecionados.")
-        if centro_custo_id:
-            centros[conta.id] = db.query(CentroCusto).filter(CentroCusto.id == centro_custo_id, CentroCusto.cliente_id == conta.cliente_id, CentroCusto.ativo == True).first()
-            if not centros[conta.id]:
-                return erro("Centro de custo inválido para um dos clientes selecionados.")
-        status_base = StatusContaPagar.pendente if conta.id in protegidos and confirmar_conciliacao is True else conta.status
-        if novo_status and novo_status != status_base.value and novo_status not in {s.value for s in _status_permitidos(status_base)}:
-            return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
-    if confirmar_conciliacao is True:
-        for conta in elegiveis:
-            if conta.id in protegidos:
-                desconciliar_pagamento(db, conta)
-        protegidos.clear()
-    documentos = []
     if acao == "excluir":
-        _preparar_exclusao_recorrencias(db, elegiveis)
-    for conta in elegiveis:
-        if acao == "excluir":
-            if conta.documento_path:
-                documentos.append(conta.documento_path)
-            db.delete(conta)
-        else:
+        if confirmar_conciliacao is True:
+            for bloco in em_blocos(sorted(protegidos)):
+                for conta in db.query(ContaPagar).filter(ContaPagar.id.in_(bloco)).all():
+                    desconciliar_pagamento(db, conta)
+            protegidos.clear()
+        elegiveis = [i for i in ids if i not in protegidos]
+        documentos = _apagar_contas(db, elegiveis)
+        db.commit()
+        _remover_documentos(documentos)
+    else:
+        contas = []
+        for bloco in em_blocos(ids):
+            contas += db.query(ContaPagar).filter(ContaPagar.id.in_(bloco)).all()
+        if confirmar_conciliacao is not True:
+            contas = [conta for conta in contas if conta.id not in protegidos]
+        planos, centros = {}, {}
+        for conta in contas:
+            if plano_conta_id:
+                planos[conta.id] = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
+                if not planos[conta.id]:
+                    return erro("Categoria inválida para um dos clientes selecionados.")
+            if centro_custo_id:
+                centros[conta.id] = db.query(CentroCusto).filter(CentroCusto.id == centro_custo_id, CentroCusto.cliente_id == conta.cliente_id, CentroCusto.ativo == True).first()
+                if not centros[conta.id]:
+                    return erro("Centro de custo inválido para um dos clientes selecionados.")
+            status_base = StatusContaPagar.pendente if conta.id in protegidos and confirmar_conciliacao is True else conta.status
+            if novo_status and novo_status != status_base.value and novo_status not in {s.value for s in _status_permitidos(status_base)}:
+                return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
+        if confirmar_conciliacao is True:
+            for conta in contas:
+                if conta.id in protegidos:
+                    desconciliar_pagamento(db, conta)
+            protegidos.clear()
+        for conta in contas:
             if plano_conta_id:
                 conta.plano_conta_id = planos[conta.id].id
                 conta.categoria_dre = planos[conta.id].chave
@@ -1145,22 +1198,16 @@ async def aplicar_lote_contas(
                 conta.rateios_centro_custo.append(ContaPagarCentroCustoRateio(centro_custo_id=centro.id, categoria_key=_key_centro_custo(centro), percentual=Decimal("100"), valor=conta.valor))
             if novo_status:
                 conta.status = StatusContaPagar(novo_status)
-    db.commit()
-    for documento in documentos:
-        caminho = Path(documento).resolve()
-        if Path(UPLOAD_DIR).resolve() in caminho.parents and caminho.is_file():
-            try:
-                caminho.unlink()
-            except OSError:
-                logger.warning("conta_documento_delete_failed")
+        elegiveis = [conta.id for conta in contas]
+        db.commit()
     _log(
         db, "Contas a pagar em lote", "contas_pagar", usuario_id=usuario.id, usuario_nome=usuario.nome,
-        detalhes=f"Ação: {acao}; IDs: {sorted(c.id for c in elegiveis)}; ignorados por pagamento/conciliação: {len(protegidos)}",
+        detalhes=f"Ação: {acao}; modo: {'filtro' if modo == 'filtro' else 'seleção'}; IDs: {sorted(elegiveis)}; ignorados por pagamento/conciliação: {len(protegidos)}",
     )
-    mensagem = f"{len(elegiveis)} conta(s) atualizada(s)."
+    mensagem = f"{len(elegiveis)} conta(s) {'excluída(s)' if acao == 'excluir' else 'atualizada(s)'}."
     if protegidos:
-        mensagem += f" {len(protegidos)} não foram alteradas por já estarem pagas ou conciliadas."
-    return RedirectResponse("/contas-pagar?flash=" + quote_plus(mensagem), status_code=303)
+        mensagem += f" {len(protegidos)} não foram {'excluídas' if acao == 'excluir' else 'alteradas'} por já estarem pagas ou conciliadas."
+    return RedirectResponse(url_retorno_lote("/contas-pagar", filtros, mensagem), status_code=303)
 
 
 @router.post("/contas-pagar/{conta_id}/desconciliar")
