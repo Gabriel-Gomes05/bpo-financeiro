@@ -1,0 +1,69 @@
+{# Item de tarefa. Espera no contexto: t, usuario, eh_admin, modulos, hoje, voltar.
+   Opcionais: mostrar_cliente (padrão true), editavel (mostra formulário de edição). #}
+{% set _pode_concluir = eh_admin or t.responsavel_id == usuario.id %}
+{% set _pode_editar = eh_admin or t.criado_por_id == usuario.id %}
+{% set _atrasada = t.prazo and not t.concluida and t.prazo < hoje %}
+<li class="tarefa-item px-5 py-3 {% if t.concluida %}bg-green-50{% elif _atrasada %}bg-red-50/60{% endif %}">
+  <div class="flex items-start gap-3">
+    {% if _pode_concluir %}
+    <form method="post" action="/tarefas/{{ t.id }}/concluir" class="flex-shrink-0 pt-0.5">
+      <input type="hidden" name="voltar" value="{{ voltar }}">
+      <button type="submit" title="{{ 'Reabrir' if t.concluida else 'Concluir' }}"
+              class="flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors
+                     {% if t.concluida %}border-green-500 bg-green-500 text-white{% else %}border-gray-300 hover:border-[#5e93cc]{% endif %}">
+        {% if t.concluida %}<span class="text-xs font-bold">&#10003;</span>{% endif %}
+      </button>
+    </form>
+    {% else %}
+    <span class="mt-0.5 h-6 w-6 flex-shrink-0 rounded-full border-2 {% if t.concluida %}border-green-500 bg-green-500{% else %}border-gray-200{% endif %}"></span>
+    {% endif %}
+
+    <div class="min-w-0 flex-1">
+      <p class="break-words text-sm font-semibold {% if t.concluida %}text-gray-400 line-through{% else %}text-gray-800{% endif %}">{{ t.titulo }}</p>
+      {% if t.descricao %}<p class="mt-0.5 whitespace-pre-wrap break-words text-xs text-gray-500">{{ t.descricao }}</p>{% endif %}
+      <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {% if t.prazo %}
+        <span class="rounded-full px-2 py-0.5 font-semibold {% if _atrasada %}bg-red-100 text-red-700{% elif t.prazo == hoje %}bg-amber-100 text-amber-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+          {% if _atrasada %}Atrasada · {% elif t.prazo == hoje %}Hoje · {% endif %}{{ t.prazo.strftime('%d/%m/%Y') }}
+        </span>
+        {% endif %}
+        {% if mostrar_cliente is not defined or mostrar_cliente %}
+          {% if t.cliente %}<span class="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-700">{{ t.cliente.nome }}</span>
+          {% else %}<span class="rounded-full bg-violet-50 px-2 py-0.5 font-semibold text-violet-700">Pessoal</span>{% endif %}
+        {% endif %}
+        {% if t.modulo and t.modulo in modulos %}<span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{{ modulos[t.modulo][0] }}</span>{% endif %}
+        {% if t.responsavel_id != usuario.id %}<span class="text-gray-400">Responsável: {{ t.responsavel.nome if t.responsavel else '—' }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="flex flex-shrink-0 flex-col items-end gap-1 text-xs">
+      {% if t.cliente_id and t.modulo %}
+      <a href="/tarefas/{{ t.id }}/abrir?destino=modulo" class="rounded-lg bg-[#222049] px-3 py-1.5 font-semibold text-white hover:bg-[#33307a]">Ir para módulo →</a>
+      {% elif t.cliente_id and not t.link %}
+      <a href="/tarefas/{{ t.id }}/abrir" class="rounded-lg border border-[#5e93cc] px-3 py-1.5 font-semibold text-[#315f91] hover:bg-blue-50">Entrar no cliente →</a>
+      {% endif %}
+      {% if t.link %}
+        {% if t.link.startswith('/') %}
+        <a href="/tarefas/{{ t.id }}/abrir?destino=link" class="rounded-lg border border-[#5e93cc] px-3 py-1.5 font-semibold text-[#315f91] hover:bg-blue-50">Abrir link →</a>
+        {% else %}
+        <a href="{{ t.link }}" target="_blank" rel="noopener noreferrer" class="rounded-lg border border-[#5e93cc] px-3 py-1.5 font-semibold text-[#315f91] hover:bg-blue-50">Abrir link ↗</a>
+        {% endif %}
+      {% endif %}
+      {% if editavel and _pode_editar %}
+      <button type="button" onclick="document.getElementById('editar-tarefa-{{ t.id }}').classList.toggle('hidden')" class="font-semibold text-[#5e93cc] hover:underline">Editar</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if editavel and _pode_editar %}
+  <div id="editar-tarefa-{{ t.id }}" class="mt-3 hidden rounded-xl border border-slate-200 bg-slate-50 p-4">
+    {% with tarefa_form=t, acao_form='/tarefas/' ~ t.id ~ '/editar', rotulo_botao='Salvar alterações' %}
+      {% include "partials/tarefa_form.html" %}
+    {% endwith %}
+    <form method="post" action="/tarefas/{{ t.id }}/excluir" class="mt-3" onsubmit="return confirm('Excluir esta tarefa?');">
+      <input type="hidden" name="voltar" value="{{ voltar }}">
+      <button type="submit" class="text-xs font-semibold text-red-600 hover:underline">Excluir tarefa</button>
+    </form>
+  </div>
+  {% endif %}
+</li>

@@ -1,0 +1,65 @@
+{# Formulário de tarefa (criação/edição). Espera: acao_form, rotulo_botao, clientes_tarefa,
+   equipe, eh_admin, modulos, voltar, usuario. Opcionais: tarefa_form (edição), cliente_padrao. #}
+{% set _t = tarefa_form if tarefa_form is defined and tarefa_form else none %}
+{% set _cliente_sel = _t.cliente_id if _t else (cliente_padrao if cliente_padrao is defined else none) %}
+<form method="post" action="{{ acao_form }}" class="grid grid-cols-1 gap-3 md:grid-cols-6">
+  <input type="hidden" name="voltar" value="{{ voltar }}">
+  <div class="md:col-span-4">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Título *</label>
+    <input name="titulo" required maxlength="200" value="{{ _t.titulo if _t else '' }}"
+           placeholder="Ex: Reunião com o cliente / Ver prazo de pagamentos"
+           class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+  </div>
+  <div class="md:col-span-2">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Prazo</label>
+    <input type="date" name="prazo" value="{{ _t.prazo.isoformat() if _t and _t.prazo else '' }}"
+           class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+  </div>
+
+  <div class="md:col-span-{{ 2 if eh_admin else 3 }}">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Vincular a cliente</label>
+    <select name="cliente_id" onchange="tarefaClienteMudou(this)"
+            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+      <option value="">Sem cliente — tarefa pessoal</option>
+      {% for c in clientes_tarefa %}
+      <option value="{{ c.id }}" {% if _cliente_sel == c.id %}selected{% endif %}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="md:col-span-{{ 2 if eh_admin else 3 }}">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Módulo do cliente</label>
+    <select name="modulo" {% if not _cliente_sel %}disabled{% endif %}
+            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400">
+      <option value="">Nenhum</option>
+      {% for chave, info in modulos.items() %}
+      <option value="{{ chave }}" {% if _t and _t.modulo == chave %}selected{% endif %}>{{ info[0] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if eh_admin %}
+  <div class="md:col-span-2">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Responsável</label>
+    <select name="responsavel_id" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+      {% set _resp = _t.responsavel_id if _t else usuario.id %}
+      {% for u in equipe %}
+      <option value="{{ u.id }}" {% if _resp == u.id %}selected{% endif %}>{{ u.nome }}{% if u.id == usuario.id %} (eu){% endif %}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  <div class="md:col-span-6">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Link</label>
+    <input name="link" maxlength="500" value="{{ _t.link if _t and _t.link else '' }}"
+           placeholder="https://... ou um caminho do sistema, ex: /contas-pagar"
+           class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
+  </div>
+  <div class="md:col-span-6">
+    <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Descrição</label>
+    <textarea name="descricao" rows="2" placeholder="Detalhes, pauta da reunião, observações..."
+              class="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">{{ _t.descricao if _t and _t.descricao else '' }}</textarea>
+  </div>
+  <div class="flex justify-end md:col-span-6">
+    <button type="submit" class="rounded-lg bg-[#222049] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#33307a]">{{ rotulo_botao }}</button>
+  </div>
+</form>

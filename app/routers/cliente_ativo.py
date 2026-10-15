@@ -10,6 +10,7 @@ from app.auth import get_usuario_atual, tem_acesso_geral
 from app.database import get_db
 from app.models import ClienteBPO, Usuario
 from app.security import secure_cookie_for
+from app.services import tarefas_service
 
 router = APIRouter()
 
@@ -19,15 +20,20 @@ async def painel_geral(
     request: Request,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
+    visao: Optional[str] = None,
+    mes: Optional[str] = None,
 ):
     query = db.query(ClienteBPO).filter(
         ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None),
     )
     if not tem_acesso_geral(usuario):
         query = query.filter(ClienteBPO.funcionario_id == usuario.id)
+    clientes = query.order_by(ClienteBPO.nome).all()
     response = templates.TemplateResponse("painel.html", {
         "request": request, "usuario": usuario,
-        "clientes": query.order_by(ClienteBPO.nome).all(), "painel_geral": True,
+        "clientes": clientes, "painel_geral": True,
+        "tarefas_por_cliente": tarefas_service.pendentes_por_cliente(db, usuario, [c.id for c in clientes]),
+        **tarefas_service.contexto_minhas_tarefas(db, usuario, visao, mes),
     })
     response.delete_cookie("cliente_ativo", path="/")
     return response

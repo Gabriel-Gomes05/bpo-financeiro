@@ -13,6 +13,7 @@ from app.models import (
     Atendimento, ClienteBPO, ContaPagar, ContaRecorrente, DivergenciaConciliacao,
     FechamentoDiario, StatusConciliacao, StatusContaPagar, TarefaRotina, Usuario, PerfilUsuario,
 )
+from app.services import tarefas_service
 from app.services.alertas_service import _proximo_vencimento
 
 router = APIRouter()
@@ -52,6 +53,13 @@ async def dashboard(
         contexto = _dashboard_coordenador(db, hoje, cliente_ativo_id)
     else:
         contexto = _dashboard_funcionario(db, hoje, usuario, cliente_ativo_id)
+
+    contexto.update(tarefas_service.contexto_minhas_tarefas(
+        db, usuario, request.query_params.get("visao"), request.query_params.get("mes"),
+    ))
+    contexto["tarefas_cliente"] = (
+        tarefas_service.pendentes_do_cliente(db, usuario, cliente_ativo_id) if cliente_ativo_id else []
+    )
 
     contexto["medias"] = _medias_mensais(
         db, hoje, [cliente_ativo_id] if cliente_ativo_id else [c.id for c in clientes], 3,

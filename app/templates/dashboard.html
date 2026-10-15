@@ -36,6 +36,14 @@
 </div>
 {% endif %}
 
+{# Minhas tarefas (lista ou calendário) — só no dashboard geral, sem cliente selecionado #}
+{% if not cliente_foco %}
+<div class="mb-6">
+  {% set base_url = '/' %}
+  {% include "partials/minhas_tarefas.html" %}
+</div>
+{% endif %}
+
 {# ═══════════════════════════════════════════════════════════
    VISÃO FOCADA — aparece para qualquer perfil quando
    há um cliente ativo selecionado
@@ -46,6 +54,30 @@
   <div>
     <h2 class="text-xl font-bold text-gray-800">{{ cliente_foco.nome }}</h2>
     <p class="text-sm text-gray-500 mt-1">{{ hoje.strftime('%d/%m/%Y') }} — dados deste cliente</p>
+  </div>
+
+  <!-- Tarefas vinculadas a este cliente -->
+  {% set voltar = '/' %}
+  <div class="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-blue-100 flex items-center gap-2" style="background:#eff6ff;">
+      <h3 class="font-semibold text-[#222049]">Tarefas deste cliente</h3>
+      <span class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">{{ tarefas_cliente|length }}</span>
+      <a href="/tarefas?cliente={{ cliente_foco.id }}&novo=1" class="ml-auto text-xs font-semibold text-[#315f91] hover:underline">+ Nova tarefa</a>
+      <a href="/tarefas?cliente={{ cliente_foco.id }}" class="text-xs font-semibold text-[#315f91] hover:underline">Ver todas →</a>
+    </div>
+    {% if request.query_params.get('ok_tarefa') %}
+    <p class="bg-green-50 px-5 py-2 text-sm text-green-700">{{ request.query_params.get('ok_tarefa') }}</p>
+    {% elif request.query_params.get('erro_tarefa') %}
+    <p class="bg-red-50 px-5 py-2 text-sm text-red-700">{{ request.query_params.get('erro_tarefa') }}</p>
+    {% endif %}
+    <ul class="divide-y divide-slate-100">
+      {% for t in tarefas_cliente %}
+        {% set mostrar_cliente = false %}
+        {% include "partials/tarefa_item.html" %}
+      {% else %}
+      <li class="px-5 py-4 text-sm text-gray-400">Nenhuma tarefa pendente para este cliente.</li>
+      {% endfor %}
+    </ul>
   </div>
 
   <!-- Alertas de contas recorrentes -->
