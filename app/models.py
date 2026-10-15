@@ -415,6 +415,28 @@ class TarefaRotina(AuditMixin, Base):
     funcionario = relationship("Usuario", foreign_keys=[funcionario_id])
 
 
+class Tarefa(AuditMixin, Base):
+    """Tarefa avulsa da equipe: pessoal (sem cliente) ou vinculada a um cliente."""
+    __tablename__ = "tarefas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String(200), nullable=False)
+    descricao = Column(EncryptedText("tarefas.descricao"))
+    responsavel_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    criado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=True, index=True)
+    modulo = Column(String(40), nullable=True)     # chave de MODULOS_TAREFA (só com cliente)
+    link = Column(String(500), nullable=True)      # URL interna ("/...") ou externa (http/https)
+    prazo = Column(Date, nullable=True)
+    concluida = Column(Boolean, default=False, nullable=False)
+    concluida_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+
+    responsavel = relationship("Usuario", foreign_keys=[responsavel_id])
+    criado_por = relationship("Usuario", foreign_keys=[criado_por_id])
+    cliente = relationship("ClienteBPO", foreign_keys=[cliente_id])
+
+
 class DivergenciaConciliacao(AuditMixin, Base):
     __tablename__ = "divergencias_conciliacao"
 

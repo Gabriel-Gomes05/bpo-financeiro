@@ -29,6 +29,7 @@
   @keyframes painelChegar { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
   .painel-empresas h2 { color: #fff; }
   .painel-empresas .text-slate-500 { color: #dbeafe; }
+  .painel-empresas .minhas-tarefas .bg-white .text-slate-500 { color: #64748b; }
   .empresa-card {
     position: relative;
     display: flex;
@@ -101,6 +102,10 @@
     <h1 class="text-3xl font-bold">Olá, {{ usuario.nome }}.</h1>
     <p class="mt-3 text-blue-100">Escolha uma empresa para começar ou acesse os cadastros no menu lateral.</p>
   </header>
+  <div class="empresa-entrada" style="--entrada: 80ms">
+    {% set base_url = '/painel' %}
+    {% include "partials/minhas_tarefas.html" %}
+  </div>
   <section aria-labelledby="empresas-titulo">
     <div class="flex items-center justify-between mb-5">
       <h2 id="empresas-titulo" class="text-xl font-bold text-slate-800">Suas empresas</h2>
@@ -117,7 +122,9 @@
             </span>
             <span class="empresa-etiqueta">EMPRESA</span>
           </span>
-          <span class="empresa-nome">{{ cliente.nome }}</span>
+          <span class="empresa-nome">{{ cliente.nome }}
+            {% if tarefas_por_cliente.get(cliente.id) %}<span class="ml-2 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 align-middle text-xs font-bold text-amber-700">{{ tarefas_por_cliente[cliente.id] }} tarefa(s)</span>{% endif %}
+          </span>
           <span class="empresa-rodape">Entrar na empresa <span class="empresa-seta" aria-hidden="true">→</span></span>
         </button>
       </form>

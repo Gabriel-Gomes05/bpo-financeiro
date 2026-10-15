@@ -1,0 +1,38 @@
+{# Seção "Minhas tarefas" com alternância lista/calendário.
+   Espera: base_url, visao_tarefas, tarefas_pessoais, calendario_tarefas, usuario, eh_admin, modulos, hoje. #}
+{% set voltar = base_url ~ '?visao=' ~ visao_tarefas ~ ('&mes=' ~ request.query_params.get('mes') if visao_tarefas == 'calendario' and request.query_params.get('mes') else '') %}
+<section aria-labelledby="tarefas-titulo" class="minhas-tarefas">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <h2 id="tarefas-titulo" class="text-xl font-bold text-slate-800">Minhas tarefas</h2>
+    <div class="flex items-center gap-2">
+      <div class="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-semibold shadow-sm" role="group" aria-label="Forma de exibição">
+        <a href="{{ base_url }}?visao=lista" {% if visao_tarefas == 'lista' %}aria-current="true"{% endif %}
+           class="px-3 py-2 {% if visao_tarefas == 'lista' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">Lista</a>
+        <a href="{{ base_url }}?visao=calendario" {% if visao_tarefas == 'calendario' %}aria-current="true"{% endif %}
+           class="px-3 py-2 {% if visao_tarefas == 'calendario' %}bg-[#222049] text-white{% else %}text-slate-600 hover:bg-slate-50{% endif %}">Calendário</a>
+      </div>
+      <a href="/tarefas?novo=1" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-[#2159a5] shadow-sm hover:bg-slate-50">+ Nova tarefa</a>
+    </div>
+  </div>
+  {% if request.query_params.get('ok_tarefa') %}
+  <p class="mb-3 rounded-xl bg-green-50 px-4 py-2 text-sm text-green-700">{{ request.query_params.get('ok_tarefa') }}</p>
+  {% elif request.query_params.get('erro_tarefa') %}
+  <p class="mb-3 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700">{{ request.query_params.get('erro_tarefa') }}</p>
+  {% endif %}
+
+  {% if visao_tarefas == 'calendario' %}
+    {% with cal=calendario_tarefas %}{% include "partials/tarefas_calendario.html" %}{% endwith %}
+  {% else %}
+  <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <ul class="divide-y divide-slate-100">
+      {% for t in tarefas_pessoais %}
+        {% set mostrar_cliente = false %}
+        {% include "partials/tarefa_item.html" %}
+      {% else %}
+      <li class="px-5 py-6 text-center text-sm text-slate-400">Nenhuma tarefa pessoal pendente. <a href="/tarefas?novo=1" class="font-semibold text-[#2159a5] hover:underline">Criar tarefa</a></li>
+      {% endfor %}
+    </ul>
+    <a href="/tarefas" class="block border-t border-slate-100 px-5 py-3 text-right text-xs font-semibold text-[#2159a5] hover:bg-slate-50">Ver todas as tarefas →</a>
+  </div>
+  {% endif %}
+</section>
