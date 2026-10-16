@@ -90,7 +90,7 @@ rotas = (
     "/", "/lancamentos", "/conciliacao", "/conciliacao/lancamentos",
     "/conciliacao/banco", "/contas-pagar",
     "/contas-pagar/conciliacao-cartao", "/contas-pagar/conciliacao-banco",
-    "/fechamento", "/fechamento/mensal", "/contas-pagar/recorrentes", "/tarefas",
+    "/fechamento", "/fechamento/mensal", "/tarefas",
     "/gestao/receitas", "/gestao/despesas", "/gestao/orcamento",
     "/gestao/dre", "/gestao/dre/apresentacao", "/admin/equipe",
     "/admin/clientes", "/admin/funcionarios", "/admin/anotacoes-clientes",

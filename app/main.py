@@ -27,7 +27,6 @@ from app.routers import (
     conciliacao_banco,
     contas_pagar,
     contas_pagar_conciliacao,
-    contas_recorrentes,
     dashboard,
     fechamento,
     gestao,
@@ -105,7 +104,6 @@ app.include_router(dashboard.router)
 app.include_router(lancamentos.router)
 app.include_router(conciliacao.router)
 app.include_router(conciliacao_banco.router)
-app.include_router(contas_recorrentes.router)
 app.include_router(contas_pagar.router)
 app.include_router(contas_pagar_conciliacao.router)
 app.include_router(fechamento.router)

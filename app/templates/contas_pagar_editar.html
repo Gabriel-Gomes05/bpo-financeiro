@@ -66,6 +66,17 @@
       </div>
     </div>
 
+    {% if conta.recorrencia_grupo_id %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Avisar quantos dias antes</label>
+        <input type="number" name="aviso_dias_antes" min="0" max="30" value="{{ conta.aviso_dias_antes if conta.aviso_dias_antes is not none else 3 }}"
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#5e93cc] outline-none" />
+        <p class="mt-1 text-[11px] text-gray-500">Alerta de conta recorrente no dashboard. Com "aplicar a este e aos próximos", vale para a série a partir desta.</p>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
         <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Forma de pagamento</label>

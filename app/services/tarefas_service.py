@@ -21,7 +21,6 @@ MODULOS_TAREFA: dict[str, tuple[str, str]] = {
     "contas_pagar_novo": ("Contas a pagar — Incluir", "/contas-pagar/novo"),
     "aprovacao": ("Contas a pagar — Aprovação", "/fechamento"),
     "fechamento_mensal": ("Fechamento mensal", "/fechamento/mensal"),
-    "contas_recorrentes": ("Contas a pagar — Recorrentes", "/contas-pagar/recorrentes"),
     "gestao_receitas": ("Gestão — Receitas", "/gestao/receitas"),
     "gestao_despesas": ("Gestão — Despesas", "/gestao/despesas"),
     "gestao_orcamento": ("Gestão — Orçamento", "/gestao/orcamento"),

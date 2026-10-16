@@ -10,11 +10,10 @@ from sqlalchemy.orm import Session
 from app.auth import get_usuario_atual
 from app.database import get_db
 from app.models import (
-    Atendimento, ClienteBPO, ContaPagar, ContaRecorrente, DivergenciaConciliacao,
+    Atendimento, ClienteBPO, ContaPagar, DivergenciaConciliacao,
     FechamentoDiario, StatusConciliacao, StatusContaPagar, Usuario, PerfilUsuario,
 )
 from app.services import tarefas_service
-from app.services.alertas_service import _proximo_vencimento
 
 router = APIRouter()
 
@@ -90,20 +89,27 @@ def _medias_mensais(db: Session, hoje: date, ids_clientes: list[int], meses: int
     }
 
 
+AVISO_MAXIMO_DIAS = 30
+
+
 def _alertas_recorrentes(db: Session, hoje: date, ids_clientes: list) -> list:
-    """Retorna contas recorrentes cujo vencimento está dentro da janela de aviso."""
+    """Contas a pagar recorrentes em aberto cujo vencimento está dentro da janela de aviso
+    configurada no lançamento (aviso_dias_antes; padrão de 3 dias)."""
     if not ids_clientes:
         return []
-    contas = db.query(ContaRecorrente).filter(
-        ContaRecorrente.cliente_id.in_(ids_clientes),
-        ContaRecorrente.ativo == True,
+    contas = db.query(ContaPagar).filter(
+        ContaPagar.cliente_id.in_(ids_clientes),
+        ContaPagar.recorrencia_grupo_id.isnot(None),
+        ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
+        ContaPagar.vencimento >= hoje,
+        ContaPagar.vencimento <= hoje + timedelta(days=AVISO_MAXIMO_DIAS),
     ).all()
 
     alertas = []
     for conta in contas:
-        vencimento = _proximo_vencimento(conta.dia_vencimento, hoje)
-        alerta_a_partir = vencimento - timedelta(days=conta.dias_antecedencia)
-        if alerta_a_partir <= hoje <= vencimento:
+        vencimento = conta.vencimento
+        aviso = conta.aviso_dias_antes if conta.aviso_dias_antes is not None else 3
+        if vencimento - timedelta(days=aviso) <= hoje:
             dias = (vencimento - hoje).days
             alertas.append({
                 "conta": conta,

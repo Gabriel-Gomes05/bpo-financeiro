@@ -217,3 +217,13 @@ def test_cards_do_dashboard_contam_tarefas_com_prazo_hoje(db):
     finally:
         dashboard.templates.TemplateResponse = monkey
     assert (ctx["total_tarefas"], ctx["tarefas_concluidas"]) == (2, 1)
+
+
+def test_rotinas_e_tela_de_recorrentes_removidas():
+    import importlib.util
+
+    import app.main as main
+    assert not hasattr(main, "rotinas")
+    assert importlib.util.find_spec("app.routers.rotinas") is None
+    assert importlib.util.find_spec("app.routers.contas_recorrentes") is None
+    assert all(not caminho.startswith("/rotinas") for _, caminho in tarefas_service.MODULOS_TAREFA.values())

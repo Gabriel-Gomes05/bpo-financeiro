@@ -324,6 +324,7 @@ class ContaPagar(AuditMixin, Base):
     recorrencia_intervalo = Column(String(20), nullable=True)   # semanal | quinzenal | mensal | personalizado
     recorrencia_dias = Column(Integer, nullable=True)           # usado quando recorrencia_intervalo == personalizado
     recorrencia_grupo_id = Column(Integer, ForeignKey("contas_pagar.id"), nullable=True)
+    aviso_dias_antes = Column(Integer, nullable=True)            # recorrentes: alerta no dashboard N dias antes
     especialidade = Column(String(100), nullable=True)
     documento_path = Column(EncryptedText("contas_pagar.documento_path"))
     observacao = Column(EncryptedText("contas_pagar.observacao"))
