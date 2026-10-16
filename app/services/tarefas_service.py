@@ -21,7 +21,6 @@ MODULOS_TAREFA: dict[str, tuple[str, str]] = {
     "contas_pagar_novo": ("Contas a pagar — Incluir", "/contas-pagar/novo"),
     "aprovacao": ("Contas a pagar — Aprovação", "/fechamento"),
     "fechamento_mensal": ("Fechamento mensal", "/fechamento/mensal"),
-    "rotinas": ("Rotinas", "/rotinas"),
     "gestao_receitas": ("Gestão — Receitas", "/gestao/receitas"),
     "gestao_despesas": ("Gestão — Despesas", "/gestao/despesas"),
     "gestao_orcamento": ("Gestão — Orçamento", "/gestao/orcamento"),
@@ -161,6 +160,17 @@ def pendentes_por_cliente(db: Session, usuario: Usuario, ids_clientes: list[int]
         Tarefa.responsavel_id == usuario.id, Tarefa.cliente_id.in_(ids_clientes),
     ).group_by(Tarefa.cliente_id).all()
     return dict(linhas)
+
+
+def com_prazo_em(db: Session, dia: date, *, cliente_ids: Optional[list[int]] = None,
+                 responsavel_id: Optional[int] = None) -> list[Tarefa]:
+    """Tarefas (pendentes e concluídas) com prazo no dia — indicadores do dashboard."""
+    query = db.query(Tarefa).filter(Tarefa.deleted_at.is_(None), Tarefa.prazo == dia)
+    if cliente_ids is not None:
+        query = query.filter(Tarefa.cliente_id.in_(cliente_ids))
+    if responsavel_id is not None:
+        query = query.filter(Tarefa.responsavel_id == responsavel_id)
+    return query.all()
 
 
 def pode_editar(usuario: Usuario, tarefa: Tarefa) -> bool:

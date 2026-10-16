@@ -35,7 +35,6 @@ from app.routers import (
     importacoes,
     plano_contas,
     procedimentos,
-    rotinas,
     tarefas,
 )
 from app.security import MaxBodySizeMiddleware, SecurityMiddleware
@@ -86,7 +85,7 @@ async def manter_empresa_selecionada(request: Request, call_next):
     operacional = path == "/" or any(
         path == prefix or path.startswith(prefix + "/")
         for prefix in ("/conciliacao", "/lancamentos", "/contas-pagar", "/fechamento",
-                       "/rotinas", "/gestao", "/admin/taxas-cartao")
+                       "/gestao", "/admin/taxas-cartao")
     )
     if operacional:
         empresa = request.cookies.get("cliente_ativo", "")
@@ -108,7 +107,6 @@ app.include_router(conciliacao_banco.router)
 app.include_router(contas_pagar.router)
 app.include_router(contas_pagar_conciliacao.router)
 app.include_router(fechamento.router)
-app.include_router(rotinas.router)
 app.include_router(gestao.router)
 app.include_router(cliente_ativo.router)
 app.include_router(admin.router)

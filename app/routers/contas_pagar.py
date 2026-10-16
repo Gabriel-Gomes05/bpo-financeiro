@@ -488,6 +488,7 @@ async def salvar_edicao_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
     confirmar_conciliacao: bool = Form(False),
+    aviso_dias_antes: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
         raise HTTPException(403, "Perfil somente leitura.")
@@ -498,7 +499,7 @@ async def salvar_edicao_conta(
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
-
+    vencimento_original = conta.vencimento
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_key, list):
@@ -557,6 +558,18 @@ async def salvar_edicao_conta(
     conta.plano_conta_id = plano.id if plano else None
     conta.categoria_dre = plano.chave if plano else None
     conta.observacao = observacao or None
+    if conta.recorrencia_grupo_id and isinstance(aviso_dias_antes, int):
+        # O aviso não é dado financeiro: vale também para as ocorrências já pagas/conciliadas.
+        alvos = [conta]
+        if escopo_valor == "proximos":
+            alvos = db.query(ContaPagar).filter(
+                ContaPagar.cliente_id == conta.cliente_id,
+                or_(ContaPagar.id == conta.recorrencia_grupo_id,
+                    ContaPagar.recorrencia_grupo_id == conta.recorrencia_grupo_id),
+                ContaPagar.vencimento >= vencimento_original,
+            ).all()
+        for item in alvos:
+            item.aviso_dias_antes = _aviso_dias_antes(aviso_dias_antes)
     db.commit()
     _log(
         db, "Conta a pagar editada", "contas_pagar",
@@ -571,6 +584,14 @@ async def salvar_edicao_conta(
     if mensagem:
         destino += "&flash=" + quote_plus(mensagem)
     return RedirectResponse(url=destino, status_code=303)
+
+
+AVISO_PADRAO_DIAS = 3
+
+
+def _aviso_dias_antes(valor) -> int:
+    """Antecedência do alerta de conta recorrente (0 a 30 dias); vazio usa o padrão."""
+    return max(0, min(30, valor)) if isinstance(valor, int) else AVISO_PADRAO_DIAS
 
 
 def _ids_protegidos(db: Session, ids: list[int]) -> set[int]:
@@ -713,6 +734,7 @@ async def criar_conta(
     recorrencia_intervalo: str = Form("mensal"),
     recorrencia_dias: Optional[int] = Form(None),
     recorrencia_qtd: int = Form(1),
+    aviso_dias_antes: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
@@ -726,6 +748,7 @@ async def criar_conta(
         raise HTTPException(400, "Intervalo de recorrencia invalido.")
     if recorrente and (not 1 <= recorrencia_qtd <= RECORRENCIA_QTD_MAXIMA or (recorrencia_intervalo == "personalizado" and (not recorrencia_dias or not 1 <= recorrencia_dias <= 3660))):
         raise HTTPException(400, "Revise a quantidade e os dias da recorrencia.")
+    aviso = _aviso_dias_antes(aviso_dias_antes) if recorrente else None
     qtd_ocorrencias = max(1, min(recorrencia_qtd or 1, RECORRENCIA_QTD_MAXIMA)) if recorrente else 1
     tipo = TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual
     forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
@@ -771,6 +794,7 @@ async def criar_conta(
         lancado_por_id=usuario.id,
         recorrencia_intervalo=recorrencia_intervalo if recorrente else None,
         recorrencia_dias=recorrencia_dias if recorrente and recorrencia_intervalo == "personalizado" else None,
+        aviso_dias_antes=aviso,
     )
     db.add(conta)
     db.flush()
@@ -815,6 +839,7 @@ async def criar_conta(
                 recorrencia_intervalo=conta.recorrencia_intervalo,
                 recorrencia_dias=conta.recorrencia_dias,
                 recorrencia_grupo_id=conta.id,
+                aviso_dias_antes=conta.aviso_dias_antes,
                 rateios_centro_custo=[ContaPagarCentroCustoRateio(
                     centro_custo_id=r["centro"].id,
                     categoria_key=r["categoria_key"],
@@ -981,6 +1006,7 @@ async def importar_contas(
                         lancado_por_id=usuario.id,
                         recorrencia_intervalo=intervalo if recorrente else None,
                         recorrencia_dias=dias if recorrente and intervalo == "personalizado" else None,
+                        aviso_dias_antes=AVISO_PADRAO_DIAS if recorrente else None,
                     ))
                 novas_series.append(serie)
             except (ValueError, InvalidOperation, OverflowError) as exc:

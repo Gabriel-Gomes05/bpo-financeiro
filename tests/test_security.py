@@ -22,7 +22,6 @@ from app.authorization import Permission, has_permission
 from app.config import APP_URL
 from app.main import app
 from app.models import PerfilUsuario
-from app.routers.rotinas import _render_li
 from app.database import Base, get_db
 from app.security import _origem_permitida, client_ip
 
@@ -145,22 +144,6 @@ def test_secure_cookie_is_disabled_only_for_explicit_private_host(monkeypatch):
     assert not security.secure_cookie_for(private)
     assert security.secure_cookie_for(public)
     assert security.secure_cookie_for(spoofed)
-
-
-def test_rotina_partial_escapes_user_controlled_html():
-    task = SimpleNamespace(
-        id=7,
-        concluida=False,
-        concluida_em=None,
-        descricao='<img src=x onerror="alert(1)">',
-        funcionario=SimpleNamespace(nome="<script>alert(2)</script>"),
-        horario_previsto='"><svg onload=alert(3)>',
-    )
-    rendered = _render_li(task, pode_reverter=False)
-    assert "<script>" not in rendered
-    assert "<img" not in rendered
-    assert "<svg" not in rendered
-    assert "&lt;img" in rendered
 
 
 @pytest.fixture

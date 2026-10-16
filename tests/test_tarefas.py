@@ -194,3 +194,36 @@ def test_painel_e_dashboard_geral_alternam_lista_e_calendario(db):
     assert "Somente tarefas com prazo" not in html and "Tarefa do calendario" in html
     html = asyncio.run(dashboard.dashboard(request("/", query=b"visao=calendario"), db, ana)).body.decode()
     assert "Minhas tarefas" in html and "Somente tarefas com prazo" in html
+
+
+def test_item_escapa_html_informado_pelo_usuario(db):
+    criar(db, 2, titulo='<img src=x onerror="alert(1)">', descricao="<script>alert(2)</script>")
+    html = asyncio.run(cliente_ativo.painel_geral(request("/painel"), db, usuario(db, 2))).body.decode()
+    assert "<img src=x" not in html and "<script>alert(2)" not in html
+    assert "&lt;img" in html
+
+
+def test_cards_do_dashboard_contam_tarefas_com_prazo_hoje(db):
+    hoje = date.today()
+    criar(db, 1, titulo="Hoje A", responsavel_id=2, cliente_id=10, prazo=hoje)
+    criar(db, 1, titulo="Hoje B", responsavel_id=2, cliente_id=10, prazo=hoje)
+    criar(db, 1, titulo="Amanha", responsavel_id=2, cliente_id=10, prazo=hoje + timedelta(days=1))
+    tarefa = db.query(Tarefa).filter_by(titulo="Hoje A").one()
+    asyncio.run(tarefas.alternar_conclusao(tarefa.id, "/", db, usuario(db, 2)))
+    monkey = dashboard.templates.TemplateResponse
+    try:
+        dashboard.templates.TemplateResponse = lambda nome, contexto: contexto
+        ctx = asyncio.run(dashboard.dashboard(request("/", cookies="cliente_ativo=10"), db, usuario(db, 1)))
+    finally:
+        dashboard.templates.TemplateResponse = monkey
+    assert (ctx["total_tarefas"], ctx["tarefas_concluidas"]) == (2, 1)
+
+
+def test_rotinas_e_tela_de_recorrentes_removidas():
+    import importlib.util
+
+    import app.main as main
+    assert not hasattr(main, "rotinas")
+    assert importlib.util.find_spec("app.routers.rotinas") is None
+    assert importlib.util.find_spec("app.routers.contas_recorrentes") is None
+    assert all(not caminho.startswith("/rotinas") for _, caminho in tarefas_service.MODULOS_TAREFA.values())

@@ -14,7 +14,6 @@ class Permission(str, Enum):
     LANCAMENTOS = "lancamentos"
     CONCILIACAO = "conciliacao"
     CONTAS_PAGAR = "contas_pagar"
-    ROTINAS = "rotinas"
     GESTAO = "gestao"
     ADMIN_CLIENTES = "admin_clientes"
     ADMIN_USUARIOS = "admin_usuarios"
@@ -28,7 +27,6 @@ ROLE_PERMISSIONS: dict[PerfilUsuario, frozenset[Permission]] = {
             Permission.LANCAMENTOS,
             Permission.CONCILIACAO,
             Permission.CONTAS_PAGAR,
-            Permission.ROTINAS,
             Permission.GESTAO,
             Permission.ADMIN_CLIENTES,
         }
@@ -38,7 +36,6 @@ ROLE_PERMISSIONS: dict[PerfilUsuario, frozenset[Permission]] = {
             Permission.LANCAMENTOS,
             Permission.CONCILIACAO,
             Permission.CONTAS_PAGAR,
-            Permission.ROTINAS,
             Permission.GESTAO,
         }
     ),
