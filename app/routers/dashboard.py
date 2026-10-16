@@ -11,7 +11,7 @@ from app.auth import get_usuario_atual
 from app.database import get_db
 from app.models import (
     Atendimento, ClienteBPO, ContaPagar, ContaRecorrente, DivergenciaConciliacao,
-    FechamentoDiario, StatusConciliacao, StatusContaPagar, TarefaRotina, Usuario, PerfilUsuario,
+    FechamentoDiario, StatusConciliacao, StatusContaPagar, Usuario, PerfilUsuario,
 )
 from app.services import tarefas_service
 from app.services.alertas_service import _proximo_vencimento
@@ -206,10 +206,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
                 DivergenciaConciliacao.resolvida == False,
             ).count()
 
-            tarefas_hoje = db.query(TarefaRotina).filter(
-                TarefaRotina.cliente_id == cliente_ativo_id,
-                TarefaRotina.data == hoje,
-            ).all()
+            tarefas_hoje = tarefas_service.com_prazo_em(db, hoje, cliente_ids=[cliente_ativo_id])
             tarefas_concluidas = sum(1 for t in tarefas_hoje if t.concluida)
 
             alertas_recorrentes = _alertas_recorrentes(db, hoje, [cliente_ativo_id])
@@ -233,7 +230,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
 
     # ── Visão geral (sem cliente selecionado) ────────────────────────
     total_clientes = db.query(ClienteBPO).filter(ClienteBPO.ativo == True).count()
-    total_tarefas  = db.query(TarefaRotina).filter(TarefaRotina.data == hoje).count()
+    total_tarefas = len(tarefas_service.com_prazo_em(db, hoje))
     total_vencendo = db.query(ContaPagar).filter(
         ContaPagar.vencimento <= hoje, ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
     ).count()
@@ -253,9 +250,7 @@ def _dashboard_coordenador(db: Session, hoje: date, cliente_ativo_id: int | None
         ).all()
         ids_clientes = [c.id for c in clientes_ativos]
 
-        tarefas_hoje = db.query(TarefaRotina).filter(
-            TarefaRotina.funcionario_id == func.id, TarefaRotina.data == hoje,
-        ).all()
+        tarefas_hoje = tarefas_service.com_prazo_em(db, hoje, responsavel_id=func.id)
 
         vencendo = db.query(ContaPagar).filter(
             ContaPagar.cliente_id.in_(ids_clientes),
@@ -318,11 +313,7 @@ def _dashboard_funcionario(
 
     ids_filtro = [c.id for c in clientes_filtro]
 
-    tarefas_hoje = db.query(TarefaRotina).filter(
-        TarefaRotina.funcionario_id == usuario.id,
-        TarefaRotina.data == hoje,
-        TarefaRotina.cliente_id.in_(ids_filtro),
-    ).all()
+    tarefas_hoje = tarefas_service.com_prazo_em(db, hoje, cliente_ids=ids_filtro, responsavel_id=usuario.id)
     tarefas_concluidas = sum(1 for t in tarefas_hoje if t.concluida)
 
     # Contas vencendo — retorna objetos reais quando tem cliente em foco
