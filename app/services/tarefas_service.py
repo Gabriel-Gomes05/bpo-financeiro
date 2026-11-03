@@ -8,6 +8,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import tem_acesso_geral
+from app.errors import com_codigo
 from app.models import ClienteBPO, Tarefa, Usuario
 
 # Módulos que uma tarefa de cliente pode apontar: chave -> (rótulo, caminho)
@@ -43,13 +44,13 @@ def normalizar_link(valor: Optional[str]) -> Optional[str]:
     if not valor:
         return None
     if len(valor) > 500:
-        raise ValueError("Link muito longo.")
+        raise ValueError(com_codigo("FLIC-TAR-009", "Link muito longo (máximo de 500 caracteres)."))
     if link_interno(valor):
         return valor
     parsed = urlparse(valor)
     if parsed.scheme in ("http", "https") and parsed.netloc:
         return valor
-    raise ValueError("Link inválido. Use um endereço http(s) ou um caminho do sistema iniciado por /.")
+    raise ValueError(com_codigo("FLIC-TAR-009"))
 
 
 def clientes_permitidos(db: Session, usuario: Usuario) -> list[ClienteBPO]:

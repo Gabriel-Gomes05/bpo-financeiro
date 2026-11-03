@@ -10,6 +10,7 @@ from app.auth import requer_coordenador
 from app.database import get_db
 from app.jinja import templates
 from app.models import ClienteBPO, PlanoConta, Usuario
+from app.errors import erro
 
 router = APIRouter(prefix="/admin")
 
@@ -28,7 +29,7 @@ def _contexto_cliente(request: Request, db: Session) -> Optional[int]:
         ClienteBPO.id == int(raw), ClienteBPO.ativo.is_(True),
         ClienteBPO.deleted_at.is_(None),
     ).first():
-        raise HTTPException(status_code=400, detail="Selecione uma empresa no painel geral.")
+        raise erro("FLIC-AUT-005")
     return int(raw)
 
 
@@ -109,7 +110,7 @@ async def excluir_plano_conta(request: Request, conta_id: int, db: Session = Dep
     usuario: Usuario = Depends(requer_coordenador)):
     cliente_id = _contexto_cliente(request, db)
     if cliente_id is None:
-        raise HTTPException(status_code=403, detail="Contas padrao protegidas.")
+        raise erro("FLIC-CAD-014")
     conta = db.query(PlanoConta).filter(PlanoConta.id == conta_id, PlanoConta.cliente_id == cliente_id).first()
     if conta:
         conta.ativo = False

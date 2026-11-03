@@ -1,0 +1,4 @@
+{# Selo com o código do erro informado em ?erro=<slug>. Use dentro do aviso de erro da tela. #}
+{% set _codigo = codigo_erro(request.query_params.get('erro')) %}
+<a href="/ajuda/erros#{{ _codigo }}" title="Ver o que significa este código"
+   class="ml-2 inline-block rounded bg-red-100 px-1.5 py-0.5 align-middle font-mono text-[11px] font-bold text-red-700 hover:underline">{{ _codigo }}</a>

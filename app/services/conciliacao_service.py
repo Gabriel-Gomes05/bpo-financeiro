@@ -1,13 +1,15 @@
 import re
 import unicodedata
+from collections import Counter
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import List, Tuple
 
 import pandas as pd
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.errors import com_codigo
 from app.models import (
     Atendimento,
     CondicaoPagamento,
@@ -27,10 +29,96 @@ from app.models import (
 )
 
 
+class ErroImportacao(ValueError):
+    """Problema no arquivo enviado; a mensagem já sai com o código do catálogo."""
+
+    def __init__(self, codigo: str, mensagem: str | None = None):
+        self.codigo = codigo
+        super().__init__(com_codigo(codigo, mensagem))
+
+
+_NUMERO_CSV = re.compile(r"^[+-]?(\d+|\d{1,3}([.,]\d{3})+)([.,]\d+)?$")
+
+
+def _numero_csv(texto: str):
+    """Número de célula CSV em padrão brasileiro (1.234,56) ou internacional (1234.56)."""
+    t = texto.strip().replace(" ", "")
+    if "," in t and "." in t:
+        decimal = "," if t.rfind(",") > t.rfind(".") else "."
+    elif "," in t:
+        decimal = "," if t.count(",") == 1 else None  # uma vírgula é decimal (padrão brasileiro)
+    elif "." in t:
+        # Um ponto seguido de 3 dígitos ("1.234") é milhar; caso contrário ("350.00", "2.5") é decimal.
+        decimal = "." if t.count(".") == 1 and len(t) - t.rfind(".") - 1 != 3 else None
+    else:
+        return int(t)
+    if decimal is None:  # só separadores de milhar
+        return int(t.replace(".", "").replace(",", ""))
+    milhar = "." if decimal == "," else ","
+    return float(t.replace(milhar, "").replace(decimal, "."))
+
+
+def ler_csv(caminho: str) -> pd.DataFrame:
+    """Lê CSV detectando codificação, separador (; , tab) e formato numérico de cada coluna.
+
+    Colunas só com números viram número; o resto fica como texto. Assim "350.00" e "350,00"
+    resultam no mesmo valor, e códigos com zero à esquerda ("0123") não perdem o zero.
+    """
+    for codificacao in ("utf-8-sig", "latin-1"):
+        try:
+            with open(caminho, encoding=codificacao) as arquivo:
+                amostra = arquivo.read(4096)
+            break
+        except UnicodeDecodeError:
+            continue
+    primeira = amostra.splitlines()[0] if amostra else ""
+    separador = max([";", ",", "\t"], key=primeira.count) if primeira else ","
+    df = pd.read_csv(caminho, sep=separador, dtype=str, keep_default_na=False, encoding=codificacao)
+
+    for coluna in df.columns:
+        valores = [v.strip() for v in df[coluna] if v and v.strip()]
+        if not valores or not all(_NUMERO_CSV.match(v.replace(" ", "")) for v in valores):
+            continue
+        if any(len(v) > 1 and v[0] == "0" and v[1].isdigit() for v in valores):
+            continue  # código com zero à esquerda (dígitos de cartão, CPF): mantém texto
+        df[coluna] = [(_numero_csv(v) if v and v.strip() else None) for v in df[coluna]]
+    return df.replace({"": None})
+
+
+class ControleRepetidos:
+    """Evita duplicar registros ao importar o mesmo arquivo de novo.
+
+    Compara por quantidade: se o banco já tem 1 registro igual e o arquivo traz 2,
+    só 1 é ignorado — repetições legítimas dentro do arquivo continuam entrando.
+    """
+
+    def __init__(self, chaves_existentes):
+        self._saldo = Counter(chaves_existentes)
+        self.repetidos = 0
+
+    def repetido(self, chave) -> bool:
+        if self._saldo[chave] > 0:
+            self._saldo[chave] -= 1
+            self.repetidos += 1
+            return True
+        return False
+
+
+def chave_extrato(data, valor, tipo, descricao) -> tuple:
+    """Identidade de uma linha de extrato para detectar reimportação."""
+    return (data, Decimal(str(valor)).quantize(Decimal("0.01")), tipo, _norm_texto(descricao))
+
+
+def aviso_repetidos(controle: "ControleRepetidos") -> str | None:
+    if not controle.repetidos:
+        return None
+    return com_codigo("FLIC-IMP-107", f"{controle.repetidos} linha(s) já importada(s) anteriormente foram ignoradas para não duplicar.")
+
+
 def ler_arquivo_extrato(caminho: str) -> pd.DataFrame:
     """Le Excel ou CSV e normaliza colunas esperadas."""
-    if caminho.endswith(".csv"):
-        df = pd.read_csv(caminho, decimal=",", thousands=".")
+    if caminho.lower().endswith(".csv"):
+        df = ler_csv(caminho)
     else:
         df = pd.read_excel(caminho)
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
@@ -42,13 +130,16 @@ def ler_planilha_bpo_receitas(caminho: str) -> pd.DataFrame:
     try:
         df = pd.read_excel(caminho, sheet_name="RECEITA", header=5)
     except ValueError as exc:
-        raise ValueError("A planilha não contém a aba RECEITA esperada.") from exc
+        raise ErroImportacao("FLIC-IMP-001") from exc
 
     df = df.dropna(how="all").copy()
-    df.columns = [_norm_col(c) for c in df.columns]
+    df.columns = [_norm_col(str(c)) for c in df.columns]
     if "taxa_do_cartao" in df.columns:
-        # No arquivo BPO, a taxa é armazenada como fração (0,0185 = 1,85%).
-        df["taxa_do_cartao"] = pd.to_numeric(df["taxa_do_cartao"], errors="coerce") * 100
+        # No arquivo BPO, a taxa numérica é armazenada como fração (0,0185 = 1,85%).
+        # Texto como "1,85%" segue para o importador, que entende o símbolo de percentual.
+        df["taxa_do_cartao"] = df["taxa_do_cartao"].map(
+            lambda v: v * 100 if isinstance(v, (int, float)) and not pd.isna(v) else v
+        )
     if "destino_do_credito" in df.columns:
         df["banco_recebimento"] = df["destino_do_credito"]
     return df
@@ -66,13 +157,15 @@ def ler_visao_contas_a_receber(caminho: str) -> pd.DataFrame:
                 None,
             )
             if planilha is None:
-                raise ValueError("A planilha não contém a aba Visão Contas a Receber esperada.")
+                raise ErroImportacao("FLIC-IMP-002")
             linhas = list(planilha.iter_rows(values_only=True))
-    except (OSError, ValueError) as exc:
-        raise ValueError("Não foi possível ler o relatório Excel enviado.") from exc
+    except ErroImportacao:
+        raise
+    except (OSError, ValueError, KeyError) as exc:
+        raise ErroImportacao("FLIC-IMP-003") from exc
 
     if not linhas or not linhas[0]:
-        raise ValueError("O relatório está vazio.")
+        raise ErroImportacao("FLIC-IMP-004")
 
     cabecalhos = [_norm_col(str(valor or "")) for valor in linhas[0]]
     df = pd.DataFrame(linhas[1:], columns=cabecalhos).dropna(how="all")
@@ -89,7 +182,7 @@ def ler_visao_contas_a_receber(caminho: str) -> pd.DataFrame:
     }
     df = df.rename(columns=aliases)
     if not {"data", "valor_servico"}.issubset(df.columns):
-        raise ValueError("O relatório não contém as colunas de competência e valor esperadas.")
+        raise ErroImportacao("FLIC-IMP-005")
     for coluna in ("data", "data_prevista_recebimento", "data_credito"):
         if coluna in df.columns:
             df[coluna] = pd.to_datetime(df[coluna], dayfirst=True, errors="coerce")
@@ -218,10 +311,170 @@ def _criar_movimentacao(
 # Importação de lançamentos (Atendimentos via planilha)
 # ---------------------------------------------------------------------------
 
-def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, substituir_pendentes: bool = True) -> int:
-    """Importa Excel/CSV; permite inclusão sem substituir os lançamentos existentes."""
+def _vazio(valor) -> bool:
+    if valor is None:
+        return True
+    try:
+        if pd.isna(valor):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return isinstance(valor, str) and not valor.strip()
+
+
+_FORMATOS_DATA = ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d")
+
+
+def _data_planilha(valor):
+    """Data de célula da planilha. Texto é lido como dia/mês/ano; vazio vira None (nunca NaT)."""
+    if _vazio(valor):
+        return None
+    if isinstance(valor, pd.Timestamp):
+        return valor.date()
+    if isinstance(valor, datetime):
+        return valor.date()
+    if hasattr(valor, "year") and hasattr(valor, "month") and hasattr(valor, "day"):
+        return valor
+    texto = str(valor).strip().split(" ")[0].split("T")[0]
+    for formato in _FORMATOS_DATA:
+        try:
+            return datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    raise ValueError(f"data inválida ({valor})")
+
+
+def _valor_planilha(valor) -> Decimal:
+    """Valor monetário: aceita número, "350,00", "1.234,56" e "R$ 1.234,56"."""
+    if _vazio(valor):
+        raise ValueError("valor vazio")
+    if isinstance(valor, (int, float, Decimal)) and not isinstance(valor, bool):
+        return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    texto = re.sub(r"[R$\s]", "", str(valor).strip(), flags=re.IGNORECASE)
+    negativo = texto.startswith("(") and texto.endswith(")")
+    texto = texto.strip("()")
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    elif texto.count(".") > 1:
+        texto = texto.replace(".", "")
+    try:
+        numero = Decimal(texto)
+    except InvalidOperation:
+        raise ValueError(f"valor inválido ({valor})") from None
+    if not numero.is_finite():
+        raise ValueError(f"valor inválido ({valor})")
+    return (-numero if negativo else numero).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _taxa_planilha(valor, fracao_automatica: bool):
+    """Taxa em percentual. "2,5%" e 2.5 viram 2.50; com fracao_automatica, 0.025
+    (célula formatada como % no Excel) também vira 2.50."""
+    if _vazio(valor):
+        return None
+    texto = str(valor).strip()
+    tem_simbolo = texto.endswith("%")
+    numero = _valor_bruto(texto.rstrip("%").strip()) if tem_simbolo else _valor_bruto(valor)
+    if not tem_simbolo and fracao_automatica and 0 < numero < Decimal("0.2"):
+        numero *= 100
+    if numero < 0 or numero > 100:
+        raise ValueError(f"taxa inválida ({valor})")
+    return numero.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _valor_bruto(valor) -> Decimal:
+    """Número decimal sem arredondar a 2 casas (usado para taxas)."""
+    if isinstance(valor, (int, float, Decimal)) and not isinstance(valor, bool):
+        return Decimal(str(valor))
+    texto = str(valor).strip()
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(texto)
+    except InvalidOperation:
+        raise ValueError(f"número inválido ({valor})") from None
+
+
+def _parcela_planilha(valor) -> tuple[int, int]:
+    """Aceita 1, "1/3", "01/03" e "1 de 3"."""
+    if _vazio(valor):
+        return 1, 1
+    numeros = re.findall(r"\d+", str(valor).split(".")[0] if isinstance(valor, float) else str(valor))
+    if not numeros:
+        raise ValueError(f"parcela inválida ({valor})")
+    parcela = max(1, int(numeros[0]))
+    total = max(parcela, int(numeros[1])) if len(numeros) > 1 else parcela
+    return parcela, total
+
+
+_FORMAS_PLANILHA = {
+    "cartao": FormaPagamento.cartao_credito,
+    "credito": FormaPagamento.cartao_credito,
+    "cartao_credito": FormaPagamento.cartao_credito,
+    "cartao_de_credito": FormaPagamento.cartao_credito,
+    "cartao_credito_a_vista": FormaPagamento.cartao_credito,
+    "cartao_credito_parcelado": FormaPagamento.cartao_credito,
+    "cartao_de_credito_a_vista": FormaPagamento.cartao_credito,
+    "cartao_de_credito_parcelado": FormaPagamento.cartao_credito,
+    "debito": FormaPagamento.cartao_debito,
+    "cartao_debito": FormaPagamento.cartao_debito,
+    "cartao_de_debito": FormaPagamento.cartao_debito,
+    "cartao_debito_a_vista": FormaPagamento.cartao_debito,
+    "cartao_de_debito_a_vista": FormaPagamento.cartao_debito,
+    "pix": FormaPagamento.pix,
+    "pagamento_instantaneo": FormaPagamento.pix,
+    "transferencia": FormaPagamento.transferencia,
+    "transferencia_bancaria": FormaPagamento.transferencia,
+    "ted": FormaPagamento.transferencia,
+    "doc": FormaPagamento.transferencia,
+    "deposito": FormaPagamento.transferencia,
+    "deposito_bancario": FormaPagamento.transferencia,
+    "dinheiro": FormaPagamento.dinheiro,
+    "especie": FormaPagamento.dinheiro,
+    "boleto": FormaPagamento.boleto,
+    "boleto_bancario": FormaPagamento.boleto,
+    "cheque": FormaPagamento.cheque,
+    "debito_automatico": FormaPagamento.debito_automatico,
+    "debito_em_conta": FormaPagamento.debito_automatico,
+}
+
+_CONDICOES_PLANILHA = {
+    "avista": CondicaoPagamento.avista,
+    "a_vista": CondicaoPagamento.avista,
+    "parcelado": CondicaoPagamento.parcelado,
+    "parcelada": CondicaoPagamento.parcelado,
+    "pix": CondicaoPagamento.pix,
+    "transferencia": CondicaoPagamento.transferencia,
+    "dinheiro": CondicaoPagamento.dinheiro,
+}
+
+
+def _referencia_plano(valor) -> list[str]:
+    """Chaves para achar o plano: o texto como veio e, se numérico, com 2 casas
+    (o Excel transforma o código "20.10" no número 20.1)."""
+    if _vazio(valor):
+        return []
+    chaves = [_norm_col(str(valor))]
+    if isinstance(valor, float):
+        chaves.append(_norm_col(f"{valor:.2f}"))
+    return chaves
+
+
+def _chave_atendimento(data, valor, nome, parcela, parcela_total) -> tuple:
+    return (data, Decimal(str(valor)).quantize(Decimal("0.01")), _norm_texto(nome), parcela or 1, parcela_total or 1)
+
+
+def importar_lancamentos(
+    db: Session, cliente_id: int, df: pd.DataFrame, *, substituir_pendentes: bool = True,
+    linha_inicial: int = 2, ocorrencias: list | None = None, taxa_fracao_automatica: bool = True,
+) -> int:
+    """Importa Excel/CSV; permite inclusão sem substituir os lançamentos existentes.
+
+    `linha_inicial` é o número, na planilha, da primeira linha de dados (para as mensagens).
+    `ocorrencias` recebe, linha a linha, o que foi ignorado ou ajustado na importação.
+    """
+    ocorrencias = ocorrencias if ocorrencias is not None else []
     df = df.copy()
-    df.columns = [_norm_col(c) for c in df.columns]
+    df.columns = [_norm_col(str(c)) for c in df.columns]
 
     def _col(*names):
         for n in names:
@@ -251,7 +504,7 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
     c_plano    = _col("plano_de_contas", "plano_contas", "plano_de_conta", "plano_conta", "codigo_plano_conta")
 
     if not c_data or not c_valor:
-        raise ValueError("Arquivo não contém colunas de data e valor reconhecíveis.")
+        raise ErroImportacao("FLIC-IMP-006")
 
     if substituir_pendentes:
         db.query(Atendimento).filter(
@@ -259,33 +512,6 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
             Atendimento.status_conciliacao == StatusConciliacao.pendente,
         ).delete()
         db.commit()
-
-    _FORMA = {
-        "cartao": FormaPagamento.cartao_credito,
-        "cartao_credito": FormaPagamento.cartao_credito,
-        "cartao_de_credito": FormaPagamento.cartao_credito,
-        "credito": FormaPagamento.cartao_credito,
-        "cartao_debito": FormaPagamento.cartao_debito,
-        "cartao_de_debito": FormaPagamento.cartao_debito,
-        "cartao_debito_a_vista": FormaPagamento.cartao_debito,
-        "debito": FormaPagamento.cartao_debito,
-        "cartao_credito_a_vista": FormaPagamento.cartao_credito,
-        "cartao_credito_parcelado": FormaPagamento.cartao_credito,
-        "pix": FormaPagamento.pix,
-        "pagamento_instantaneo": FormaPagamento.pix,
-        "transferencia": FormaPagamento.transferencia,
-        "ted": FormaPagamento.transferencia,
-        "doc": FormaPagamento.transferencia,
-        "dinheiro": FormaPagamento.dinheiro,
-    }
-    _COND = {
-        "avista": CondicaoPagamento.avista,
-        "a_vista": CondicaoPagamento.avista,
-        "parcelado": CondicaoPagamento.parcelado,
-        "pix": CondicaoPagamento.pix,
-        "transferencia": CondicaoPagamento.transferencia,
-        "dinheiro": CondicaoPagamento.dinheiro,
-    }
 
     planos = db.query(PlanoConta).filter(
         PlanoConta.tipo == "receita",
@@ -298,76 +524,96 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
             planos_por_referencia[_norm_col(plano.codigo)] = plano
         planos_por_referencia[_norm_col(plano.nome)] = plano
 
-    importados = 0
-    for _, row in df.iterrows():
+    # Lançamentos já existentes no período do arquivo, para não duplicar ao reimportar.
+    datas_arquivo = []
+    for valor_data in df[c_data]:
         try:
-            data_atend = pd.to_datetime(row[c_data]).date()
-            valor = _decimal_seguro(row[c_valor])
-        except Exception:
-            continue
+            if (d := _data_planilha(valor_data)) is not None:
+                datas_arquivo.append(d)
+        except ValueError:
+            pass
+    existentes = db.query(Atendimento).filter(
+        Atendimento.cliente_id == cliente_id,
+        Atendimento.deleted_at.is_(None),
+        Atendimento.data_atendimento >= min(datas_arquivo),
+        Atendimento.data_atendimento <= max(datas_arquivo),
+    ).all() if datas_arquivo else []
+    repetidos = ControleRepetidos(
+        _chave_atendimento(a.data_atendimento, a.valor_servico, a.nome_paciente, a.parcela_numero, a.parcela_total)
+        for a in existentes
+    )
+
+    importados = 0
+    for posicao, (_, row) in enumerate(df.iterrows()):
+        numero_linha = linha_inicial + posicao
 
         def _v(col, row=row):
-            if col and pd.notna(row.get(col)):
+            if col and not _vazio(row.get(col)):
                 s = str(row[col]).strip()
                 return s or None
             return None
 
-        forma_k = re.sub(r"[^a-z0-9]+", "_", (_v(c_forma) or "").lower()).strip("_")
-        forma = _FORMA.get(forma_k, FormaPagamento.cartao_credito)
-
-        cond_k = re.sub(r"[^a-z0-9]+", "_", (_v(c_condicao) or "").lower()).strip("_")
-        condicao = _COND.get(cond_k, CondicaoPagamento.avista)
-        referencia_plano = _v(c_plano) or ""
-        plano = planos_por_referencia.get(_norm_col(referencia_plano)) if referencia_plano else None
-
-        data_prev = None
-        if c_prev:
+        def _ler(col, conversor, rotulo, row=row):
+            """Campo opcional: se inválido, fica em branco e é registrado."""
+            if not col:
+                return None
             try:
-                data_prev = pd.to_datetime(row[c_prev]).date()
-            except Exception:
-                pass
+                return conversor(row.get(col))
+            except ValueError:
+                ocorrencias.append(com_codigo("FLIC-IMP-106", f"Linha {numero_linha}: {rotulo} inválido(a) ({row.get(col)}); campo deixado em branco."))
+                return None
 
-        data_cred = None
-        if c_credito:
-            try:
-                data_cred = pd.to_datetime(row[c_credito]).date()
-            except Exception:
-                pass
+        if all(_vazio(v) for v in row.tolist()):
+            continue
+        codigo_ignorada = "FLIC-IMP-101"
+        try:
+            data_atend = _data_planilha(row.get(c_data))
+            if data_atend is None:
+                raise ValueError("data vazia")
+            codigo_ignorada = "FLIC-IMP-102"
+            valor = _valor_planilha(row.get(c_valor))
+            if valor <= 0:
+                codigo_ignorada = "FLIC-IMP-103"
+                raise ValueError(f"valor deve ser maior que zero ({row.get(c_valor)})")
+        except ValueError as exc:
+            ocorrencias.append(com_codigo(codigo_ignorada, f"Linha {numero_linha}: ignorada — {exc}."))
+            continue
+
+        forma = None
+        forma_texto = _v(c_forma)
+        if forma_texto:
+            forma = _FORMAS_PLANILHA.get(_norm_col(forma_texto))
+            if forma is None:
+                ocorrencias.append(com_codigo("FLIC-IMP-104", f"Linha {numero_linha}: forma de pagamento \"{forma_texto}\" não reconhecida; ficou em branco."))
+
+        condicao = _CONDICOES_PLANILHA.get(_norm_col(_v(c_condicao) or ""), CondicaoPagamento.avista)
+
+        plano = None
+        if c_plano and not _vazio(row.get(c_plano)):
+            plano = next((planos_por_referencia[k] for k in _referencia_plano(row.get(c_plano)) if k in planos_por_referencia), None)
+            if plano is None:
+                ocorrencias.append(com_codigo("FLIC-IMP-105", f"Linha {numero_linha}: plano de contas \"{_v(c_plano)}\" não encontrado; ficou sem plano."))
 
         digitos = None
-        if c_digitos and pd.notna(row.get(c_digitos)):
-            d = str(row[c_digitos]).strip().split(".")[0]
+        if c_digitos and not _vazio(row.get(c_digitos)):
+            d = re.sub(r"\D", "", str(row[c_digitos]).split(".")[0])
             if d:
                 digitos = d.zfill(4)[-4:]
 
-        taxa = None
-        if c_taxa and pd.notna(row.get(c_taxa)):
-            try:
-                taxa = Decimal(str(row[c_taxa]))
-            except Exception:
-                pass
+        cpf = _v(c_cpf)
+        if cpf and isinstance(row.get(c_cpf), (int, float)):
+            # CPF digitado como número perde os zeros à esquerda no Excel.
+            cpf = str(int(row[c_cpf])).zfill(11)
 
-        liquido = None
-        if c_liquido and pd.notna(row.get(c_liquido)):
-            try:
-                liquido = _decimal_seguro(row[c_liquido])
-            except Exception:
-                pass
-
-        parcela = parcela_total = 1
-        if c_parcela and pd.notna(row.get(c_parcela)):
-            try:
-                partes = str(row[c_parcela]).split("/")
-                parcela = max(1, int(float(partes[0])))
-                parcela_total = max(parcela, int(partes[1])) if len(partes) == 2 else parcela
-            except (ValueError, OverflowError):
-                parcela = parcela_total = 1
+        parcela, parcela_total = _ler(c_parcela, _parcela_planilha, "parcela") or (1, 1)
+        if repetidos.repetido(_chave_atendimento(data_atend, valor, _v(c_nome), parcela, parcela_total)):
+            continue
 
         db.add(Atendimento(
             cliente_id=cliente_id,
             data_atendimento=data_atend,
             nome_paciente=_v(c_nome),
-            cpf_paciente=_v(c_cpf),
+            cpf_paciente=cpf,
             medico=_v(c_medico),
             especialidade=_v(c_espec),
             tipo_servico=_v(c_tipo_srv),
@@ -377,19 +623,21 @@ def importar_lancamentos(db: Session, cliente_id: int, df: pd.DataFrame, *, subs
             condicao_pagamento=condicao,
             parcela_numero=parcela,
             parcela_total=parcela_total,
-            data_prevista_recebimento=data_prev or data_atend,
+            data_prevista_recebimento=_ler(c_prev, _data_planilha, "data prevista") or data_atend,
             forma_pagamento=forma,
             ultimos_digitos_cartao=digitos,
             bandeira_cartao=_v(c_bandeira),
-            taxa_cartao=taxa,
-            valor_liquido=liquido,
-            data_credito=data_cred,
+            taxa_cartao=_ler(c_taxa, lambda v: _taxa_planilha(v, taxa_fracao_automatica), "taxa"),
+            valor_liquido=_ler(c_liquido, lambda v: None if _vazio(v) else _valor_planilha(v), "valor líquido"),
+            data_credito=_ler(c_credito, _data_planilha, "data do crédito"),
             banco_recebimento=_v(c_banco),
             status_conciliacao=StatusConciliacao.pendente,
             observacao=_v(c_obs),
         ))
         importados += 1
 
+    if aviso := aviso_repetidos(repetidos):
+        ocorrencias.append(aviso)
     db.commit()
     return importados
 
@@ -432,7 +680,7 @@ def parse_ofx(caminho: str) -> pd.DataFrame:
         registros.append({"data": data, "valor": float(valor), "descricao": memo, "fitid": fitid})
 
     if not registros:
-        raise ValueError("Nenhuma transação encontrada no arquivo OFX.")
+        raise ErroImportacao("FLIC-IMP-011")
 
     df = pd.DataFrame(registros)
 
@@ -617,7 +865,7 @@ def conciliar_cartao(
     col_descricao = _extrair_coluna(df, ["descricao", "historico", "titulo", "estabelecimento"])
 
     if col_valor is None or col_data is None:
-        raise ValueError("Arquivo nao contem colunas de valor e data reconheciveis.")
+        raise ErroImportacao("FLIC-IMP-006")
 
     for idx, row in df.iterrows():
         try:
@@ -730,7 +978,7 @@ def conciliar_pix_ted(
     col_cpf_meio  = _extrair_coluna(df, ["cpf_digitos_meio", "cpf_meio", "cpf_6_digitos", "digitos_cpf"])
 
     if col_valor is None or col_data is None:
-        raise ValueError("Arquivo nao contem colunas de valor e data reconheciveis.")
+        raise ErroImportacao("FLIC-IMP-006")
 
     for idx, row in df.iterrows():
         try:
@@ -830,8 +1078,20 @@ def importar_movimentacoes_bancarias(
     col_fitid     = _extrair_coluna(df, ["fitid", "identificador_externo", "id_transacao"])
 
     if col_valor is None or col_data is None:
-        raise ValueError("Arquivo nao contem colunas de valor e data reconheciveis.")
+        raise ErroImportacao("FLIC-IMP-006")
 
+    _datas = pd.to_datetime(df[col_data.name], errors="coerce").dropna()
+    existentes = db.query(MovimentacaoBancaria).filter(
+        MovimentacaoBancaria.cliente_id == cliente_id,
+        MovimentacaoBancaria.tipo == "pix_ted",
+        (MovimentacaoBancaria.conta_bancaria_id == conta_bancaria_id) if conta_bancaria_id
+        else MovimentacaoBancaria.conta_bancaria_id.is_(None),
+        MovimentacaoBancaria.data_movimento >= _datas.min().date(),
+        MovimentacaoBancaria.data_movimento <= _datas.max().date(),
+    ).all() if len(_datas) else []
+    repetidos = ControleRepetidos(
+        chave_extrato(m.data_movimento, m.valor, m.sentido, m.descricao) for m in existentes if not m.identificador_externo
+    )
     importados = 0
 
     for _, row in df.iterrows():
@@ -866,6 +1126,8 @@ def importar_movimentacoes_bancarias(
             if col_descricao is not None and pd.notna(row.get(col_descricao.name))
             else None
         )
+        if not fitid and repetidos.repetido(chave_extrato(data_movimento, valor, sentido, descricao)):
+            continue
 
         mov = _criar_movimentacao(
             db=db,
@@ -887,7 +1149,7 @@ def importar_movimentacoes_bancarias(
         importados += 1
 
     db.commit()
-    return {"importados": importados}
+    return {"importados": importados, "repetidos": repetidos.repetidos, "aviso": aviso_repetidos(repetidos)}
 
 
 def gerar_transferencias_cartao(db: Session, cliente_id: int) -> int:
@@ -1017,6 +1279,7 @@ def importar_vendas_cartao(
     cliente_id: int,
     df: pd.DataFrame,
     origem_arquivo: str,
+    estatisticas: dict | None = None,
 ) -> int:
     """
     Importa extrato da maquininha como VendaCartao individuais.
@@ -1044,11 +1307,21 @@ def importar_vendas_cartao(
     c_desc     = _col("descricao", "estabelecimento", "historico")
 
     if not c_bruto or not c_data_p:
-        raise ValueError(
+        raise ErroImportacao(
+            "FLIC-IMP-006",
             "Arquivo não contém colunas de valor e data de pagamento reconhecíveis. "
-            "Colunas necessárias: valor_bruto (ou valor), data_pagamento (ou data_credito)."
+            "Colunas necessárias: valor_bruto (ou valor), data_pagamento (ou data_credito).",
         )
 
+    _datas = pd.to_datetime(df[c_data_p], errors="coerce").dropna()
+    existentes = db.query(VendaCartao).filter(
+        VendaCartao.cliente_id == cliente_id,
+        VendaCartao.data_pagamento >= _datas.min().date(),
+        VendaCartao.data_pagamento <= _datas.max().date(),
+    ).all() if len(_datas) else []
+    repetidos = ControleRepetidos(
+        (v.data_venda, v.data_pagamento, Decimal(str(v.valor_bruto)), v.ultimos_digitos, v.parcelas) for v in existentes
+    )
     importados = 0
     for _, row in df.iterrows():
         try:
@@ -1092,6 +1365,9 @@ def importar_vendas_cartao(
             except Exception:
                 pass
 
+        if repetidos.repetido((data_venda, data_pgto, valor_bruto, digitos, parcelas)):
+            continue
+
         bandeira = _v(c_bandeira)
         if taxa is None:
             taxa_cadastrada = _taxa_cartao_para_parcelas(
@@ -1132,6 +1408,8 @@ def importar_vendas_cartao(
         importados += 1
 
     db.commit()
+    if estatisticas is not None:
+        estatisticas.update(repetidos=repetidos.repetidos, aviso=aviso_repetidos(repetidos))
     return importados
 
 
@@ -1157,7 +1435,7 @@ def fechar_lote_dia(
 
     vendas = db.query(VendaCartao).filter(*filtro).all()
     if not vendas:
-        raise ValueError("Nenhuma venda pendente encontrada para fechar.")
+        raise ErroImportacao("FLIC-CON-015")
 
     bandeira_lote = bandeira or vendas[0].bandeira or "Outros"
     valor_bruto   = sum(v.valor_bruto for v in vendas)
@@ -1214,8 +1492,15 @@ def importar_extrato_conta_corrente(
     col_tipo      = _extrair_coluna(df, ["tipo", "type", "dc", "natureza", "debcred"])
 
     if col_valor is None or col_data is None:
-        raise ValueError("Arquivo não contém colunas de valor e data reconhecíveis.")
+        raise ErroImportacao("FLIC-IMP-006")
 
+    _datas = pd.to_datetime(df[col_data.name], errors="coerce").dropna()
+    existentes = db.query(ExtratoLinhaBancaria).filter(
+        ExtratoLinhaBancaria.cliente_id == cliente_id,
+        ExtratoLinhaBancaria.data >= _datas.min().date(),
+        ExtratoLinhaBancaria.data <= _datas.max().date(),
+    ).all() if len(_datas) else []
+    repetidos = ControleRepetidos(chave_extrato(l.data, l.valor, l.tipo, l.descricao) for l in existentes)
     importados = 0
 
     for idx, row in df.iterrows():
@@ -1242,6 +1527,9 @@ def importar_extrato_conta_corrente(
             else None
         )
 
+        if repetidos.repetido(chave_extrato(data_linha, valor, tipo, descricao)):
+            continue
+
         linha = ExtratoLinhaBancaria(
             cliente_id=cliente_id,
             data=data_linha,
@@ -1256,4 +1544,4 @@ def importar_extrato_conta_corrente(
         importados += 1
 
     db.commit()
-    return {"importados": importados}
+    return {"importados": importados, "repetidos": repetidos.repetidos, "aviso": aviso_repetidos(repetidos)}

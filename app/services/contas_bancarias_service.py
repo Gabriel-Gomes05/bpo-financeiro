@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException
 
 from app.models import ContaBancaria, MovimentacaoBancaria, StatusMovimentacaoBancaria, TipoContaBancaria
+from app.errors import erro
 
 
 def conta_do_cliente(db, cliente_id, conta_id, bloquear=False):
@@ -15,21 +16,21 @@ def conta_do_cliente(db, cliente_id, conta_id, bloquear=False):
     )
     conta = (query.with_for_update() if bloquear else query).first()
     if not conta:
-        raise HTTPException(404, "Conta bancária indisponível para este cliente.")
+        raise erro("FLIC-CON-007")
     return conta
 
 
 def registrar_transferencia(db, cliente_id, origem_id, destino_id, valor, data, descricao="", token=None):
     if origem_id == destino_id:
-        raise HTTPException(400, "Escolha contas diferentes para origem e destino.")
+        raise erro("FLIC-CON-002", "Escolha contas diferentes para origem e destino.")
     if not valor.is_finite() or not Decimal("0") < valor <= Decimal("9999999999.99") or valor != valor.quantize(Decimal("0.01")):
-        raise HTTPException(400, "Informe um valor positivo com até duas casas decimais.")
+        raise erro("FLIC-CON-008")
     # Ordem fixa evita deadlocks em transferências simultâneas entre as mesmas contas.
     contas = {id_: conta_do_cliente(db, cliente_id, id_, True) for id_ in sorted([origem_id, destino_id])}
     try:
         grupo = str(UUID(token)) if token else str(uuid4())
     except ValueError:
-        raise HTTPException(400, "Identificação da transferência inválida.")
+        raise erro("FLIC-CON-009")
     existente = db.query(MovimentacaoBancaria).filter(
         MovimentacaoBancaria.cliente_id == cliente_id,
         MovimentacaoBancaria.identificador_externo == f"transferencia:{grupo}:pagamento",

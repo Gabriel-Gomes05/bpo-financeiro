@@ -18,7 +18,7 @@
     {% elif erro == 'perfil_proprio' %}Você não pode retirar o perfil de coordenador da própria conta.
     {% elif erro == 'senha_curta' %}A nova senha deve ter pelo menos 6 caracteres e no máximo 72 bytes.
     {% else %}Não foi possível concluir a operação. Confira os dados e tente novamente.{% endif %}
-  </div>
+  {% include "partials/codigo_erro.html" %}</div>
   {% endif %}
 
   <div class="bg-white rounded-xl border border-gray-200 shadow-sm">

@@ -10,7 +10,7 @@
   </section>
 
   {% if request.query_params.get('erro') %}
-  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Você não possui acesso a esse cliente ou ele não foi encontrado.</div>
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Você não possui acesso a esse cliente ou ele não foi encontrado.{% include "partials/codigo_erro.html" %}</div>
   {% endif %}
 
   <section class="rounded-xl border border-slate-200 bg-white shadow-sm">

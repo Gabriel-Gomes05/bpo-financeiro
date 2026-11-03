@@ -1,5 +1,6 @@
 import json
 import logging
+from urllib.parse import quote_plus
 import os
 import uuid
 from datetime import date as date_type
@@ -39,6 +40,7 @@ from app.models import (
     VendaCartao,
 )
 from app.services.conciliacao_service import (
+    ErroImportacao,
     buscar_sugestao,
     buscar_sugestao_venda,
     fechar_lote_dia,
@@ -47,7 +49,7 @@ from app.services.conciliacao_service import (
     ler_arquivo_extrato,
 )
 from app.services.log_service import registrar as _log
-from app.errors import public_import_error
+from app.errors import com_codigo, public_import_error
 
 router = APIRouter()
 require_conciliacao = require_permission(Permission.CONCILIACAO)
@@ -236,6 +238,7 @@ async def pagina_conciliacao_cartao(
     ctx = _ctx(db, usuario, cliente_id, buscar_venda, termo)
     return templates.TemplateResponse("conciliacao_cartao.html", {
         "request": request, "usuario": usuario, **ctx,
+        "flash_error": request.query_params.get("flash_error"),
     })
 
 
@@ -259,16 +262,22 @@ async def importar_extrato_maquininha(
             {".csv", ".xlsx", ".xls"},
         )
         df = ler_arquivo_extrato(caminho)
-        total = importar_vendas_cartao(db, cliente_id, df, nome_original)
-        flash_success = (
-            f"{total} venda(s) importada(s) de '{nome_original}'. "
-            "As correspondências encontradas estão disponíveis como sugestões."
-        )
+        estatisticas: dict = {}
+        total = importar_vendas_cartao(db, cliente_id, df, nome_original, estatisticas=estatisticas)
+        flash_success = " ".join(filter(None, [
+            f"{total} venda(s) importada(s) de '{nome_original}'.",
+            "As correspondências encontradas estão disponíveis como sugestões.",
+            estatisticas.get("aviso"),
+        ]))
         _log(db, "Extrato de maquininha importado", "conciliacao_cartao",
              usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
              detalhes=f"{total} linha(s) de '{nome_original}' importada(s) para revisão",
              ip=request.client.host if request.client else None)
+    except ErroImportacao as exc:
+        db.rollback()
+        flash_error = str(exc)
     except Exception:
+        db.rollback()
         flash_error = public_import_error(logger, "importar_extrato_maquininha")
     finally:
         try:
@@ -660,10 +669,18 @@ async def fechar_lote(
             url=f"/conciliacao/banco?cliente_id={cliente_id}&lote_fechado={lote.id}",
             status_code=303,
         )
+    except ErroImportacao as exc:
+        db.rollback()
+        mensagem = str(exc)
     except Exception:
-        logger.exception("fechar_lote_failed")
+        db.rollback()
+        logger.exception("fechar_lote_failed", extra={"error_code": "FLIC-CON-016"})
+        mensagem = com_codigo("FLIC-CON-016")
 
-    return RedirectResponse(url=f"/conciliacao?cliente_id={cliente_id}", status_code=303)
+    return RedirectResponse(
+        url=f"/conciliacao?cliente_id={cliente_id}&flash_error=" + quote_plus(mensagem),
+        status_code=303,
+    )
 
 
 async def _reabrir_lote_duplicado_removido(
@@ -839,16 +856,23 @@ async def importar_lancamentos_conciliacao(
             {".csv", ".xlsx", ".xls"},
         )
         df = ler_arquivo_extrato(caminho)
-        total = importar_lancamentos(db, cliente_id, df)
-        flash_success = (
-            f"{total} lancamento(s) importado(s) de '{nome_original}'. "
-            "As correspondências encontradas estão disponíveis como sugestões."
-        )
+        ocorrencias: list[str] = []
+        # Inclui sem apagar os lançamentos pendentes já cadastrados (antes eram substituídos).
+        total = importar_lancamentos(db, cliente_id, df, substituir_pendentes=False, ocorrencias=ocorrencias)
+        flash_success = " ".join([
+            f"{total} lançamento(s) importado(s) de '{nome_original}'.",
+            "As correspondências encontradas estão disponíveis como sugestões.",
+            *ocorrencias[:5],
+        ])
         _log(db, "Lançamentos importados", "lancamentos",
              usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
              detalhes=f"{total} linha(s) de '{nome_original}'",
              ip=request.client.host if request.client else None)
+    except ErroImportacao as exc:
+        db.rollback()
+        flash_error = str(exc)
     except Exception:
+        db.rollback()
         flash_error = public_import_error(logger, "importar_lancamentos_conciliacao")
     finally:
         try:

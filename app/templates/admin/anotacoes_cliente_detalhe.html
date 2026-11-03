@@ -13,7 +13,7 @@
   {% if request.query_params.get('sucesso') %}
   <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Anotação salva com sucesso.</div>
   {% elif request.query_params.get('erro') %}
-  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível concluir a operação. Confira os campos ou a sua permissão.</div>
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível concluir a operação. Confira os campos ou a sua permissão.{% include "partials/codigo_erro.html" %}</div>
   {% endif %}
 
   <section class="rounded-xl border border-slate-200 bg-white shadow-sm">

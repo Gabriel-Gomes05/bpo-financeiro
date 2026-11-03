@@ -20,6 +20,7 @@ from app.models import (
     StatusContaPagar, StatusMovimentacaoBancaria, StatusTransferenciaCartao,
     TransferenciaCartao, Usuario,
 )
+from app.errors import erro
 
 ROOT = Path(__file__).resolve().parents[2]
 require_gestao = require_permission(Permission.GESTAO)
@@ -347,13 +348,13 @@ async def pdf_aprovacao(
     cliente_id = cliente_id_cookie or cliente_id
     ids_permitidos = [c.id for c in clientes_do_usuario(db, usuario)]
     if cliente_id not in ids_permitidos:
-        raise HTTPException(status_code=404)
+        raise erro("FLIC-AUT-004")
 
     data_obj, _ = _parse_data_aprovacao(data)
     saldo_conta = _parse_saldo(saldo)
     cliente = db.query(ClienteBPO).filter(ClienteBPO.id == cliente_id).first()
     if not cliente:
-        raise HTTPException(status_code=404)
+        raise erro("FLIC-AUT-004")
 
     contas = _contas_para_aprovacao(db, cliente_id, data_obj)
     total_despesas = sum((c.valor or Decimal("0")) for c in contas)

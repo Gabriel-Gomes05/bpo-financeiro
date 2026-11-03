@@ -1,0 +1,9 @@
+{# Mostra ?flash_success= e ?flash_error= enviados pelo redirecionamento após uma ação. #}
+{% set _ok = request.query_params.get('flash_success') %}
+{% set _erro = request.query_params.get('flash_error') %}
+{% if _ok %}
+<div class="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">✓ {{ _ok }}</div>
+{% endif %}
+{% if _erro %}
+<div class="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">⚠ {{ _erro }}</div>
+{% endif %}

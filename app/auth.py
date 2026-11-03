@@ -25,6 +25,7 @@ from app.config import (
 from app.database import get_db
 from app.models import PerfilUsuario, Usuario
 from app.redis_client import redis_async, redis_sync
+from app.errors import erro
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ def token_revogado(jti: str) -> bool:
         return bool(redis_sync().exists(_revocation_key(jti)))
     except RedisError as exc:
         logger.error("redis_revocation_check_failed", exc_info=exc)
-        raise HTTPException(status_code=503, detail="Serviço de autenticação indisponível.") from exc
+        raise erro("FLIC-AUT-003", "Serviço de autenticação indisponível.") from exc
 
 
 async def token_revogado_async(jti: str) -> bool:
@@ -175,7 +176,7 @@ def get_usuario_atual(
 
 def requer_coordenador(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario:
     if usuario.perfil != PerfilUsuario.coordenador:
-        raise HTTPException(status_code=403, detail="Acesso não permitido para este perfil.")
+        raise erro("FLIC-AUT-001")
     return usuario
 
 

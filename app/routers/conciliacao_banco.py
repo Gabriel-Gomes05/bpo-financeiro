@@ -42,6 +42,7 @@ from app.models import (
     Usuario,
 )
 from app.services.conciliacao_service import (
+    ErroImportacao,
     buscar_sugestao,
     conciliar_pix_ted,
     importar_extrato_conta_corrente,
@@ -53,7 +54,7 @@ from app.services.conciliacao_service import (
     parse_ofx,
 )
 from app.services.log_service import registrar as _log
-from app.errors import public_import_error
+from app.errors import com_codigo, erro, public_import_error
 
 from app.services.contas_bancarias_service import conta_do_cliente, registrar_transferencia, saldo_previsto
 
@@ -186,21 +187,21 @@ async def criar_regra_bancaria(
     db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
     if acao not in {"transferencia", "conciliar_receita", "conciliar_despesa"} or not nome.strip() or not padrao_descricao.strip():
-        raise HTTPException(400, "Informe o tipo, nome e texto da regra.")
+        raise erro("FLIC-CON-001")
     if conta_origem_id:
         conta_do_cliente(db, cliente_id, conta_origem_id)
     plano = None
     if acao == "transferencia":
         if not conta_origem_id or not conta_destino_id or conta_origem_id == conta_destino_id:
-            raise HTTPException(400, "Informe contas de origem e destino diferentes.")
+            raise erro("FLIC-CON-002")
         conta_do_cliente(db, cliente_id, conta_destino_id)
     else:
         tipo_plano = "receita" if acao == "conciliar_receita" else "despesa"
         plano = _plano_valido(db, cliente_id, plano_conta_id or 0, tipo_plano)
         if not plano:
-            raise HTTPException(400, "Selecione um plano de contas compatível.")
+            raise erro("FLIC-CON-003")
     db.add(RegraNegocioBancaria(
         cliente_id=cliente_id, nome=nome.strip(), padrao_descricao=padrao_descricao.strip(),
         acao=acao, conta_origem_id=conta_origem_id,
@@ -219,7 +220,7 @@ async def excluir_regra_bancaria(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404)
+        raise erro("FLIC-AUT-004")
     regra = db.query(RegraNegocioBancaria).filter(
         RegraNegocioBancaria.id == regra_id, RegraNegocioBancaria.cliente_id == cliente_id,
     ).first()
@@ -237,14 +238,14 @@ async def cadastrar_conta_bancaria(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
     if not nome.strip() or len(nome.strip()) > 100 or not banco.strip() or not numero.strip():
-        raise HTTPException(400, "Informe nome, banco e número da conta.")
+        raise erro("FLIC-CON-004")
     if not saldo.is_finite() or abs(saldo) > Decimal("999999999999.99") or saldo != saldo.quantize(Decimal("0.01")):
-        raise HTTPException(400, "Saldo inválido.")
+        raise erro("FLIC-CON-005")
     existentes = db.query(ContaBancaria).filter(ContaBancaria.cliente_id == cliente_id).all()
     if any((c.banco or "").strip().casefold() == banco.strip().casefold() and (c.agencia or "").strip() == agencia.strip() and (c.conta or "").strip() == numero.strip() for c in existentes):
-        raise HTTPException(409, "Esta conta já está cadastrada para o cliente.")
+        raise erro("FLIC-CON-006")
     conta = ContaBancaria(cliente_id=cliente_id, nome=nome.strip(), banco=banco.strip(), agencia=agencia.strip() or None,
         conta=numero.strip(), tipo=TipoContaBancaria.bancaria, ativo=True, saldo_atual=saldo,
         saldo_data_referencia=datetime.combine(data_saldo, datetime.min.time()), saldo_atualizado_em=datetime.now())
@@ -263,7 +264,7 @@ async def transferir_entre_contas(
     db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
     grupo = registrar_transferencia(db, cliente_id, origem_id, destino_id, valor, data_transferencia, descricao, token)
     db.commit()
     _log(db, "Transferência interna registrada", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"Transferência {grupo}; origem #{origem_id}; destino #{destino_id}; valor {valor}")
@@ -712,9 +713,9 @@ def _conta_bancaria_do_ofx(db: Session, cliente_id: int, df) -> ContaBancaria:
     if db.info.get("banco_conta_id"):
         selecionada = conta_do_cliente(db, cliente_id, db.info["banco_conta_id"])
         if conta and conta.id != selecionada.id:
-            raise ValueError("O OFX pertence a outra conta cadastrada.")
+            raise ErroImportacao("FLIC-IMP-009")
         if selecionada.conta and numero and selecionada.conta.strip() != numero:
-            raise ValueError("O numero da conta do OFX difere da conta selecionada.")
+            raise ErroImportacao("FLIC-IMP-010")
         conta = selecionada
     if not conta:
         conta = ContaBancaria(
@@ -893,11 +894,11 @@ async def pagina_banco(
     elif manual_criado == "movimentacao":
         flash_success = "Movimentação manual criada no extrato e marcada para conciliação."
     elif manual_criado == "movimentacao_invalida":
-        flash_error = "Selecione uma conta bancária ou informe banco e número da nova conta."
+        flash_error = com_codigo("FLIC-CON-012")
     elif manual_criado == "parcial_invalido":
-        flash_error = "O pagamento parcial deve ser maior que zero e não pode ultrapassar o saldo da despesa."
+        flash_error = com_codigo("FLIC-CON-013")
     elif manual_criado == "rateio_invalido":
-        flash_error = "Rateio inválido: use centros diferentes e feche exatamente 100%."
+        flash_error = com_codigo("FLIC-CON-014")
     if lote_fechado:
         lote = db.query(TransferenciaCartao).filter(TransferenciaCartao.id == lote_fechado).first()
         if lote:
@@ -1173,12 +1174,19 @@ async def importar_lancamentos_banco(
             {".csv", ".xlsx", ".xls"},
         )
         df = ler_arquivo_extrato(caminho)
-        total = importar_lancamentos(db, cliente_id, df)
-        flash_success = (
-            f"{total} lancamento(s) importado(s) de '{nome_original}'. "
-            "As correspondências encontradas estão disponíveis como sugestões."
-        )
+        ocorrencias: list[str] = []
+        # Inclui sem apagar os lançamentos pendentes já cadastrados (antes eram substituídos).
+        total = importar_lancamentos(db, cliente_id, df, substituir_pendentes=False, ocorrencias=ocorrencias)
+        flash_success = " ".join([
+            f"{total} lançamento(s) importado(s) de '{nome_original}'.",
+            "As correspondências encontradas estão disponíveis como sugestões.",
+            *ocorrencias[:5],
+        ])
+    except ErroImportacao as exc:
+        db.rollback()
+        flash_error = str(exc)
     except Exception:
+        db.rollback()
         flash_error = public_import_error(logger, "importar_lancamentos_banco")
     finally:
         try:
@@ -1225,16 +1233,21 @@ async def importar_extrato_banco(
             resultado["conciliados"] = []
             resultado["divergencias"] = []
             resultado["importados"] = importacao["importados"]
+            resultado["aviso"] = importacao.get("aviso")
             resultado["regras_aplicadas"] = _aplicar_regras_bancarias(db, cliente_id)
             db.commit()
         else:
             if not db.info.get("banco_conta_id"):
-                raise ValueError("Selecione a conta bancaria antes de importar CSV ou XLSX.")
+                raise ErroImportacao("FLIC-IMP-008")
             df = ler_arquivo_extrato(caminho)
             importacao = importar_movimentacoes_bancarias(db, cliente_id, df, nome_original, conta_bancaria_id=db.info["banco_conta_id"])
             resultado["importados"] = importacao["importados"]
+            resultado["aviso"] = importacao.get("aviso")
             resultado["regras_aplicadas"] = _aplicar_regras_bancarias(db, cliente_id)
             db.commit()
+    except ErroImportacao as exc:
+        db.rollback()
+        resultado["erro"] = str(exc)
     except Exception:
         db.rollback()
         resultado["erro"] = public_import_error(logger, "importar_extrato_banco")
@@ -1250,6 +1263,10 @@ async def importar_extrato_banco(
         "request": request, "usuario": usuario,
         "resultado": resultado if not resultado["erro"] else None,
         "flash_error": resultado["erro"],
+        "flash_success": None if resultado["erro"] else " ".join(filter(None, [
+            f"{resultado.get('importados', 0)} movimentação(ões) importada(s) de '{resultado['arquivo']}'.",
+            resultado.get("aviso"),
+        ])),
         **ctx,
     })
 
@@ -1518,11 +1535,16 @@ async def importar_conta_corrente(
         )
         df = parse_ofx(caminho) if ext in (".ofx", ".ofc") else ler_arquivo_extrato(caminho)
         res = importar_extrato_conta_corrente(db, cliente_id, df, nome_original)
-        flash_success = (
-            f"{res['importados']} linha(s) importada(s) de '{nome_original}'. "
-            "As correspondências encontradas estão disponíveis como sugestões."
-        )
+        flash_success = " ".join(filter(None, [
+            f"{res['importados']} linha(s) importada(s) de '{nome_original}'.",
+            "As correspondências encontradas estão disponíveis como sugestões.",
+            res.get("aviso"),
+        ]))
+    except ErroImportacao as exc:
+        db.rollback()
+        flash_error = str(exc)
     except Exception:
+        db.rollback()
         flash_error = public_import_error(logger, "importar_conta_corrente")
     finally:
         try:

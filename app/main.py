@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -12,15 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth import AuthMiddleware
 from app.config import ALLOWED_ORIGINS, APP_ENV, APP_NAME, APP_VERSION, PORT
 from app.database import engine, schema_esta_atualizado
+from app.errors import CATALOGO, codigo_por_status
 from app.jinja import templates
 from app.logging_config import RequestLoggingMiddleware, configure_logging
 from app.redis_client import redis_async
 from app.routers import (
     admin,
+    ajuda,
     auth,
     cliente_ativo,
     conciliacao,
@@ -115,6 +120,7 @@ app.include_router(plano_contas.router)
 app.include_router(procedimentos.router)
 app.include_router(importacoes.router)
 app.include_router(tarefas.router)
+app.include_router(ajuda.router)
 
 
 @app.get("/health", include_in_schema=False)
@@ -156,28 +162,59 @@ def _wants_json(request: Request) -> bool:
     return "application/json" in request.headers.get("accept", "").lower()
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_error_handler(request: Request, _: RequestValidationError):
+def _resposta_erro(request: Request, status_code: int, codigo: str, mensagem: str | None = None,
+                   headers: dict | None = None):
+    """Resposta padrão de erro (HTML ou JSON), sempre com código do catálogo."""
     request_id = getattr(request.state, "request_id", None)
+    definicao = CATALOGO[codigo]
+    mensagem = mensagem or definicao.mensagem
     if _wants_json(request):
         return JSONResponse(
             {
                 "success": False,
-                "message": "Dados da requisição inválidos.",
+                "code": codigo,
+                "message": mensagem,
+                "detail": mensagem,
                 "request_id": request_id,
             },
-            status_code=422,
+            status_code=status_code,
+            headers=headers,
         )
     return templates.TemplateResponse(
         request=request,
         name="error.html",
         context={
-            "status_code": 422,
-            "message": "Confira os dados informados e tente novamente.",
+            "status_code": status_code,
+            "codigo": codigo,
+            "erro": definicao,
+            "message": mensagem,
             "request_id": request_id,
         },
-        status_code=422,
+        status_code=status_code,
+        headers=headers,
     )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code < 400:
+        # Redirecionamentos (ex.: sessão expirada -> /login) seguem o fluxo padrão.
+        return await http_exception_handler(request, exc)
+    codigo = getattr(exc, "codigo", None) or codigo_por_status(exc.status_code)
+    detalhe = exc.detail if isinstance(exc.detail, str) else None
+    if detalhe == HTTPStatus(exc.status_code).phrase:
+        detalhe = None  # "Not Found", "Forbidden"... trocados pela mensagem em português do catálogo
+    logger.info(
+        "http_error",
+        extra={"error_code": codigo, "status_code": exc.status_code, "path": request.url.path,
+               "request_id": getattr(request.state, "request_id", None)},
+    )
+    return _resposta_erro(request, exc.status_code, codigo, detalhe, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, _: RequestValidationError):
+    return _resposta_erro(request, 422, "FLIC-GER-422")
 
 
 @app.exception_handler(Exception)
@@ -186,24 +223,6 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     logger.exception(
         "unhandled_request_error",
         exc_info=exc,
-        extra={"request_id": request_id, "path": request.url.path},
+        extra={"request_id": request_id, "path": request.url.path, "error_code": "FLIC-GER-500"},
     )
-    if _wants_json(request):
-        return JSONResponse(
-            {
-                "success": False,
-                "message": "Não foi possível concluir a solicitação.",
-                "request_id": request_id,
-            },
-            status_code=500,
-        )
-    return templates.TemplateResponse(
-        request=request,
-        name="error.html",
-        context={
-            "status_code": 500,
-            "message": "Não foi possível concluir a solicitação.",
-            "request_id": request_id,
-        },
-        status_code=500,
-    )
+    return _resposta_erro(request, 500, "FLIC-GER-500")

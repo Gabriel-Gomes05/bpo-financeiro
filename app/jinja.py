@@ -6,6 +6,7 @@ sem precisar passar como contexto.
 
 from datetime import date
 from fastapi.templating import Jinja2Templates
+from app.errors import POR_SLUG
 from app.strings import T
 
 
@@ -38,6 +39,13 @@ class _Today:
         return date.today().isoformat()
 
 
+def _codigo_erro(slug) -> str:
+    """Código do catálogo para o ?erro=<slug> das telas de cadastro."""
+    definicao = POR_SLUG.get(slug or "")
+    return definicao.codigo if definicao else "FLIC-GER-400"
+
+
 templates = ApplicationTemplates(directory="app/templates")
 templates.env.globals["T"] = T
 templates.env.globals["now"] = _Today()
+templates.env.globals["codigo_erro"] = _codigo_erro

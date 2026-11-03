@@ -46,8 +46,9 @@ from app.models import (
     Usuario,
 )
 from app.services.log_service import registrar as _log
-from app.errors import public_import_error
+from app.errors import com_codigo, erro, public_import_error
 from app.security import secure_cookie_for
+from app.services.conciliacao_service import ControleRepetidos, _norm_texto, aviso_repetidos, chave_extrato, ler_csv
 
 router = APIRouter()
 require_contas_pagar = require_permission(Permission.CONTAS_PAGAR)
@@ -432,14 +433,14 @@ async def baixar_documento_conta(
 ):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
-        raise HTTPException(status_code=404)
+        raise erro("FLIC-PAG-010")
     if not conta.documento_path:
-        raise HTTPException(status_code=404)
+        raise erro("FLIC-PAG-011")
 
     upload_dir = Path(UPLOAD_DIR).resolve()
     caminho = Path(conta.documento_path).resolve()
     if upload_dir not in caminho.parents or not caminho.is_file():
-        raise HTTPException(status_code=404)
+        raise erro("FLIC-PAG-011")
 
     return FileResponse(
         path=str(caminho),
@@ -491,11 +492,11 @@ async def salvar_edicao_conta(
     aviso_dias_antes: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if escopo_valor not in {"somente", "proximos"}:
-        raise HTTPException(400, "Opção de edição inválida.")
+        raise erro("FLIC-PAG-001")
     if not valor.is_finite() or valor < 0 or valor > Decimal("9999999999.99") or valor != valor.quantize(Decimal("0.01")):
-        raise HTTPException(400, "Informe um valor válido com até duas casas decimais.")
+        raise erro("FLIC-PAG-002")
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
@@ -508,7 +509,7 @@ async def salvar_edicao_conta(
             rateio_percentual if isinstance(rateio_percentual, list) else [],
         )
         if any(key.strip() for key in rateio_centro_custo_key) and not novos_rateios:
-            raise HTTPException(400, "Rateio invalido: use centros diferentes e feche 100%.")
+            raise erro("FLIC-PAG-003")
 
     contas_valor = [conta]
     if escopo_valor == "proximos" and conta.recorrencia_grupo_id:
@@ -617,7 +618,7 @@ def _preparar_exclusao_recorrencias(db: Session, ids: list[int]) -> None:
         )
         for dependente_id, grupo_id, cliente_id in dependentes:
             if cliente_id != clientes[grupo_id]:
-                raise HTTPException(409, "Recorrência inconsistente entre clientes.")
+                raise erro("FLIC-PAG-004")
             if dependente_id not in alvo:
                 grupos.setdefault(grupo_id, []).append(dependente_id)
     for restantes in grupos.values():
@@ -667,9 +668,9 @@ async def excluir_conta(
     confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if escopo not in {"somente", "recorrencia"}:
-        raise HTTPException(400, "Opção de exclusão inválida.")
+        raise erro("FLIC-PAG-005")
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     ids_permitidos = _ids_clientes_do_usuario(db, usuario)
     destino = f"/contas-pagar?cliente_id={cliente_id}"
@@ -695,7 +696,7 @@ async def excluir_conta(
 
     elegiveis = [item for item in contas if item.id not in protegidos]
     if not elegiveis:
-        mensagem = "Este lançamento tem pagamento ou conciliação e não pode ser excluído." if escopo == "somente" else "Todos os lançamentos dessa recorrência têm pagamento ou conciliação. Nada foi excluído."
+        mensagem = com_codigo("FLIC-PAG-012", "Este lançamento tem pagamento ou conciliação e não pode ser excluído." if escopo == "somente" else "Todos os lançamentos dessa recorrência têm pagamento ou conciliação. Nada foi excluído.")
         return RedirectResponse(url=f"{destino}&flash=" + quote_plus(mensagem), status_code=303)
 
     ids = [item.id for item in elegiveis]
@@ -743,11 +744,11 @@ async def criar_conta(
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if recorrente and recorrencia_intervalo not in FREQUENCIAS_RECORRENCIA:
-        raise HTTPException(400, "Intervalo de recorrencia invalido.")
+        raise erro("FLIC-PAG-006")
     if recorrente and (not 1 <= recorrencia_qtd <= RECORRENCIA_QTD_MAXIMA or (recorrencia_intervalo == "personalizado" and (not recorrencia_dias or not 1 <= recorrencia_dias <= 3660))):
-        raise HTTPException(400, "Revise a quantidade e os dias da recorrencia.")
+        raise erro("FLIC-PAG-007")
     aviso = _aviso_dias_antes(aviso_dias_antes) if recorrente else None
     qtd_ocorrencias = max(1, min(recorrencia_qtd or 1, RECORRENCIA_QTD_MAXIMA)) if recorrente else 1
     tipo = TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual
@@ -766,7 +767,7 @@ async def criar_conta(
     rateios = _montar_rateios_conta(db, cliente_id, valor, rateio_centro_custo_key, rateio_percentual)
     if any((key or "").strip() for key in rateio_centro_custo_key) and not rateios:
         return RedirectResponse(
-            url=f"/contas-pagar?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+use+centros+diferentes+e+feche+100%25",
+            url=f"/contas-pagar?cliente_id={cliente_id}&flash=" + quote_plus(com_codigo("FLIC-PAG-003")),
             status_code=303,
         )
     categoria_compat = rateios[0]["categoria_key"] if rateios else _categoria_dre_valida(db, cliente_id, categoria_dre)
@@ -864,6 +865,11 @@ async def criar_conta(
     return RedirectResponse(url=f"/contas-pagar?cliente_id={cliente_id}", status_code=303)
 
 
+def _chave_conta_importada(conta: ContaPagar) -> tuple:
+    """Identidade de uma conta importada por planilha (descrição, fornecedor, vencimento e valor)."""
+    return chave_extrato(conta.vencimento, conta.valor, _norm_texto(conta.fornecedor), conta.descricao)
+
+
 @router.post("/contas-pagar/importar")
 async def importar_contas(
     request: Request,
@@ -877,7 +883,7 @@ async def importar_contas(
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
 
     def _norm(nome: str) -> str:
         nome = unicodedata.normalize("NFKD", nome)
@@ -901,7 +907,7 @@ async def importar_contas(
         )
 
         if ext == ".csv":
-            df = pd.read_csv(caminho, decimal=",", thousands=".")
+            df = ler_csv(caminho)
         else:
             df = pd.read_excel(caminho)
 
@@ -1012,7 +1018,20 @@ async def importar_contas(
             except (ValueError, InvalidOperation, OverflowError) as exc:
                 raise ValueError(f"Linha {numero}: {exc}") from exc
 
+        # Contas já existentes no período do arquivo: reimportar o mesmo arquivo não duplica.
+        vencimentos = [c.vencimento for serie in novas_series for c in serie]
+        repetidos = ControleRepetidos(
+            _chave_conta_importada(c)
+            for c in db.query(ContaPagar).filter(
+                ContaPagar.cliente_id == cliente_id,
+                ContaPagar.vencimento >= min(vencimentos),
+                ContaPagar.vencimento <= max(vencimentos),
+            )
+        ) if vencimentos else ControleRepetidos([])
         for serie in novas_series:
+            serie = [c for c in serie if not repetidos.repetido(_chave_conta_importada(c))]
+            if not serie:
+                continue
             db.add(serie[0])
             db.flush()
             if serie[0].recorrencia_intervalo:
@@ -1022,7 +1041,10 @@ async def importar_contas(
             importadas += len(serie)
 
         db.commit()
-        flash_success = f"{importadas} conta(s) importada(s) de '{nome_original}'."
+        flash_success = " ".join(filter(None, [
+            f"{importadas} conta(s) importada(s) de '{nome_original}'.",
+            aviso_repetidos(repetidos),
+        ]))
         _log(
             db, "Contas importadas", "contas_pagar",
             usuario_id=usuario.id, usuario_nome=usuario.nome,
@@ -1032,7 +1054,7 @@ async def importar_contas(
 
     except ValueError as exc:
         db.rollback()
-        flash_error = f"Nenhuma conta importada. {exc}"
+        flash_error = com_codigo("FLIC-IMP-007", f"Nenhuma conta importada. {exc}")
     except Exception:
         db.rollback()
         flash_error = public_import_error(logger, "importar_contas_pagar")
@@ -1073,7 +1095,7 @@ async def alterar_status_conta_rota(
 
     if not _alterar_status_conta(db, conta, status_enum, usuario):
         return RedirectResponse(
-            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=Transi%C3%A7%C3%A3o+de+status+n%C3%A3o+permitida",
+            url=f"/contas-pagar?cliente_id={conta.cliente_id}&flash=" + quote_plus(com_codigo("FLIC-PAG-013")),
             status_code=303,
         )
     destino = retorno if retorno and retorno.startswith("/fechamento") else f"/contas-pagar?cliente_id={conta.cliente_id}"
@@ -1151,34 +1173,35 @@ async def aplicar_lote_contas(
     total_esperado: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if acao not in {"editar", "excluir"}:
-        raise HTTPException(400, "Seleção ou ação inválida.")
-    def erro(mensagem):
-        return RedirectResponse(url_retorno_lote("/contas-pagar", filtros, mensagem + " Nenhuma conta foi alterada."), status_code=303)
+        raise erro("FLIC-PAG-008")
+    def voltar_com_erro(codigo, mensagem=None):
+        texto = com_codigo(codigo, mensagem) + " Nenhuma conta foi alterada."
+        return RedirectResponse(url_retorno_lote("/contas-pagar", filtros, texto), status_code=303)
     if acao == "editar" and not (plano_conta_id or centro_custo_id or novo_status):
-        return erro("Escolha ao menos um campo para editar.")
+        return voltar_com_erro("FLIC-PAG-015")
 
     ids_permitidos = _ids_clientes_do_usuario(db, usuario)
     if modo == "filtro":
         query = _query_contas(db, ids_permitidos, _filtros_contas(**ler_filtros_lote(filtros_lote)))
         ids = [i for (i,) in query.with_entities(ContaPagar.id).all()]
         if not ids or len(ids) != total_esperado:
-            return erro(f"A lista mudou desde a seleção (eram {total_esperado}, agora são {len(ids)}). Confira e selecione novamente.")
+            return voltar_com_erro("FLIC-PAG-014", f"A lista mudou desde a seleção (eram {total_esperado}, agora são {len(ids)}). Confira e selecione novamente.")
     else:
         ids = ids_do_lote(ids)
         if not ids:
-            raise HTTPException(400, "Seleção ou ação inválida.")
+            raise erro("FLIC-PAG-008")
         encontrados = sum(
             db.query(ContaPagar).filter(ContaPagar.id.in_(bloco), ContaPagar.cliente_id.in_(ids_permitidos)).count()
             for bloco in em_blocos(ids)
         )
         if encontrados != len(ids):
-            raise HTTPException(404, "Seleção contém contas indisponíveis.")
+            raise erro("FLIC-PAG-009")
 
     protegidos = _ids_protegidos(db, ids)
     if confirmar_conciliacao is not True and len(protegidos) == len(ids):
-        return erro("Todas as contas selecionadas têm pagamento ou conciliação.")
+        return voltar_com_erro("FLIC-PAG-012", "Todas as contas selecionadas têm pagamento ou conciliação.")
 
     if acao == "excluir":
         if confirmar_conciliacao is True:
@@ -1201,14 +1224,14 @@ async def aplicar_lote_contas(
             if plano_conta_id:
                 planos[conta.id] = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
                 if not planos[conta.id]:
-                    return erro("Categoria inválida para um dos clientes selecionados.")
+                    return voltar_com_erro("FLIC-PAG-016")
             if centro_custo_id:
                 centros[conta.id] = db.query(CentroCusto).filter(CentroCusto.id == centro_custo_id, CentroCusto.cliente_id == conta.cliente_id, CentroCusto.ativo == True).first()
                 if not centros[conta.id]:
-                    return erro("Centro de custo inválido para um dos clientes selecionados.")
+                    return voltar_com_erro("FLIC-PAG-017")
             status_base = StatusContaPagar.pendente if conta.id in protegidos and confirmar_conciliacao is True else conta.status
             if novo_status and novo_status != status_base.value and novo_status not in {s.value for s in _status_permitidos(status_base)}:
-                return erro("Transição de status não permitida. Pagamentos são registrados pela conciliação.")
+                return voltar_com_erro("FLIC-PAG-013", "Transição de status não permitida. Pagamentos são registrados pela conciliação.")
         if confirmar_conciliacao is True:
             for conta in contas:
                 if conta.id in protegidos:
@@ -1239,10 +1262,10 @@ async def aplicar_lote_contas(
 @router.post("/contas-pagar/{conta_id}/desconciliar")
 async def desconciliar_conta(conta_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_contas_pagar)):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id, ContaPagar.cliente_id.in_(_ids_clientes_do_usuario(db, usuario))).first()
     if not conta:
-        raise HTTPException(404, "Conta indisponivel.")
+        raise erro("FLIC-PAG-010")
     exigir_confirmacao(confirmar_conciliacao)
     desconciliar_pagamento(db, conta)
     db.commit()

@@ -23,7 +23,7 @@
   {% if request.query_params.get('sucesso') %}
   <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">Cadastro atualizado com sucesso.</div>
   {% elif request.query_params.get('erro') %}
-  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Confira os dados obrigatórios e tente novamente.</div>
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Confira os dados obrigatórios e tente novamente.{% include "partials/codigo_erro.html" %}</div>
   {% endif %}
 
   <form method="post" action="/admin/clientes/cliente/{{ cliente.id }}/editar" class="space-y-6">
