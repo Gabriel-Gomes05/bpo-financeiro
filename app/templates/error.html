@@ -3,24 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FLIC — Erro</title>
+  <title>FLIC — {{ codigo or 'Erro' }}</title>
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f8fafc; color: #1e293b; }
     main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-    section { width: min(520px, 100%); background: white; border: 1px solid #e2e8f0;
+    section { width: min(560px, 100%); background: white; border: 1px solid #e2e8f0;
       border-radius: 18px; padding: 32px; box-shadow: 0 18px 45px rgba(15, 23, 42, .08); }
-    h1 { margin: 0 0 12px; font-size: 22px; } p { line-height: 1.6; color: #475569; }
-    a { display: inline-block; margin-top: 12px; color: #315f9a; font-weight: 700; text-decoration: none; }
-    small { display: block; margin-top: 24px; color: #94a3b8; overflow-wrap: anywhere; }
+    .codigo { display: inline-block; margin-bottom: 14px; padding: 4px 10px; border-radius: 999px;
+      background: #fef2f2; color: #b91c1c; font: 700 13px/1.4 ui-monospace, monospace; letter-spacing: .02em; }
+    h1 { margin: 0 0 12px; font-size: 22px; } p { line-height: 1.6; color: #475569; margin: 0 0 12px; }
+    .solucao { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: #f1f5f9; font-size: 14px; }
+    .solucao strong { display: block; margin-bottom: 4px; color: #334155; }
+    nav { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
+    a, button.link { color: #315f9a; font-weight: 700; text-decoration: none; font-size: 15px;
+      background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+    small { display: block; margin-top: 24px; color: #94a3b8; overflow-wrap: anywhere; line-height: 1.6; }
   </style>
 </head>
 <body>
 <main>
   <section>
-    <h1>Não foi possível concluir</h1>
+    {% if codigo %}<span class="codigo">{{ codigo }}</span>{% endif %}
+    <h1>{{ erro.titulo if erro else 'Não foi possível concluir' }}</h1>
     <p>{{ message }}</p>
-    <a href="/">Voltar ao início</a>
-    {% if request_id %}<small>Identificador: {{ request_id }}</small>{% endif %}
+    {% if erro %}
+    <div class="solucao"><strong>O que fazer</strong>{{ erro.solucao }}</div>
+    {% endif %}
+    <nav>
+      <button type="button" class="link" onclick="history.back()">← Voltar</button>
+      <a href="/">Ir para o início</a>
+      {% if codigo %}<a href="/ajuda/erros#{{ codigo }}">Detalhes do código {{ codigo }}</a>{% endif %}
+    </nav>
+    <small>
+      {% if codigo %}Código: {{ codigo }}{% endif %}{% if request_id %} · Identificador: {{ request_id }}{% endif %}<br>
+      Ao pedir ajuda ao suporte, informe o código e o identificador.
+    </small>
   </section>
 </main>
 </body>

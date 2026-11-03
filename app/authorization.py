@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 
 from app.auth import get_usuario_atual
 from app.models import PerfilUsuario, Usuario
+from app.errors import erro
 
 
 class Permission(str, Enum):
@@ -57,7 +58,7 @@ def has_permission(usuario: Usuario, permission: Permission) -> bool:
 def require_permission(permission: Permission) -> Callable:
     def dependency(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario:
         if not has_permission(usuario, permission):
-            raise HTTPException(status_code=403, detail="Acesso não permitido para este perfil.")
+            raise erro("FLIC-AUT-001")
         return usuario
 
     return dependency

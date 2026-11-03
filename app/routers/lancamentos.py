@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.services.log_service import registrar as _log
 from app.security import secure_cookie_for
+from app.errors import com_codigo, erro
 
 
 def formatar_brl(valor) -> str:
@@ -220,7 +221,7 @@ async def pagina_novo_lancamento(
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     cliente_id = _ca(request, cliente_id)
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
@@ -286,7 +287,7 @@ async def criar_lancamentos(
     usuario: Usuario = Depends(require_lancamentos),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
     if cliente_id not in ids_permitidos:
@@ -324,7 +325,7 @@ async def criar_lancamentos(
         if forma == FormaPagamento.pix.value and not pagador_pix:
             db.rollback()
             return RedirectResponse(
-                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Informe+o+nome+do+pagador+do+Pix",
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=" + quote_plus(com_codigo("FLIC-REC-003")),
                 status_code=303,
             )
         condicao = _str(condicao_pagamento, i) or "avista"
@@ -346,7 +347,7 @@ async def criar_lancamentos(
         if not rateios:
             db.rollback()
             return RedirectResponse(
-                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Rateio+inv%C3%A1lido%3A+selecione+os+centros+e+feche+100%25",
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=" + quote_plus(com_codigo("FLIC-REC-010", "Rateio inválido: selecione os centros e feche 100%.")),
                 status_code=303,
             )
         if rateios:
@@ -367,7 +368,7 @@ async def criar_lancamentos(
         if not plano:
             db.rollback()
             return RedirectResponse(
-                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=Selecione+um+plano+de+receita+valido",
+                url=f"/lancamentos/novo?cliente_id={cliente_id}&flash=" + quote_plus(com_codigo("FLIC-REC-007", "Selecione um plano de receita válido.")),
                 status_code=303,
             )
 
@@ -520,7 +521,7 @@ async def salvar_edicao_lancamento(
     confirmar_conciliacao: bool = Form(False),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
     at = db.query(Atendimento).filter(Atendimento.id == at_id).first()
@@ -535,23 +536,23 @@ async def salvar_edicao_lancamento(
         try:
             numero = Decimal(str(raw).strip().replace(",", "."))
         except InvalidOperation:
-            raise HTTPException(400, f"{nome} inválido.")
+            raise erro("FLIC-REC-001", f"{nome} inválido.")
         if not numero.is_finite() or not 0 <= numero <= limite or numero != numero.quantize(Decimal("0.01")):
-            raise HTTPException(400, f"{nome} inválido.")
+            raise erro("FLIC-REC-001", f"{nome} inválido.")
         return numero
 
     valor = decimal_campo(valor_servico, "Valor", Decimal("9999999999.99"))
     pct_medico = decimal_campo(percentual_medico, "Percentual", 100) if percentual_medico.strip() else None
     forma = forma_pagamento.strip() or None
     if forma and forma not in {f.value for f in FormaPagamento}:
-        raise HTTPException(400, "Forma de pagamento inválida.")
+        raise erro("FLIC-REC-002")
     pagador_pix = nome_pagador_pix.strip() or None
     if forma == FormaPagamento.pix.value and not pagador_pix:
-        raise HTTPException(400, "Informe o nome do pagador do Pix.")
+        raise erro("FLIC-REC-003")
     if condicao_pagamento not in {c.value for c in CondicaoPagamento}:
-        raise HTTPException(400, "Condição de pagamento inválida.")
+        raise erro("FLIC-REC-004")
     if not 1 <= parcela_numero <= parcela_total <= 48:
-        raise HTTPException(400, "Informe uma parcela entre 1 e o total de parcelas (até 48).")
+        raise erro("FLIC-REC-005")
     if condicao_pagamento != "parcelado":
         parcela_numero = parcela_total = 1
     is_cartao = forma in {"cartao_credito", "cartao_debito"}
@@ -571,7 +572,7 @@ async def salvar_edicao_lancamento(
     valor_clinica = valor_liquido - valor_medico_calc if valor_medico_calc is not None else valor_liquido
 
     if centro_custo_id.strip() and not centro_custo_id.strip().isdigit():
-        raise HTTPException(400, "Centro de custo inválido.")
+        raise erro("FLIC-REC-006")
     cc_id = int(centro_custo_id) if centro_custo_id.strip().isdigit() else None
     cc = db.query(CentroCusto).filter(
         CentroCusto.id == cc_id,
@@ -595,7 +596,7 @@ async def salvar_edicao_lancamento(
         or_(PlanoConta.cliente_id.is_(None), PlanoConta.cliente_id == at.cliente_id),
     ).first() if plano_id else None
     if (plano_id or plano_conta_id.strip()) and not plano:
-        raise HTTPException(400, "Plano de receita invalido para este cliente.")
+        raise erro("FLIC-REC-007")
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_id, list):
@@ -610,14 +611,14 @@ async def salvar_edicao_lancamento(
             if not key.strip() and not pct:
                 continue
             if not key.isdigit() or int(key) not in centros:
-                raise HTTPException(400, "Centro de custo do rateio inválido.")
+                raise erro("FLIC-REC-008")
             percentual = decimal_campo(pct, "Percentual do rateio", 100)
             if percentual <= 0:
-                raise HTTPException(400, "O percentual do rateio deve ser maior que zero.")
+                raise erro("FLIC-REC-009")
             payload.append({"centro_custo_id": int(key), "percentual": str(percentual)})
         novos_rateios = _parse_rateios_json(json.dumps(payload), centros, valor)
         if payload and (not novos_rateios or len(novos_rateios) != len(payload)):
-            raise HTTPException(400, "Rateio inválido: use centros diferentes e feche 100%.")
+            raise erro("FLIC-REC-010")
         if novos_rateios:
             cc = novos_rateios[0]["centro"]
             cc_id = cc.id
@@ -693,7 +694,7 @@ async def excluir_lancamento(
         return RedirectResponse(url=f"/lancamentos?cliente_id={cliente_id}", status_code=303)
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if _lancamento_vinculado(db, at):
         exigir_confirmacao(confirmar_conciliacao)
         desconciliar_recebimento(db, at)
@@ -753,26 +754,26 @@ async def excluir_lote_lancamentos(
     total_esperado: Optional[int] = Form(None),
 ):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     permitidos = [c.id for c in clientes_do_usuario(db, usuario)]
     if modo == "filtro":
         query = _query_lancamentos(db, permitidos, _filtros_lancamentos(**ler_filtros_lote(filtros_lote)))
         ids = [i for (i,) in query.with_entities(Atendimento.id).all()]
         if not ids or len(ids) != total_esperado:
-            return RedirectResponse(url_retorno_lote("/lancamentos", filtros, (
+            return RedirectResponse(url_retorno_lote("/lancamentos", filtros, com_codigo("FLIC-REC-014", (
                 f"A lista mudou desde a seleção (eram {total_esperado}, agora são {len(ids)}). "
                 "Confira e selecione novamente. Nenhum lançamento foi excluído."
-            )), status_code=303)
+            ))), status_code=303)
     else:
         ids = ids_do_lote(ids)
         if not ids:
-            raise HTTPException(400, "Selecione ao menos um lançamento.")
+            raise erro("FLIC-REC-011")
         encontrados = sum(
             db.query(Atendimento).filter(Atendimento.id.in_(bloco), Atendimento.cliente_id.in_(permitidos)).count()
             for bloco in em_blocos(ids)
         )
         if encontrados != len(ids):
-            raise HTTPException(404, "Seleção contém lançamentos indisponíveis.")
+            raise erro("FLIC-REC-012")
     _excluir_atendimentos(db, ids, confirmar_conciliacao)
     db.commit()
     _log(db, "Lançamentos excluídos em lote", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome,
@@ -780,30 +781,50 @@ async def excluir_lote_lancamentos(
     return RedirectResponse(url_retorno_lote("/lancamentos", filtros, f"{len(ids)} lançamento(s) excluído(s)."), status_code=303)
 
 
+MAX_OCORRENCIAS_MENSAGEM = 5
+
+
+def _mensagem_importacao(resumo: str, ocorrencias: list[str]) -> str:
+    """Resumo da importação + as primeiras linhas ignoradas/ajustadas."""
+    if not ocorrencias:
+        return resumo
+    detalhes = " ".join(ocorrencias[:MAX_OCORRENCIAS_MENSAGEM])
+    restantes = len(ocorrencias) - MAX_OCORRENCIAS_MENSAGEM
+    if restantes > 0:
+        detalhes += f" (e mais {restantes} aviso(s))"
+    return f"{resumo} Atenção — {detalhes}"
+
+
 @router.post("/lancamentos/importar")
 async def importar_planilha_lancamentos(
+    request: Request,
     cliente_id: int = Form(...),
     arquivo: UploadFile = File(...),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_lancamentos),
 ):
     from app.utils import salvar_upload_temporario
-    from app.services.conciliacao_service import importar_lancamentos, ler_arquivo_extrato
+    from app.services.conciliacao_service import ErroImportacao, importar_lancamentos, ler_arquivo_extrato
     from app.errors import public_import_error
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
     caminho = None
     try:
         caminho, nome, _ = await salvar_upload_temporario(arquivo, {".csv", ".xlsx", ".xls"})
-        total = importar_lancamentos(db, cliente_id, ler_arquivo_extrato(caminho), substituir_pendentes=False)
-        mensagem = f"{total} lançamento(s) importado(s). Consulte o período das datas da planilha."
-        _log(db, "Lançamentos importados", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"{total} linha(s) de {nome}")
+        ocorrencias: list[str] = []
+        total = importar_lancamentos(db, cliente_id, ler_arquivo_extrato(caminho), substituir_pendentes=False,
+                                     linha_inicial=2, ocorrencias=ocorrencias)
+        mensagem = _mensagem_importacao(f"{total} lançamento(s) importado(s).", ocorrencias)
+        _log(db, "Lançamentos importados", "lancamentos", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"{total} linha(s) de {nome}; {len(ocorrencias)} aviso(s)")
     except HTTPException:
         db.rollback()
         raise
+    except ErroImportacao as exc:
+        db.rollback()
+        mensagem = str(exc)
     except Exception:
         db.rollback()
         mensagem = public_import_error(logging.getLogger(__name__), "importar_planilha_lancamentos")
@@ -824,24 +845,28 @@ async def importar_planilha_bpo_atualizado(
     usuario: Usuario = Depends(require_lancamentos),
 ):
     from app.errors import public_import_error
-    from app.services.conciliacao_service import importar_lancamentos, ler_planilha_bpo_receitas
+    from app.services.conciliacao_service import ErroImportacao, importar_lancamentos, ler_planilha_bpo_receitas
     from app.utils import salvar_upload_temporario
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
 
     caminho = None
     try:
         caminho, nome, _ = await salvar_upload_temporario(arquivo, {".xlsx"})
+        ocorrencias: list[str] = []
         total = importar_lancamentos(
             db,
             cliente_id,
             ler_planilha_bpo_receitas(caminho),
             substituir_pendentes=False,
+            linha_inicial=7,  # cabeçalho na linha 6 da aba RECEITA
+            ocorrencias=ocorrencias,
+            taxa_fracao_automatica=False,  # o leitor BPO já converte a fração em percentual
         )
-        mensagem = f"{total} lançamento(s) importado(s) da aba RECEITA de '{nome}'."
+        mensagem = _mensagem_importacao(f"{total} lançamento(s) importado(s) da aba RECEITA de '{nome}'.", ocorrencias)
         _log(
             db,
             "Lançamentos BPO importados",
@@ -849,11 +874,14 @@ async def importar_planilha_bpo_atualizado(
             usuario_id=usuario.id,
             usuario_nome=usuario.nome,
             cliente_id=cliente_id,
-            detalhes=f"{total} linha(s) da aba RECEITA de {nome}",
+            detalhes=f"{total} linha(s) da aba RECEITA de {nome}; {len(ocorrencias)} aviso(s)",
         )
     except HTTPException:
         db.rollback()
         raise
+    except ErroImportacao as exc:
+        db.rollback()
+        mensagem = str(exc)
     except Exception:
         db.rollback()
         mensagem = public_import_error(logging.getLogger(__name__), "importar_planilha_bpo_atualizado")
@@ -885,24 +913,27 @@ async def importar_visao_contas_a_receber(
     usuario: Usuario = Depends(require_lancamentos),
 ):
     from app.errors import public_import_error
-    from app.services.conciliacao_service import importar_lancamentos, ler_visao_contas_a_receber
+    from app.services.conciliacao_service import ErroImportacao, importar_lancamentos, ler_visao_contas_a_receber
     from app.utils import salvar_upload_temporario
 
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
-        raise HTTPException(404, "Cliente indisponível.")
+        raise erro("FLIC-AUT-004")
 
     caminho = None
     try:
         caminho, nome, _ = await salvar_upload_temporario(arquivo, {".xls", ".xlsx"})
+        ocorrencias: list[str] = []
         total = importar_lancamentos(
             db,
             cliente_id,
             ler_visao_contas_a_receber(caminho),
             substituir_pendentes=False,
+            linha_inicial=2,
+            ocorrencias=ocorrencias,
         )
-        mensagem = f"{total} lançamento(s) importado(s) do relatório '{nome}'."
+        mensagem = _mensagem_importacao(f"{total} lançamento(s) importado(s) do relatório '{nome}'.", ocorrencias)
         _log(
             db,
             "Visão de contas a receber importada",
@@ -910,11 +941,14 @@ async def importar_visao_contas_a_receber(
             usuario_id=usuario.id,
             usuario_nome=usuario.nome,
             cliente_id=cliente_id,
-            detalhes=f"{total} linha(s) do arquivo {nome}",
+            detalhes=f"{total} linha(s) do arquivo {nome}; {len(ocorrencias)} aviso(s)",
         )
     except HTTPException:
         db.rollback()
         raise
+    except ErroImportacao as exc:
+        db.rollback()
+        mensagem = str(exc)
     except Exception:
         db.rollback()
         mensagem = public_import_error(logging.getLogger(__name__), "importar_visao_contas_a_receber")
@@ -940,10 +974,10 @@ async def importar_visao_contas_a_receber(
 @router.post("/lancamentos/{at_id}/desconciliar")
 async def desconciliar_lancamento(at_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_lancamentos)):
     if usuario.perfil == PerfilUsuario.medico:
-        raise HTTPException(403, "Perfil somente leitura.")
+        raise erro("FLIC-AUT-002")
     at = db.query(Atendimento).filter(Atendimento.id == at_id, Atendimento.cliente_id.in_([c.id for c in clientes_do_usuario(db, usuario)])).first()
     if not at:
-        raise HTTPException(404, "Lancamento indisponivel.")
+        raise erro("FLIC-REC-013")
     exigir_confirmacao(confirmar_conciliacao)
     desconciliar_recebimento(db, at)
     db.commit()

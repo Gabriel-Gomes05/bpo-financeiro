@@ -13,6 +13,7 @@ from app.models import Tarefa, Usuario
 from app.security import secure_cookie_for
 from app.services import tarefas_service as svc
 from app.services.log_service import registrar as _log
+from app.errors import com_codigo, erro
 
 router = APIRouter()
 
@@ -31,7 +32,7 @@ def _redirecionar(voltar: Optional[str], mensagem: str, erro: bool = False) -> R
 def _obter(db: Session, usuario: Usuario, tarefa_id: int) -> Tarefa:
     tarefa = svc.tarefas_visiveis(db, usuario).filter(Tarefa.id == tarefa_id).first()
     if not tarefa:
-        raise HTTPException(404, "Tarefa não encontrada.")
+        raise erro("FLIC-TAR-001")
     return tarefa
 
 
@@ -41,27 +42,27 @@ def _dados_validados(
 ) -> dict:
     titulo = (titulo or "").strip()
     if not titulo or len(titulo) > 200:
-        raise ValueError("Informe um título com até 200 caracteres.")
+        raise ValueError(com_codigo("FLIC-TAR-005"))
 
     if svc.eh_admin(usuario) and responsavel_id:
         responsavel = db.query(Usuario.id).filter(
             Usuario.id == responsavel_id, Usuario.ativo.is_(True), Usuario.deleted_at.is_(None),
         ).first()
         if not responsavel:
-            raise ValueError("Responsável inválido.")
+            raise ValueError(com_codigo("FLIC-TAR-006"))
     else:
         # Quem não é admin só cria tarefas para si mesmo.
         responsavel_id = usuario.id
 
     if cliente_id:
         if cliente_id not in {c.id for c in svc.clientes_permitidos(db, usuario)}:
-            raise ValueError("Cliente inválido.")
+            raise ValueError(com_codigo("FLIC-TAR-007"))
     else:
         cliente_id = None
 
     modulo = (modulo or "").strip() or None
     if modulo and (modulo not in svc.MODULOS_TAREFA or not cliente_id):
-        raise ValueError("Módulo inválido para esta tarefa.")
+        raise ValueError(com_codigo("FLIC-TAR-008"))
 
     return {
         "titulo": titulo, "responsavel_id": responsavel_id, "cliente_id": cliente_id,
@@ -155,7 +156,7 @@ async def editar_tarefa(
 ):
     tarefa = _obter(db, usuario, tarefa_id)
     if not svc.pode_editar(usuario, tarefa):
-        raise HTTPException(403, "Apenas quem criou a tarefa ou o admin pode editá-la.")
+        raise erro("FLIC-TAR-002")
     try:
         dados = _dados_validados(db, usuario, titulo, responsavel_id, cliente_id, modulo, link)
     except ValueError as exc:
@@ -177,7 +178,7 @@ async def alternar_conclusao(
 ):
     tarefa = _obter(db, usuario, tarefa_id)
     if not svc.pode_concluir(usuario, tarefa):
-        raise HTTPException(403, "Apenas o responsável ou o admin pode concluir a tarefa.")
+        raise erro("FLIC-TAR-003")
     tarefa.concluida = not tarefa.concluida
     tarefa.concluida_em = datetime.now() if tarefa.concluida else None
     db.commit()
@@ -193,7 +194,7 @@ async def excluir_tarefa(
 ):
     tarefa = _obter(db, usuario, tarefa_id)
     if not svc.pode_editar(usuario, tarefa):
-        raise HTTPException(403, "Apenas quem criou a tarefa ou o admin pode excluí-la.")
+        raise erro("FLIC-TAR-004")
     tarefa.deleted_at = datetime.now(timezone.utc)
     db.commit()
     _log(db, "Tarefa excluída", "tarefas", usuario_id=usuario.id, usuario_nome=usuario.nome,
@@ -221,7 +222,7 @@ async def abrir_tarefa(
     if not tarefa.cliente_id:
         return RedirectResponse(caminho, status_code=303)
     if tarefa.cliente_id not in {c.id for c in svc.clientes_permitidos(db, usuario)}:
-        return _redirecionar("/tarefas", "Você não tem acesso ao cliente desta tarefa.", erro=True)
+        return _redirecionar("/tarefas", com_codigo("FLIC-TAR-010"), erro=True)
 
     response = RedirectResponse(caminho, status_code=303)
     response.set_cookie(

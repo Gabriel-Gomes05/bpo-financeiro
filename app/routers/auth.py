@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
+from app.errors import com_codigo
 from app.auth import (
     criar_token,
     decodificar_token,
@@ -59,7 +60,7 @@ async def fazer_login(
         logger.exception("login_rate_limit_unavailable")
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "erro": "Autenticação temporariamente indisponível."},
+            {"request": request, "erro": com_codigo("FLIC-AUT-003")},
             status_code=503,
         )
 
@@ -68,7 +69,7 @@ async def fazer_login(
         _log(db, "Login bloqueado", "auth", detalhes="Limite de tentativas excedido", ip=ip)
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "erro": GENERIC_LOGIN_ERROR},
+            {"request": request, "erro": com_codigo("FLIC-AUT-007", GENERIC_LOGIN_ERROR)},
             status_code=429,
             headers={"Retry-After": str(retry_after)},
         )
@@ -98,13 +99,13 @@ async def fazer_login(
             logger.exception("login_rate_limit_record_failed")
             return templates.TemplateResponse(
                 "login.html",
-                {"request": request, "erro": "Autenticação temporariamente indisponível."},
+                {"request": request, "erro": com_codigo("FLIC-AUT-003")},
                 status_code=503,
             )
         _log(db, "Login falhou", "auth", detalhes="Credenciais inválidas", ip=ip)
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "erro": GENERIC_LOGIN_ERROR},
+            {"request": request, "erro": com_codigo("FLIC-AUT-007", GENERIC_LOGIN_ERROR)},
             status_code=400,
         )
 

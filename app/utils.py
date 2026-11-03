@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, quote_plus, urlencode
 from fastapi import HTTPException, Request, UploadFile
 
 from app.config import UPLOAD_DIR
+from app.errors import erro
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -32,7 +33,7 @@ def ids_do_lote(valores: Iterable) -> list[int]:
                 try:
                     ids.append(int(parte))
                 except ValueError:
-                    raise HTTPException(400, "Seleção inválida.")
+                    raise erro("FLIC-GER-001")
     return list(dict.fromkeys(ids))
 
 
@@ -52,7 +53,7 @@ def ler_filtros_lote(texto: str) -> dict:
     try:
         filtros["cliente_id"] = int(filtros["cliente_id"]) if filtros.get("cliente_id") else None
     except ValueError:
-        raise HTTPException(400, "Filtro inválido.")
+        raise erro("FLIC-GER-002")
     return filtros
 
 

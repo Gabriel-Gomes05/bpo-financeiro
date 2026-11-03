@@ -9,6 +9,7 @@ from app.auth import requer_coordenador
 from app.database import get_db
 from app.jinja import templates
 from app.models import ClienteBPO, PlanoConta, ServicoCadastro, Usuario
+from app.errors import erro
 
 router = APIRouter(prefix="/admin")
 
@@ -21,7 +22,7 @@ def _cliente_ativo(request: Request, db: Session) -> Optional[int]:
         ClienteBPO.id == int(raw), ClienteBPO.ativo.is_(True),
         ClienteBPO.deleted_at.is_(None),
     ).first():
-        raise HTTPException(400, "Selecione uma empresa no painel geral.")
+        raise erro("FLIC-AUT-005")
     return int(raw)
 
 

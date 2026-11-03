@@ -9,7 +9,7 @@
   </nav>
   {% if aba == 'contas-padrao' %}
   {% if request.query_params.get('sucesso') %}<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Cadastro de contas padrão atualizado.</div>{% endif %}
-  {% if request.query_params.get('erro') %}<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível salvar a conta padrão. Revise os dados informados.</div>{% endif %}
+  {% if request.query_params.get('erro') %}<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível salvar a conta padrão. Revise os dados informados.{% include "partials/codigo_erro.html" %}</div>{% endif %}
   <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
     <h2 class="text-lg font-bold text-[#222049]">{% if cliente %}Contas de {{ cliente.nome }}{% else %}Contas padrão de despesas{% endif %}</h2>
     <p class="mt-1 text-sm text-gray-500">{% if cliente %}Cadastre contas exclusivas para este cliente. As contas gerais continuam disponíveis, mas não serão alteradas aqui.{% else %}Disponíveis automaticamente para todos os clientes, inclusive os novos. Este cadastro é separado dos serviços.{% endif %}</p>
@@ -34,7 +34,7 @@
   </section>
   {% else %}
   {% if request.query_params.get('sucesso') %}<div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Cadastro de serviços atualizado.</div>{% endif %}
-  {% if request.query_params.get('erro') %}<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível salvar. Informe o serviço e selecione um plano de contas de receita permitido.</div>{% endif %}
+  {% if request.query_params.get('erro') %}<div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Não foi possível salvar. Informe o serviço e selecione um plano de contas de receita permitido.{% include "partials/codigo_erro.html" %}</div>{% endif %}
   <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
     <h2 class="text-lg font-bold text-[#222049]">{{ cliente.nome if cliente else 'Serviços gerais' }}</h2>
     <p class="mt-1 text-sm text-gray-500">{% if cliente %}Serviços exclusivos desta empresa aparecem junto aos serviços gerais nos lançamentos.{% else %}Cadastre um serviço para todas as empresas ou distribua-o somente aos clientes escolhidos.{% endif %}</p>

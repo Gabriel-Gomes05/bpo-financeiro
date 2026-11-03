@@ -8,16 +8,17 @@ from app.models import (
     StatusConciliacao, StatusContaPagar, StatusExtratoLinha,
     StatusMovimentacaoBancaria, StatusVendaCartao, TransferenciaCartao, VendaCartao,
 )
+from app.errors import erro
 
 
 def exigir_confirmacao(confirmado):
     if confirmado is not True:
-        raise HTTPException(409, "Tem certeza? Confirme a ação para desfazer a conciliação.")
+        raise erro("FLIC-CON-010")
 
 
 def _mesmo_cliente(registro, cliente_id):
     if registro.cliente_id != cliente_id:
-        raise HTTPException(409, "Vínculo financeiro inconsistente entre clientes.")
+        raise erro("FLIC-CON-011")
 
 
 def desconciliar_recebimento(db, atendimento):

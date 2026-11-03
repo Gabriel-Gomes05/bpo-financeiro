@@ -1,5 +1,7 @@
 import os
 import logging
+import re
+from urllib.parse import quote_plus
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -27,6 +29,7 @@ from app.models import (
     Usuario,
 )
 from app.errors import public_import_error
+from app.services.conciliacao_service import ControleRepetidos, ErroImportacao, aviso_repetidos, chave_extrato, ler_csv
 
 router = APIRouter()
 require_conciliacao = require_permission(Permission.CONCILIACAO)
@@ -165,7 +168,7 @@ async def importar_cartao_pagar(
         )
 
         if ext == ".csv":
-            df = pd.read_csv(caminho, decimal=",", thousands=".")
+            df = ler_csv(caminho)
         else:
             df = pd.read_excel(caminho)
 
@@ -183,7 +186,7 @@ async def importar_cartao_pagar(
         c_dig = _col(["ultimos_digitos", "final_cartao", "card_last4", "digitos"])
 
         if not c_data or not c_val:
-            raise ValueError("Arquivo não contém colunas de data e valor reconhecíveis.")
+            raise ErroImportacao("FLIC-IMP-006")
 
         # Remove movimentos anteriores de pagamento com cartão (não conciliados)
         db.query(MovimentacaoBancaria).filter(
@@ -197,6 +200,16 @@ async def importar_cartao_pagar(
         ).delete()
         db.commit()
 
+        # Os movimentos já conciliados continuam no banco: não importa de novo os mesmos.
+        repetidos = ControleRepetidos(
+            chave_extrato(m.data_movimento, m.valor, m.digitos_cartao, m.descricao)
+            for m in db.query(MovimentacaoBancaria).filter(
+                MovimentacaoBancaria.cliente_id == cliente_id,
+                MovimentacaoBancaria.sentido == "pagamento",
+                MovimentacaoBancaria.tipo == "cartao",
+            )
+        )
+        importados = 0
         for _, row in df.iterrows():
             try:
                 data = pd.to_datetime(row[c_data]).date()
@@ -205,7 +218,11 @@ async def importar_cartao_pagar(
                 continue
 
             descricao = str(row[c_desc]).strip() if c_desc and pd.notna(row[c_desc]) else None
-            digitos = str(row[c_dig]).strip().zfill(4)[-4:] if c_dig and pd.notna(row[c_dig]) else None
+            digitos = None
+            if c_dig and pd.notna(row[c_dig]):
+                digitos = re.sub(r"\D", "", str(row[c_dig]).split(".")[0]).zfill(4)[-4:] or None
+            if repetidos.repetido(chave_extrato(data, abs(valor), digitos, descricao)):
+                continue
 
             mov = MovimentacaoBancaria(
                 cliente_id=cliente_id,
@@ -219,10 +236,19 @@ async def importar_cartao_pagar(
                 status=StatusMovimentacaoBancaria.importada,
             )
             db.add(mov)
+            importados += 1
 
         db.commit()
+        sucesso = " ".join(filter(None, [
+            f"{importados} movimentação(ões) de cartão importada(s) de '{nome_original}'.",
+            aviso_repetidos(repetidos),
+        ]))
 
+    except ErroImportacao as exc:
+        db.rollback()
+        erro = str(exc)
     except Exception:
+        db.rollback()
         erro = public_import_error(logger, "importar_cartao_contas_pagar")
     finally:
         try:
@@ -233,8 +259,8 @@ async def importar_cartao_pagar(
 
     base = f"/contas-pagar/conciliacao-cartao?cliente_id={cliente_id}"
     if erro:
-        return RedirectResponse(url=f"{base}&flash_error={erro}", status_code=303)
-    return RedirectResponse(url=base, status_code=303)
+        return RedirectResponse(url=f"{base}&flash_error={quote_plus(erro)}", status_code=303)
+    return RedirectResponse(url=f"{base}&flash_success={quote_plus(sucesso)}", status_code=303)
 
 
 @router.post("/contas-pagar/conciliacao-cartao/mov/{mov_id}/conciliar")
@@ -382,7 +408,7 @@ async def importar_banco_pagar(
         )
 
         if ext == ".csv":
-            df = pd.read_csv(caminho, decimal=",", thousands=".")
+            df = ler_csv(caminho)
         else:
             df = pd.read_excel(caminho)
 
@@ -400,8 +426,18 @@ async def importar_banco_pagar(
         c_tipo = _col([col_tipo, "tipo", "natureza", "dc", "credito/debito"])
 
         if not c_data or not c_val:
-            raise ValueError("Arquivo não contém colunas de data e valor reconhecíveis.")
+            raise ErroImportacao("FLIC-IMP-006")
 
+        _datas = pd.to_datetime(df[c_data], errors="coerce").dropna()
+        repetidos = ControleRepetidos(
+            chave_extrato(l.data, l.valor, l.tipo, l.descricao)
+            for l in db.query(ExtratoLinhaBancaria).filter(
+                ExtratoLinhaBancaria.cliente_id == cliente_id,
+                ExtratoLinhaBancaria.data >= _datas.min().date(),
+                ExtratoLinhaBancaria.data <= _datas.max().date(),
+            )
+        ) if len(_datas) else ControleRepetidos([])
+        importados = 0
         for _, row in df.iterrows():
             try:
                 data_linha = pd.to_datetime(row[c_data]).date()
@@ -416,6 +452,8 @@ async def importar_banco_pagar(
                 tipo = "credito" if valor_raw > 0 else "debito"
 
             descricao = str(row[c_desc]).strip() if c_desc else ""
+            if repetidos.repetido(chave_extrato(data_linha, abs(valor_raw), tipo, descricao)):
+                continue
 
             linha = ExtratoLinhaBancaria(
                 cliente_id=cliente_id,
@@ -427,10 +465,19 @@ async def importar_banco_pagar(
                 origem_arquivo=nome_original,
             )
             db.add(linha)
+            importados += 1
 
         db.commit()
+        sucesso = " ".join(filter(None, [
+            f"{importados} linha(s) de extrato importada(s) de '{nome_original}'.",
+            aviso_repetidos(repetidos),
+        ]))
 
+    except ErroImportacao as exc:
+        db.rollback()
+        erro = str(exc)
     except Exception:
+        db.rollback()
         erro = public_import_error(logger, "importar_banco_contas_pagar")
     finally:
         try:
@@ -441,8 +488,8 @@ async def importar_banco_pagar(
 
     base = f"/contas-pagar/conciliacao-banco?cliente_id={cliente_id}"
     if erro:
-        return RedirectResponse(url=f"{base}&flash_error={erro}", status_code=303)
-    return RedirectResponse(url=base, status_code=303)
+        return RedirectResponse(url=f"{base}&flash_error={quote_plus(erro)}", status_code=303)
+    return RedirectResponse(url=f"{base}&flash_success={quote_plus(sucesso)}", status_code=303)
 
 
 @router.post("/contas-pagar/conciliacao-banco/linha/{linha_id}/conciliar")
