@@ -179,6 +179,7 @@
           </div>
           {% if at.nome_paciente %}<p class="font-medium text-slate-800 mb-1">{{ at.nome_paciente }}</p>{% endif %}
           <div class="text-xs text-slate-500 space-y-0.5 mb-2">
+            {% if at.descricao_servico or at.tipo_servico %}<div><span class="font-medium text-slate-600">Descrição:</span> {{ at.descricao_servico or at.tipo_servico }}</div>{% endif %}
             {% if at.medico %}<div><span class="font-medium text-slate-600">Médico:</span> {{ at.medico }}</div>{% endif %}
             {% if at.especialidade %}<div><span class="font-medium text-slate-600">Especialidade:</span> {{ at.especialidade }}</div>{% endif %}
             {% if at.ultimos_digitos_cartao %}<div><span class="font-medium text-slate-600">Cartão:</span> *{{ at.ultimos_digitos_cartao }}</div>{% endif %}
@@ -237,6 +238,7 @@
                   <input type="radio" name="atendimento_id" value="{{ a.id }}" required class="flex-shrink-0">
                   <div class="flex-1 min-w-0">
                     <p class="font-medium text-slate-800 text-xs">{{ a.nome_paciente or '—' }}</p>
+                    {% if a.descricao_servico or a.tipo_servico %}<p class="text-slate-600 text-xs truncate">{{ a.descricao_servico or a.tipo_servico }}</p>{% endif %}
                     <p class="text-slate-500 text-xs">
                       {{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}
                       · R$ {{ '%.2f'|format(a.valor_servico|float) }}

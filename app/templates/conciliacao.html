@@ -251,6 +251,10 @@
                         <p class="mt-1 text-sm text-slate-700">{{ atendimento.nome_paciente or '-' }}</p>
                       </div>
                       <div>
+                        <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Descrição</p>
+                        <p class="mt-1 text-sm text-slate-700">{{ atendimento.descricao_servico or atendimento.tipo_servico or '-' }}</p>
+                      </div>
+                      <div>
                         <p class="text-[11px] uppercase tracking-[0.16em] text-slate-400">Previsto</p>
                         <p class="mt-1 text-sm text-slate-700">
                           {{ atendimento.data_prevista_recebimento.strftime('%d/%m/%Y') if atendimento.data_prevista_recebimento else '-' }}
@@ -444,6 +448,10 @@
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Paciente</p>
                   <p class="mt-1 text-sm text-slate-700">{{ a.nome_paciente or '-' }}</p>
+                </div>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Descrição</p>
+                  <p class="mt-1 text-sm text-slate-700">{{ a.descricao_servico or a.tipo_servico or '-' }}</p>
                 </div>
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Atendimento</p>

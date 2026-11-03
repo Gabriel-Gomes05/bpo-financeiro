@@ -327,6 +327,7 @@
             </div>
             {% if at.nome_paciente %}<p class="font-medium text-slate-800 mb-1">{{ at.nome_paciente }}</p>{% endif %}
             <div class="text-xs text-slate-500 space-y-0.5 mb-3">
+              {% if at.descricao_servico or at.tipo_servico %}<div><span class="font-medium text-slate-600">Descrição:</span> {{ at.descricao_servico or at.tipo_servico }}</div>{% endif %}
               {% if at.medico %}<div><span class="font-medium text-slate-600">Médico:</span> {{ at.medico }}</div>{% endif %}
               {% if at.especialidade %}<div><span class="font-medium text-slate-600">Categoria:</span> {{ at.especialidade }}</div>{% endif %}
               <div><span class="font-medium text-slate-600">Juros/multa:</span> R$ 0,00 &nbsp;<span class="font-medium text-slate-600">Desconto:</span> R$ 0,00</div>
@@ -372,6 +373,7 @@
                     <input type="radio" name="atendimento_id" value="{{ a.id }}" required class="flex-shrink-0">
                     <div class="flex-1 min-w-0">
                       <p class="font-medium text-slate-800 text-xs">{{ a.nome_paciente or '—' }}</p>
+                      {% if a.descricao_servico or a.tipo_servico %}<p class="text-slate-600 text-xs truncate">{{ a.descricao_servico or a.tipo_servico }}</p>{% endif %}
                       <p class="text-slate-500 text-xs">{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }} · R$ {{ '%.2f'|format(a.valor_servico|float) }}</p>
                     </div>
                   </label>
@@ -452,6 +454,7 @@
               <div class="text-slate-500 text-xs truncate max-w-[180px]">{{ mov.descricao or '—' }}</div>
               <div class="text-slate-400 text-xs">⇄</div>
               <div class="font-medium text-slate-700">{{ at.nome_paciente if at else '—' }}</div>
+              {% if at and (at.descricao_servico or at.tipo_servico) %}<div class="text-slate-500 text-xs truncate max-w-[200px]">{{ at.descricao_servico or at.tipo_servico }}</div>{% endif %}
               {% if at %}<div class="text-slate-400 text-xs">{{ at.forma_pagamento.value if at.forma_pagamento else '' }}</div>{% endif %}
               <div class="flex-1"></div>
             </div>
