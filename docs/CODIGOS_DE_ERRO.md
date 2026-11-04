@@ -33,7 +33,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `AUT` | [Acesso e autenticação](#aut--acesso-e-autenticação) | 10 |
 | `REC` | [Contas a receber](#rec--contas-a-receber) | 15 |
 | `PAG` | [Contas a pagar](#pag--contas-a-pagar) | 18 |
-| `CON` | [Conciliação e contas bancárias](#con--conciliação-e-contas-bancárias) | 19 |
+| `CON` | [Conciliação e contas bancárias](#con--conciliação-e-contas-bancárias) | 20 |
 | `IMP` | [Importações](#imp--importações) | 29 |
 | `TAR` | [Tarefas](#tar--tarefas) | 10 |
 | `FEC` | [Fechamento de período](#fec--fechamento-de-período) | 5 |
@@ -119,7 +119,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-CON-001` | 400 | Regra bancária incompleta | Informe o tipo, nome e texto da regra. | Regra automática sem tipo, nome ou texto de busca no extrato. | Preencha todos os campos da regra. |
 | `FLIC-CON-002` | 400 | Contas de origem e destino iguais | Informe contas de origem e destino diferentes. | Transferência ou regra com a mesma conta na origem e no destino. | Escolha contas diferentes para origem e destino. |
 | `FLIC-CON-003` | 400 | Plano de contas incompatível | Selecione um plano de contas compatível. | O plano escolhido não combina com o tipo de regra (receita × despesa) ou não está ativo. | Escolha um plano de contas ativo do tipo correto. |
-| `FLIC-CON-004` | 400 | Conta bancária incompleta | Preencha os campos obrigatórios da conta. | Conta Corrente exige banco, agência e número; Investimentos exige banco, nome e descrição; Cartão de Crédito exige banco e nome. | Preencha os campos obrigatórios do tipo de conta escolhido. |
+| `FLIC-CON-004` | 400 | Conta bancária incompleta | Preencha os campos obrigatórios da conta. | Conta Corrente exige banco, agência e número; Investimentos exige banco, nome e descrição; Cartão de Crédito exige só o nome do cartão. | Preencha os campos obrigatórios do tipo de conta escolhido. |
 | `FLIC-CON-005` | 400 | Saldo inválido | Saldo inválido. | O saldo informado não é um número válido. | Informe o saldo em reais, por exemplo 1.234,56. |
 | `FLIC-CON-006` | 409 | Conta bancária duplicada | Esta conta já está cadastrada para o cliente. | Já existe uma conta com o mesmo banco e número para a empresa. | Use a conta existente ou corrija os dados. |
 | `FLIC-CON-007` | 404 | Conta bancária indisponível | Conta bancária indisponível para este cliente. | A conta foi removida ou pertence a outra empresa. | Recarregue a tela e escolha uma conta da empresa atual. |
@@ -135,6 +135,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-CON-017` | 400 | Tipo de conta inválido | Escolha o tipo da conta: Conta Corrente, Investimentos ou Cartão de Crédito. | O cadastro foi enviado sem tipo de conta ou com um tipo desconhecido. | Selecione um dos três tipos e preencha os campos que aparecerem. |
 | `FLIC-CON-018` | 500 | Falha ao aplicar regra <br>`?erro=regra_retroativa_falhou` | A regra foi salva, mas não foi possível aplicá-la aos lançamentos existentes. | Ocorreu um erro durante a aplicação retroativa. O que já tinha sido conciliado em lotes anteriores foi mantido; nenhum lançamento ficou pela metade. | Tente aplicar de novo (a execução é segura para repetir). Se persistir, informe o código e o horário ao suporte. |
 | `FLIC-CON-019` | 404 | Regra indisponível | Regra não encontrada ou inativa para este cliente. | A regra foi removida ou pertence a outra empresa. | Recarregue a conciliação bancária e escolha uma regra da lista. |
+| `FLIC-CON-020` | 400 | Conciliação agrupada recusada <br>`?erro=agrupado_soma` | A soma dos itens selecionados não bate com o valor do extrato. | Para conciliar vários lançamentos com um único movimento do extrato, a soma precisa ser exatamente igual ao valor do movimento, e nenhum item pode estar conciliado. | Marque os lançamentos até o contador mostrar "valor confere" e concilie novamente. |
 
 ## IMP — Importações
 

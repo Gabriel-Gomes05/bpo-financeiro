@@ -368,3 +368,52 @@ def test_transferencia_ignora_a_opcao_e_alternar_liga_e_desliga(db):
         chamar(conciliacao_banco.alternar_criacao_lancamento, regra_id=regra.id, cliente_id=A, db=db, usuario=db.get(Usuario, 1))
         db.expire_all()
         assert db.get(RegraNegocioBancaria, regra.id).criar_lancamento is esperado
+
+
+# ------------------------------------------------------------------ nova despesa direto da saída do extrato
+
+def nova_despesa(db, movimentacao_id, cliente=A, valor="1"):
+    from fastapi import Request
+    req = Request({"type": "http", "method": "POST", "path": "/conciliacao/banco/manual/despesa", "headers": [],
+                   "query_string": b"", "client": ("127.0.0.1", 1)})
+    return chamar(conciliacao_banco.criar_despesa_manual_banco, request=req, cliente_id=cliente, descricao="Seguro saúde",
+                  fornecedor="Porto Seguro", valor=Decimal(valor), vencimento=date(2026, 9, 2), plano_conta_id=DESPESA,
+                  movimentacao_id=movimentacao_id, db=db, usuario=db.get(Usuario, 1))
+
+
+def test_nova_despesa_da_saida_ja_nasce_paga_e_conciliada(db):
+    saida = mov(db, sentido="pagamento", valor="4870.68", descricao="BOLETO PAGO PORTO SEGURO")
+    db.commit()
+    resposta = nova_despesa(db, str(saida.id), valor="1")  # valor do formulário é ignorado: vale o do extrato
+    assert "manual_criado=despesa_conciliada" in resposta.headers["location"]
+    saida = recarregar(db, saida)
+    conta = db.get(ContaPagar, saida.conta_pagar_id)
+    assert saida.status == StatusMovimentacaoBancaria.conciliada
+    assert (conta.status, conta.valor, conta.data_pagamento, conta.conta_bancaria_id) == (
+        StatusContaPagar.pago, Decimal("4870.68"), saida.data_movimento, CC_A)
+    assert (conta.descricao, conta.fornecedor, conta.plano_conta_id) == ("Seguro saúde", "Porto Seguro", DESPESA)
+    pagamento = db.query(PagamentoParcialContaPagar).filter_by(movimentacao_id=saida.id).one()
+    assert pagamento.valor == Decimal("4870.68") and pagamento.criado_por_id == 1
+
+
+@pytest.mark.parametrize("caso", ["conciliada", "recebimento", "outro_cliente", "inexistente"])
+def test_nova_despesa_recusa_saida_invalida(db, caso):
+    if caso == "conciliada":
+        alvo = mov(db, sentido="pagamento", status=StatusMovimentacaoBancaria.conciliada).id
+    elif caso == "recebimento":
+        alvo = mov(db, sentido="recebimento").id
+    elif caso == "outro_cliente":
+        alvo = mov(db, cliente=B, conta=CC_B, sentido="pagamento").id
+    else:
+        alvo = 999999
+    db.commit()
+    assert "manual_criado=movimentacao_invalida" in nova_despesa(db, str(alvo)).headers["location"]
+    assert db.query(ContaPagar).count() == 0
+
+
+def test_nova_despesa_sem_saida_continua_agendada(db):
+    resposta = nova_despesa(db, "", valor="150")
+    assert "manual_criado=despesa" in resposta.headers["location"]
+    conta = db.query(ContaPagar).one()
+    assert (conta.status, conta.valor) == (StatusContaPagar.agendado, Decimal("150.00"))
+    assert db.query(PagamentoParcialContaPagar).count() == 0
