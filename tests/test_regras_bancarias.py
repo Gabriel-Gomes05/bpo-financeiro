@@ -306,3 +306,65 @@ def test_execucao_repetida_nao_duplica(db):
         assert numeros(resposta)["conciliados"] == 0
     assert (db.query(MovimentacaoBancaria).count(), db.query(PagamentoParcialContaPagar).count()) == estado
     assert conciliacao_banco._aplicar_regras_bancarias(db, A) == 0
+
+
+# ------------------------------------------------------------------ criar lançamento quando não existe
+
+def test_rendimento_sem_lancamento_cria_e_concilia(db):
+    rendimentos = [mov(db, valor=v, descricao="RENDIMENTOS REND PAGO APLIC AUT MAIS") for v in ("7.00", "0.35")]
+    mov(db, valor="3266.66", descricao="PIX RECEBIDO RAFAEL")
+    db.commit()
+    resposta = criar_regra(db, padrao="rendimentos rend pago aplic aut mais", aplicar=True, criar_lancamento=True)
+    assert numeros(resposta) == {"analisados": 3, "conciliados": 2, "ignorados": 1, "falhas": 0}
+    for m in rendimentos:
+        m = recarregar(db, m)
+        at = db.get(Atendimento, m.conciliada_com_atendimento_id)
+        assert m.status == StatusMovimentacaoBancaria.conciliada
+        assert (at.plano_conta_id, at.valor_servico, at.status_conciliacao) == (RECEITA, m.valor, StatusConciliacao.conciliado)
+        assert (at.data_atendimento, at.data_credito, at.cliente_id) == (m.data_movimento, m.data_movimento, A)
+        assert at.descricao_servico == "Convênio" and "RENDIMENTOS" in at.observacao
+    # reaplicar não cria de novo
+    regra = db.query(RegraNegocioBancaria).one()
+    chamar(conciliacao_banco.aplicar_regra_existentes, regra_id=regra.id, cliente_id=A, db=db, usuario=db.get(Usuario, 1))
+    assert db.query(Atendimento).count() == 2
+
+
+def test_sem_a_opcao_rendimento_continua_sem_conciliar(db):
+    mov(db, valor="7.00", descricao="RENDIMENTOS REND PAGO")
+    db.commit()
+    assert numeros(criar_regra(db, padrao="rendimentos", aplicar=True))["conciliados"] == 0
+    assert db.query(Atendimento).count() == 0
+
+
+def test_criacao_nao_acontece_quando_ha_lancamento_ou_ambiguidade(db):
+    existente = lancamento(db, valor="100")
+    m = mov(db, valor="100")
+    lancamento(db, valor="50"), lancamento(db, valor="50")
+    ambiguo = mov(db, valor="50")
+    db.commit()
+    assert numeros(criar_regra(db, aplicar=True, criar_lancamento=True))["conciliados"] == 1
+    assert recarregar(db, m).conciliada_com_atendimento_id == existente.id  # vinculou, não criou
+    assert recarregar(db, ambiguo).status == StatusMovimentacaoBancaria.importada
+    assert db.query(Atendimento).count() == 3
+
+
+def test_tarifa_sem_conta_a_pagar_cria_despesa_paga(db):
+    m = mov(db, sentido="pagamento", valor="12.90", descricao="TARIFA PACOTE SERVICOS")
+    db.commit()
+    assert numeros(criar_regra(db, acao="conciliar_despesa", padrao="tarifa", aplicar=True, criar_lancamento=True))["conciliados"] == 1
+    m = recarregar(db, m)
+    conta = db.get(ContaPagar, m.conta_pagar_id)
+    assert (conta.status, conta.valor, conta.plano_conta_id, conta.conta_bancaria_id) == (StatusContaPagar.pago, Decimal("12.90"), DESPESA, CC_A)
+    assert conta.data_pagamento == m.data_movimento and conta.categoria_dre == "aluguel"
+    assert db.query(PagamentoParcialContaPagar).filter_by(movimentacao_id=m.id).count() == 1
+
+
+def test_transferencia_ignora_a_opcao_e_alternar_liga_e_desliga(db):
+    criar_regra(db, acao="transferencia", padrao="aplicacao", criar_lancamento=True)
+    assert db.query(RegraNegocioBancaria).one().criar_lancamento is False
+    criar_regra(db, padrao="rendimentos")
+    regra = db.query(RegraNegocioBancaria).filter_by(acao="conciliar_receita").one()
+    for esperado in (True, False):
+        chamar(conciliacao_banco.alternar_criacao_lancamento, regra_id=regra.id, cliente_id=A, db=db, usuario=db.get(Usuario, 1))
+        db.expire_all()
+        assert db.get(RegraNegocioBancaria, regra.id).criar_lancamento is esperado

@@ -70,7 +70,7 @@
   </div>
   {% endif %}
   <div class="mt-4 space-y-2">
-    {% for regra in regras_bancarias %}<div class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm"><strong>{{ regra.nome }}</strong><span class="rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">Descrição contém “{{ regra.padrao_descricao }}”</span><span class="text-slate-500">{% if regra.acao == 'transferencia' %}Transferir: {{ regra.conta_origem.nome }} → {{ regra.conta_destino.nome }}{% elif regra.acao == 'conciliar_receita' %}Conciliar receita · {{ regra.plano_conta.nome }}{% else %}Conciliar despesa · {{ regra.plano_conta.nome }}{% endif %}</span><form method="post" action="/conciliacao/banco/regras/{{ regra.id }}/aplicar" class="ml-auto" onsubmit="return confirm('Aplicar esta regra a todos os lançamentos existentes não conciliados?')"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}"><button class="text-xs font-semibold text-violet-700">Aplicar aos existentes</button></form><form method="post" action="/conciliacao/banco/regras/{{ regra.id }}/excluir" onsubmit="return confirm('Remover esta regra?')"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}"><button class="text-xs font-semibold text-red-600">Remover</button></form></div>
+    {% for regra in regras_bancarias %}<div class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm"><strong>{{ regra.nome }}</strong><span class="rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">Descrição contém “{{ regra.padrao_descricao }}”</span><span class="text-slate-500">{% if regra.acao == 'transferencia' %}Transferir: {{ regra.conta_origem.nome }} → {{ regra.conta_destino.nome }}{% elif regra.acao == 'conciliar_receita' %}Conciliar receita · {{ regra.plano_conta.nome }}{% else %}Conciliar despesa · {{ regra.plano_conta.nome }}{% endif %}</span>{% if regra.acao != 'transferencia' %}<form method="post" action="/conciliacao/banco/regras/{{ regra.id }}/criar-lancamento"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}"><button title="Quando não houver lançamento correspondente no sistema" class="rounded-full px-2 py-1 text-xs font-semibold {% if regra.criar_lancamento %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-500{% endif %}">{% if regra.criar_lancamento %}✓ Cria o lançamento se não existir{% else %}Só vincula a lançamento existente · ativar criação{% endif %}</button></form>{% endif %}<form method="post" action="/conciliacao/banco/regras/{{ regra.id }}/aplicar" class="ml-auto" onsubmit="return confirm('Aplicar esta regra a todos os lançamentos existentes não conciliados?')"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}"><button class="text-xs font-semibold text-violet-700">Aplicar aos existentes</button></form><form method="post" action="/conciliacao/banco/regras/{{ regra.id }}/excluir" onsubmit="return confirm('Remover esta regra?')"><input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}"><button class="text-xs font-semibold text-red-600">Remover</button></form></div>
     {% else %}<p class="text-sm text-slate-400">Nenhuma regra cadastrada. Exemplo: Aplicação CDB → conta de investimento.</p>{% endfor %}
   </div>
 </section>
@@ -85,6 +85,12 @@
     <label class="block text-sm">Conta de origem <span class="text-xs text-slate-400">(opcional na conciliação)</span><select name="conta_origem_id" class="mt-1 w-full rounded-lg border p-2"><option value="">Qualquer conta</option>{% for resumo in saldos_bancarios %}<option value="{{ resumo.conta.id }}">{{ resumo.conta.nome }}</option>{% endfor %}</select></label>
     <label id="regra-campo-destino" class="block text-sm">Conta de destino<select name="conta_destino_id" class="mt-1 w-full rounded-lg border p-2"><option value="">Selecione</option>{% for resumo in saldos_bancarios %}<option value="{{ resumo.conta.id }}">{{ resumo.conta.nome }}</option>{% endfor %}</select></label>
     <label id="regra-campo-plano" class="hidden text-sm">Plano de contas<select name="plano_conta_id" class="mt-1 w-full rounded-lg border p-2"><option value="">Selecione</option>{% for plano in planos_receita_banco %}<option value="{{ plano.id }}" data-tipo="receita">{{ plano.codigo or '—' }} - {{ plano.nome }}</option>{% endfor %}{% for plano in planos_despesa_banco %}<option value="{{ plano.id }}" data-tipo="despesa">{{ plano.codigo or '—' }} - {{ plano.nome }}</option>{% endfor %}</select></label>
+    <label id="regra-campo-criar" class="hidden items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+      <input type="checkbox" name="criar_lancamento" value="true" class="mt-0.5">
+      <span><strong>Se não houver lançamento correspondente, criar o lançamento e conciliar.</strong>
+        <span class="block text-xs text-slate-500">Use para rendimentos, tarifas e juros, que não são lançados antes. Não marque para receitas
+          lançadas pela equipe (convênios), para não duplicar.</span></span>
+    </label>
     <label class="flex items-start gap-2 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm">
       <input type="checkbox" name="aplicar_existentes" value="true" class="mt-0.5">
       <span><strong>Aplicar esta regra aos lançamentos existentes não conciliados.</strong>
@@ -178,6 +184,9 @@ function alternarTipoRegraBancaria(acao) {
   const transferencia = acao === 'transferencia';
   document.getElementById('regra-campo-destino').classList.toggle('hidden', !transferencia);
   document.getElementById('regra-campo-plano').classList.toggle('hidden', transferencia);
+  const criar = document.getElementById('regra-campo-criar');
+  criar.classList.toggle('hidden', transferencia);
+  criar.classList.toggle('flex', !transferencia);
   const plano = document.querySelector('#regra-campo-plano select');
   const tipo = acao === 'conciliar_receita' ? 'receita' : 'despesa';
   Array.from(plano.options).forEach(option => { if (option.value) option.hidden = option.dataset.tipo !== tipo; });
