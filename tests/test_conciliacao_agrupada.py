@@ -221,3 +221,97 @@ def test_uma_conta_so_mantem_o_pagamento_parcial(db):
     db.commit()
     pagar(db, m, [c.id])
     assert novo(db, c).status == StatusContaPagar.agendado and novo(db, m).conta_pagar_id == c.id
+
+
+# ------------------------------------------------------------------ sistema -> vários do banco
+
+def lanc_varios(db, at, ids, cliente=A):
+    return chamar(conciliacao_banco.conciliar_lancamento_movimentos, at_id=at.id, cliente_id=cliente,
+                  mov_ids=ids, db=db, usuario=db.get(Usuario, 1))
+
+
+def conta_varios(db, c, ids, cliente=A):
+    return chamar(conciliacao_banco.conciliar_conta_movimentos, conta_id=c.id, cliente_id=cliente,
+                  mov_ids=ids, db=db, usuario=db.get(Usuario, 1))
+
+
+def test_um_lancamento_recebido_em_varios_creditos(db):
+    at = lanc(db, "1000")
+    m1, m2 = mov(db, "600"), mov(db, "400")
+    db.commit()
+    assert lanc_varios(db, at, [m1.id, m2.id]).headers["location"].endswith("&agrupado_banco=2")
+    at = novo(db, at)
+    assert at.status_conciliacao == StatusConciliacao.conciliado and at.valor_liquido == Decimal("1000.00")
+    for m in (m1, m2):
+        m = novo(db, m)
+        assert m.status == StatusMovimentacaoBancaria.conciliada and m.conciliada_com_atendimento_id == at.id
+
+
+def test_lancamento_com_creditos_que_nao_somam_nao_concilia(db):
+    at = lanc(db, "1000")
+    m1, m2, pagamento = mov(db, "600"), mov(db, "300"), mov(db, "400", sentido="pagamento")
+    db.commit()
+    assert "erro=agrupado_soma" in lanc_varios(db, at, [m1.id, m2.id]).headers["location"]
+    assert "erro=agrupado_soma" in lanc_varios(db, at, [m1.id, pagamento.id]).headers["location"]
+    assert novo(db, at).status_conciliacao == StatusConciliacao.pendente
+    assert novo(db, m1).status == StatusMovimentacaoBancaria.importada
+
+
+def test_desvincular_um_credito_solta_os_outros_do_mesmo_lancamento(db):
+    at = lanc(db, "1000")
+    m1, m2 = mov(db, "600"), mov(db, "400")
+    db.commit()
+    lanc_varios(db, at, [m1.id, m2.id])
+    chamar(conciliacao_banco.desvincular_movimentacao_pix, mov_id=m1.id, cliente_id=A, db=db, usuario=db.get(Usuario, 1))
+    assert novo(db, at).status_conciliacao == StatusConciliacao.pendente
+    for m in (m1, m2):
+        assert novo(db, m).status == StatusMovimentacaoBancaria.importada and novo(db, m).conciliada_com_atendimento_id is None
+
+
+def test_desconciliar_lancamento_solta_todos_os_creditos(db):
+    at = lanc(db, "1000")
+    m1, m2 = mov(db, "600"), mov(db, "400")
+    db.commit()
+    lanc_varios(db, at, [m1.id, m2.id])
+    desconciliar_recebimento(db, novo(db, at))
+    db.commit()
+    assert all(novo(db, m).status == StatusMovimentacaoBancaria.importada for m in (m1, m2))
+
+
+def test_uma_conta_paga_com_varios_debitos(db):
+    c = conta(db, "1000")
+    m1, m2 = mov(db, "700", sentido="pagamento"), mov(db, "300", sentido="pagamento")
+    db.commit()
+    assert conta_varios(db, c, [m1.id, m2.id]).headers["location"].endswith("&agrupado_banco=2")
+    assert novo(db, c).status == StatusContaPagar.pago
+    assert all(novo(db, m).conta_pagar_id == c.id and novo(db, m).status == StatusMovimentacaoBancaria.conciliada for m in (m1, m2))
+    assert sorted(p.valor for p in db.query(PagamentoParcialContaPagar).filter_by(conta_pagar_id=c.id)) == [Decimal("300.00"), Decimal("700.00")]
+
+
+def test_conta_com_debitos_que_nao_somam_nao_concilia(db):
+    c = conta(db, "1000")
+    m1, m2 = mov(db, "700", sentido="pagamento"), mov(db, "200", sentido="pagamento")
+    db.commit()
+    assert "erro=agrupado_soma" in conta_varios(db, c, [m1.id, m2.id]).headers["location"]
+    assert novo(db, c).status == StatusContaPagar.agendado and db.query(PagamentoParcialContaPagar).count() == 0
+
+
+def test_desconciliar_conta_solta_todos_os_debitos(db):
+    c = conta(db, "1000")
+    m1, m2 = mov(db, "700", sentido="pagamento"), mov(db, "300", sentido="pagamento")
+    db.commit()
+    conta_varios(db, c, [m1.id, m2.id])
+    desconciliar_pagamento(db, novo(db, c))
+    db.commit()
+    assert all(novo(db, m).status == StatusMovimentacaoBancaria.importada and novo(db, m).conta_pagar_id is None for m in (m1, m2))
+    assert db.query(PagamentoParcialContaPagar).count() == 0
+
+
+def test_conta_com_varios_debitos_sem_autoflush(db):
+    """Produção usa sessão sem autoflush: o segundo débito precisa enxergar o primeiro pagamento."""
+    c = conta(db, "1000")
+    m1, m2 = mov(db, "700", sentido="pagamento"), mov(db, "300", sentido="pagamento")
+    db.commit()
+    db.autoflush = False
+    conta_varios(db, c, [m1.id, m2.id])
+    assert novo(db, c).status == StatusContaPagar.pago and novo(db, c).data_pagamento == date(2026, 9, 5)
