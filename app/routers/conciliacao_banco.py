@@ -4,7 +4,7 @@ import os
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -58,6 +58,7 @@ from app.services.log_service import registrar as _log
 from app.errors import com_codigo, erro, public_import_error
 
 from app.services import regras_bancarias_service as regras_svc
+from app.services.desconciliacao_service import desfazer_movimento_pagamento, desfazer_movimento_recebimento
 from app.services.regras_bancarias_service import (
     registrar_pagamento_conta as _registrar_pagamento_conta,
     total_pago_conta as _total_pago_conta,
@@ -399,10 +400,12 @@ def _buscar_no_sistema(db: Session, cliente_id: int, mov: MovimentacaoBancaria, 
         Atendimento.cliente_id == cliente_id,
         Atendimento.arquivado_conciliacao_banco == False,
         Atendimento.status_conciliacao.in_([StatusConciliacao.pendente, StatusConciliacao.divergencia]),
-        Atendimento.valor_servico == valor,
+        Atendimento.movimentacao_grupo_id.is_(None),
+        Atendimento.valor_servico <= valor,  # menores também: vários lançamentos podem somar o crédito
         Atendimento.forma_pagamento.in_([FormaPagamento.pix, FormaPagamento.transferencia]),
     )
     candidatos = query.order_by(Atendimento.data_prevista_recebimento.asc()).all()
+    candidatos.sort(key=lambda a: a.valor_servico != valor)  # valor exato primeiro
     if mov.cpf_digitos_meio:
         procurado = mov.cpf_digitos_meio.casefold()
         candidatos = [a for a in candidatos if procurado in (a.cpf_paciente or "").casefold()]
@@ -414,7 +417,7 @@ def _buscar_no_sistema(db: Session, cliente_id: int, mov: MovimentacaoBancaria, 
                 item.nome_paciente, item.cpf_paciente, item.medico, item.descricao_servico,
             ))
         ]
-    return candidatos[:12]
+    return candidatos[:40]
 
 
 def _montar_painel(
@@ -886,6 +889,10 @@ async def pagina_banco(
         flash_success = "Conta a receber criada e adicionada às sugestões da conciliação."
     elif manual_criado == "despesa":
         flash_success = "Despesa criada e adicionada às sugestões da conciliação."
+    elif request.query_params.get("agrupado", "").isdigit():
+        flash_success = f"{request.query_params['agrupado']} lançamentos conciliados com um único movimento do extrato."
+    elif request.query_params.get("erro") == "agrupado_soma":
+        flash_error = com_codigo("FLIC-CON-020")
     elif manual_criado == "despesa_conciliada":
         flash_success = "Conta a pagar criada a partir da saída do extrato, já paga e conciliada."
     elif manual_criado == "parcial":
@@ -1335,6 +1342,84 @@ async def conciliar_movimentacao(
     return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
 
 
+@router.post("/conciliacao/banco/movimentacao/{mov_id}/conciliar-selecionados")
+async def conciliar_movimentacao_selecionados(
+    mov_id: int,
+    cliente_id: int = Form(...),
+    atendimento_ids: List[int] = Form(default=[]),
+    db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    """Um crédito do extrato com um ou vários lançamentos (vários: a soma precisa bater)."""
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    mov = db.query(MovimentacaoBancaria).filter(
+        MovimentacaoBancaria.id == mov_id, MovimentacaoBancaria.cliente_id == cliente_id,
+    ).with_for_update().first()
+    ids = list(dict.fromkeys(atendimento_ids))
+    lancamentos = db.query(Atendimento).filter(
+        Atendimento.id.in_(ids), Atendimento.cliente_id == cliente_id,
+    ).with_for_update().all() if ids else []
+    lancamentos.sort(key=lambda a: ids.index(a.id))
+    if not mov or not lancamentos or len(lancamentos) != len(ids):
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    if len(lancamentos) == 1:
+        _aplicar_conciliacao(db, mov, lancamentos[0])
+        return RedirectResponse(destino, status_code=303)
+    try:
+        regras_svc.conciliar_recebimentos_agrupados(db, mov, lancamentos)
+    except regras_svc.ConciliacaoAgrupadaInvalida:
+        db.rollback()
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    db.commit()
+    _log(db, "Conciliação agrupada de recebimentos", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome,
+         cliente_id=cliente_id, detalhes=f"Movimentação #{mov_id} -> lançamentos {', '.join('#' + str(i) for i in ids)}")
+    return RedirectResponse(f"{destino}&agrupado={len(ids)}", status_code=303)
+
+
+@router.post("/conciliacao/banco/saida/{mov_id}/conciliar-selecionadas")
+async def conciliar_saida_selecionadas(
+    mov_id: int,
+    cliente_id: int = Form(...),
+    conta_ids: List[int] = Form(default=[]),
+    db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    """Um débito do extrato com uma ou várias contas a pagar (várias: a soma dos saldos precisa bater)."""
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    mov = db.query(MovimentacaoBancaria).filter(
+        MovimentacaoBancaria.id == mov_id, MovimentacaoBancaria.cliente_id == cliente_id,
+    ).with_for_update().first()
+    ids = list(dict.fromkeys(conta_ids))
+    contas = db.query(ContaPagar).filter(
+        ContaPagar.id.in_(ids), ContaPagar.cliente_id == cliente_id,
+    ).with_for_update().all() if ids else []
+    contas.sort(key=lambda c: ids.index(c.id))
+    if not mov or not contas or len(contas) != len(ids):
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    if len(contas) == 1:
+        if mov.status != StatusMovimentacaoBancaria.conciliada and _registrar_pagamento_conta(
+            db, contas[0], mov.valor, mov.data_movimento, usuario.id, movimentacao_id=mov.id,
+            observacao="Pagamento conciliado com movimentação bancária",
+        ):
+            mov.conta_pagar_id = contas[0].id
+            mov.status = StatusMovimentacaoBancaria.conciliada
+            db.commit()
+        return RedirectResponse(destino, status_code=303)
+    try:
+        regras_svc.conciliar_pagamentos_agrupados(db, mov, contas, usuario.id)
+    except regras_svc.ConciliacaoAgrupadaInvalida:
+        db.rollback()
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    db.commit()
+    _log(db, "Conciliação agrupada de pagamentos", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome,
+         cliente_id=cliente_id, detalhes=f"Movimentação #{mov_id} -> contas {', '.join('#' + str(i) for i in ids)}")
+    return RedirectResponse(f"{destino}&agrupado={len(ids)}", status_code=303)
+
+
 @router.post("/conciliacao/banco/movimentacao/{mov_id}/revisar")
 async def revisar_movimentacao(
     mov_id: int,
@@ -1466,15 +1551,7 @@ async def desvincular_movimentacao_pix(
     if not mov or mov.cliente_id not in ids_ok or mov.cliente_id != cliente_id:
         return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
-    if mov.conciliada_com_atendimento_id:
-        at = db.query(Atendimento).filter(Atendimento.id == mov.conciliada_com_atendimento_id).first()
-        if at:
-            at.status_conciliacao = StatusConciliacao.pendente
-            at.data_credito = None
-            at.valor_liquido = at.valor_servico  # restaura valor original
-
-    mov.conciliada_com_atendimento_id = None
-    mov.status = StatusMovimentacaoBancaria.importada
+    desfazer_movimento_recebimento(db, mov)  # reabre todos os lançamentos que o crédito pagou
     db.commit()
     return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
@@ -1694,24 +1771,7 @@ async def desvincular_saida(
     mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
 
     if mov and mov.cliente_id in [c.id for c in clientes]:
-        conta = db.query(ContaPagar).filter(ContaPagar.id == mov.conta_pagar_id).first()
-        pagamento = db.query(PagamentoParcialContaPagar).filter(
-            PagamentoParcialContaPagar.movimentacao_id == mov.id,
-        ).first()
-        if pagamento:
-            db.delete(pagamento)
-            db.flush()
-        if conta:
-            total_pago = _total_pago_conta(db, conta.id)
-            conta.status = StatusContaPagar.pago if total_pago >= Decimal(str(conta.valor)) else StatusContaPagar.agendado
-            conta.data_pagamento = (
-                db.query(func.max(PagamentoParcialContaPagar.data_pagamento)).filter(
-                    PagamentoParcialContaPagar.conta_pagar_id == conta.id,
-                ).scalar()
-                if conta.status == StatusContaPagar.pago else None
-            )
-        mov.conta_pagar_id = None
-        mov.status = StatusMovimentacaoBancaria.importada
+        desfazer_movimento_pagamento(db, mov)  # todas as contas que o débito pagou
         db.commit()
 
     return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)

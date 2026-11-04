@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, ForeignKey, Integer,
-    Numeric, String, Text, Enum, Uuid, func
+    Numeric, String, Text, Enum, UniqueConstraint, Uuid, func
 )
 from sqlalchemy.orm import declared_attr, relationship
 
@@ -235,6 +235,11 @@ class Atendimento(AuditMixin, Base):
     observacao = Column(EncryptedText("atendimentos.observacao"))
     centro_custo_id = Column(Integer, ForeignKey("centros_custo.id"), nullable=True)
     plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
+    # Conciliação agrupada: um único crédito do extrato pagou vários lançamentos.
+    movimentacao_grupo_id = Column(
+        Integer, ForeignKey("movimentacoes_bancarias.id", use_alter=True, name="fk_atendimentos_movimentacao_grupo"),
+        nullable=True, index=True,
+    )
     lancado_por_id = Column(Integer, ForeignKey("usuarios.id"))
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
@@ -356,10 +361,12 @@ class ContaPagar(AuditMixin, Base):
 
 class PagamentoParcialContaPagar(AuditMixin, Base):
     __tablename__ = "pagamentos_parciais_contas_pagar"
+    # Um débito do extrato pode pagar várias contas (conciliação agrupada), mas cada conta uma vez só.
+    __table_args__ = (UniqueConstraint("movimentacao_id", "conta_pagar_id", name="uq_pagamento_parcial_mov_conta"),)
 
     id = Column(Integer, primary_key=True, index=True)
     conta_pagar_id = Column(Integer, ForeignKey("contas_pagar.id", ondelete="CASCADE"), nullable=False)
-    movimentacao_id = Column(Integer, ForeignKey("movimentacoes_bancarias.id"), nullable=True, unique=True)
+    movimentacao_id = Column(Integer, ForeignKey("movimentacoes_bancarias.id"), nullable=True, index=True)
     valor = Column(Numeric(12, 2), nullable=False)
     data_pagamento = Column(Date, nullable=False)
     observacao = Column(EncryptedText("pagamentos_parciais_contas_pagar.observacao"))

@@ -68,7 +68,8 @@ def registrar_pagamento_conta(
     observacao: str | None = None,
 ) -> bool:
     valor = Decimal(str(valor))
-    saldo = Decimal(str(conta.valor)) - total_pago_conta(db, conta.id)
+    pago_antes = total_pago_conta(db, conta.id)  # lido uma vez: não depende de autoflush da sessão
+    saldo = Decimal(str(conta.valor)) - pago_antes
     if valor <= 0 or valor > saldo:
         return False
 
@@ -80,7 +81,7 @@ def registrar_pagamento_conta(
         observacao=observacao,
         criado_por_id=usuario_id,
     ))
-    novo_total = total_pago_conta(db, conta.id) + valor
+    novo_total = pago_antes + valor
     if novo_total >= Decimal(str(conta.valor)):
         conta.status = StatusContaPagar.pago
         conta.data_pagamento = data_pagamento
@@ -97,6 +98,70 @@ def vincular_recebimento(mov: MovimentacaoBancaria, at: Atendimento) -> None:
     at.valor_liquido = mov.valor
     mov.status = StatusMovimentacaoBancaria.conciliada
     mov.conciliada_com_atendimento_id = at.id
+
+
+def recalcular_status_conta(db: Session, conta: ContaPagar) -> None:
+    """Depois de remover pagamentos: paga se quitada, senão volta para agendada."""
+    pagos = db.query(PagamentoParcialContaPagar).filter(PagamentoParcialContaPagar.conta_pagar_id == conta.id)
+    total = total_pago_conta(db, conta.id)
+    if total >= Decimal(str(conta.valor)) and total > 0:
+        conta.status = StatusContaPagar.pago
+        conta.data_pagamento = max(p.data_pagamento for p in pagos)
+    else:
+        conta.status = StatusContaPagar.agendado
+        conta.data_pagamento = None
+
+
+class ConciliacaoAgrupadaInvalida(ValueError):
+    """Seleção que não pode ser conciliada (soma diferente, item já conciliado, cliente errado...)."""
+
+
+def _somar(valores) -> Decimal:
+    return sum((Decimal(str(v)) for v in valores), Decimal("0")).quantize(Decimal("0.01"))
+
+
+def conciliar_recebimentos_agrupados(db: Session, mov: MovimentacaoBancaria, lancamentos: list[Atendimento]) -> None:
+    """Um crédito do extrato paga vários lançamentos a receber; a soma precisa bater exatamente."""
+    if mov.sentido != "recebimento" or mov.status == StatusMovimentacaoBancaria.conciliada or mov.conciliada_com_atendimento_id:
+        raise ConciliacaoAgrupadaInvalida("Movimentação indisponível para conciliação.")
+    if len(lancamentos) < 2 or len({a.id for a in lancamentos}) != len(lancamentos):
+        raise ConciliacaoAgrupadaInvalida("Selecione dois ou mais lançamentos diferentes.")
+    for at in lancamentos:
+        if at.cliente_id != mov.cliente_id or at.status_conciliacao == StatusConciliacao.conciliado or at.movimentacao_grupo_id:
+            raise ConciliacaoAgrupadaInvalida(f"Lançamento #{at.id} indisponível.")
+    if _somar(a.valor_servico for a in lancamentos) != _somar([mov.valor]):
+        raise ConciliacaoAgrupadaInvalida("A soma dos lançamentos não bate com o valor do extrato.")
+    for at in lancamentos:
+        at.status_conciliacao = StatusConciliacao.conciliado
+        at.data_credito = mov.data_movimento
+        at.valor_liquido = at.valor_servico
+        at.movimentacao_grupo_id = mov.id
+    mov.status = StatusMovimentacaoBancaria.conciliada
+    # O primeiro lançamento fica como vínculo principal: telas e relatórios que olham 1↔1 continuam valendo.
+    mov.conciliada_com_atendimento_id = lancamentos[0].id
+
+
+def conciliar_pagamentos_agrupados(db: Session, mov: MovimentacaoBancaria, contas: list[ContaPagar],
+                                   usuario_id: int | None) -> None:
+    """Um débito do extrato paga várias contas (quita o saldo de cada uma); a soma precisa bater."""
+    if mov.sentido != "pagamento" or mov.status == StatusMovimentacaoBancaria.conciliada or mov.conta_pagar_id:
+        raise ConciliacaoAgrupadaInvalida("Movimentação indisponível para conciliação.")
+    if len(contas) < 2 or len({c.id for c in contas}) != len(contas):
+        raise ConciliacaoAgrupadaInvalida("Selecione duas ou mais contas diferentes.")
+    saldos = {}
+    for conta in contas:
+        if conta.cliente_id != mov.cliente_id or conta.status not in STATUS_CONTA_CONCILIAVEL:
+            raise ConciliacaoAgrupadaInvalida(f"Conta #{conta.id} indisponível.")
+        saldos[conta.id] = Decimal(str(conta.valor)) - total_pago_conta(db, conta.id)
+        if saldos[conta.id] <= 0:
+            raise ConciliacaoAgrupadaInvalida(f"Conta #{conta.id} já está quitada.")
+    if _somar(saldos.values()) != _somar([mov.valor]):
+        raise ConciliacaoAgrupadaInvalida("A soma das contas não bate com o valor do extrato.")
+    for conta in contas:
+        registrar_pagamento_conta(db, conta, saldos[conta.id], mov.data_movimento, usuario_id, movimentacao_id=mov.id,
+                                  observacao="Pagamento conciliado em grupo com movimentação bancária")
+    mov.status = StatusMovimentacaoBancaria.conciliada
+    mov.conta_pagar_id = contas[0].id
 
 
 # ------------------------------------------------------------------ seleção

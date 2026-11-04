@@ -239,6 +239,10 @@ _DEFINICOES = [
     _e("FLIC-CON-019", 404, "Regra indisponível", "Regra não encontrada ou inativa para este cliente.",
        "A regra foi removida ou pertence a outra empresa.",
        "Recarregue a conciliação bancária e escolha uma regra da lista."),
+    _e("FLIC-CON-020", 400, "Conciliação agrupada recusada", "A soma dos itens selecionados não bate com o valor do extrato.",
+       "Para conciliar vários lançamentos com um único movimento do extrato, a soma precisa ser exatamente igual ao valor "
+       "do movimento, e nenhum item pode estar conciliado.",
+       "Marque os lançamentos até o contador mostrar \"valor confere\" e concilie novamente.", slug="agrupado_soma"),
     _e("FLIC-CON-017", 400, "Tipo de conta inválido", "Escolha o tipo da conta: Conta Corrente, Investimentos ou Cartão de Crédito.",
        "O cadastro foi enviado sem tipo de conta ou com um tipo desconhecido.",
        "Selecione um dos três tipos e preencha os campos que aparecerem."),

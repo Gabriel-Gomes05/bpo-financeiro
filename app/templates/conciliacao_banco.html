@@ -364,13 +364,14 @@
                 <button type="submit" class="rounded-lg bg-blue-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-blue-700">Buscar</button>
               </form>
               {% if item.busca_aberta and item.resultados_busca %}
-              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar" class="space-y-2">
+              <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar-selecionados" class="space-y-2"
+                    data-agrupar data-alvo="{{ '%.2f'|format(mov.valor|float) }}">
                 <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
-                <input type="hidden" name="origem" value="manual">
+                <p class="text-[11px] text-blue-700">Marque um lançamento, ou vários cuja soma seja igual ao valor do extrato.</p>
                 <div class="space-y-2 max-h-48 overflow-y-auto">
                   {% for a in item.resultados_busca %}
                   <label class="flex items-center gap-3 bg-white rounded-lg border border-blue-100 px-3 py-2 cursor-pointer hover:border-blue-300">
-                    <input type="radio" name="atendimento_id" value="{{ a.id }}" required class="flex-shrink-0">
+                    <input type="checkbox" name="atendimento_ids" value="{{ a.id }}" data-valor="{{ '%.2f'|format(a.valor_servico|float) }}" class="flex-shrink-0">
                     <div class="flex-1 min-w-0">
                       <p class="font-medium text-slate-800 text-xs">{{ a.nome_paciente or '—' }}</p>
                       {% if a.descricao_servico or a.tipo_servico %}<p class="text-slate-600 text-xs truncate">{{ a.descricao_servico or a.tipo_servico }}</p>{% endif %}
@@ -379,7 +380,8 @@
                   </label>
                   {% endfor %}
                 </div>
-                <button type="submit" class="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold py-2 hover:bg-emerald-600">Vincular selecionado</button>
+                <p class="text-xs" data-agrupar-status></p>
+                <button type="submit" disabled class="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold py-2 hover:bg-emerald-600 disabled:opacity-40">Vincular selecionado</button>
               </form>
               {% elif item.busca_aberta %}<p class="text-xs text-red-600">Nenhum lançamento encontrado.</p>{% endif %}
               <div class="flex gap-2 pt-1 border-t border-blue-200">
@@ -934,18 +936,21 @@
         <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm space-y-3">
           <span class="font-medium text-orange-800">Selecionar conta a pagar</span>
           {% if contas_agendadas %}
-          <form method="post" action="/conciliacao/banco/saida/{{ mov.id }}/conciliar" class="space-y-2">
+          <form method="post" action="/conciliacao/banco/saida/{{ mov.id }}/conciliar-selecionadas" class="space-y-2"
+                data-agrupar data-alvo="{{ '%.2f'|format(mov.valor|float) }}">
             <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+            <p class="text-[11px] text-orange-700">Marque uma conta, ou várias cujos saldos somem o valor do extrato.</p>
             <div class="space-y-1.5 max-h-40 overflow-y-auto">
               {% for cp in contas_agendadas %}
               <label class="flex items-center gap-3 bg-white rounded-lg border border-orange-100 px-3 py-2 cursor-pointer hover:border-orange-300">
-                <input type="radio" name="conta_id" value="{{ cp.id }}" required>
+                <input type="checkbox" name="conta_ids" value="{{ cp.id }}" data-valor="{{ '%.2f'|format(cp.saldo_pendente|float) }}">
                 <div><p class="font-medium text-slate-800 text-xs">{{ cp.descricao }}</p>
                 <p class="text-slate-500 text-xs">{{ cp.vencimento.strftime('%d/%m/%Y') }} · saldo R$ {{ '%.2f'|format(cp.saldo_pendente|float) }}</p></div>
               </label>
               {% endfor %}
             </div>
-            <button type="submit" class="w-full rounded-lg bg-orange-600 text-white text-xs font-semibold py-2 hover:bg-orange-700">Vincular</button>
+            <p class="text-xs" data-agrupar-status></p>
+            <button type="submit" disabled class="w-full rounded-lg bg-orange-600 text-white text-xs font-semibold py-2 hover:bg-orange-700 disabled:opacity-40">Vincular</button>
           </form>
           {% endif %}
         </div>
@@ -1308,6 +1313,28 @@ function iniciarRateioBanco(bloco) {
   });
 }
 document.querySelectorAll('[data-rateio-bloco]').forEach(iniciarRateioBanco);
+
+// Conciliação agrupada: com um item vale como antes; com vários, só libera quando a soma bate com o extrato.
+function atualizarAgrupamento(form) {
+  var centavos = function (v) { return Math.round(parseFloat(v || '0') * 100); };
+  var alvo = centavos(form.dataset.alvo);
+  var marcados = Array.from(form.querySelectorAll('input[type="checkbox"][data-valor]:checked'));
+  var soma = marcados.reduce(function (t, c) { return t + centavos(c.dataset.valor); }, 0);
+  var brl = function (c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); };
+  var status = form.querySelector('[data-agrupar-status]');
+  var botao = form.querySelector('[type="submit"]');
+  var ok = marcados.length === 1 || (marcados.length > 1 && soma === alvo);
+  botao.disabled = !ok;
+  botao.textContent = marcados.length > 1 ? 'Conciliar ' + marcados.length + ' itens' : 'Vincular selecionado';
+  if (!marcados.length) { status.textContent = ''; return; }
+  var dif = alvo - soma;
+  status.className = 'text-xs font-semibold ' + (marcados.length === 1 || dif === 0 ? 'text-emerald-700' : 'text-amber-700');
+  status.textContent = 'Selecionado: ' + brl(soma) + ' de ' + brl(alvo) +
+    (marcados.length === 1 ? '' : dif === 0 ? ' — valor confere ✓' : dif > 0 ? ' — faltam ' + brl(dif) : ' — passou ' + brl(-dif));
+}
+document.querySelectorAll('form[data-agrupar]').forEach(function (form) {
+  form.addEventListener('change', function () { atualizarAgrupamento(form); });
+});
 
 function prepararDespesa(saida) {
   // Sem saída: despesa agendada comum. Com saída: valor e data do extrato, já conciliada ao salvar.
