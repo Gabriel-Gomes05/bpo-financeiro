@@ -113,7 +113,7 @@ async def criar_regra_bancaria(
     cliente_id: int = Form(...), nome: str = Form(...), padrao_descricao: str = Form(...),
     acao: str = Form("transferencia"), conta_origem_id: Optional[int] = Form(None),
     conta_destino_id: Optional[int] = Form(None), plano_conta_id: Optional[int] = Form(None),
-    aplicar_existentes: bool = Form(False),
+    aplicar_existentes: bool = Form(False), criar_lancamento: bool = Form(False),
     db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
@@ -137,6 +137,7 @@ async def criar_regra_bancaria(
         acao=acao, conta_origem_id=conta_origem_id,
         conta_destino_id=conta_destino_id if acao == "transferencia" else None,
         plano_conta_id=plano.id if plano else None, ativo=True,
+        criar_lancamento=bool(criar_lancamento) and acao != "transferencia",
     )
     db.add(regra)
     db.commit()  # a regra fica salva mesmo que a aplicação retroativa falhe
@@ -167,6 +168,22 @@ def _aplicar_regra_existentes(db: Session, cliente_id: int, regra_id: int, usuar
         f"{destino}&regra_analisados={resultado.analisados}&regra_conciliados={resultado.conciliados}"
         f"&regra_ignorados={resultado.ignorados}&regra_falhas={resultado.falhas}#regras-bancarias", 303,
     )
+
+
+@router.post("/conciliacao/banco/regras/{regra_id}/criar-lancamento")
+async def alternar_criacao_lancamento(
+    regra_id: int, cliente_id: int = Form(...), db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    """Liga/desliga a criação automática do lançamento quando a regra não encontra correspondente."""
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    regra = next(iter(regras_svc.regras_ativas(db, cliente_id, [regra_id])), None)
+    if not regra or regra.acao == "transferencia":
+        raise erro("FLIC-CON-019")
+    regra.criar_lancamento = not regra.criar_lancamento
+    db.commit()
+    return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
 
 
 @router.post("/conciliacao/banco/regras/{regra_id}/aplicar")

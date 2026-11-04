@@ -25,8 +25,8 @@ from sqlalchemy import and_, exists, func, not_, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Atendimento, ContaPagar, MovimentacaoBancaria, PagamentoParcialContaPagar, RegraNegocioBancaria,
-    StatusConciliacao, StatusContaPagar, StatusMovimentacaoBancaria,
+    Atendimento, CondicaoPagamento, ContaPagar, FormaPagamento, MovimentacaoBancaria, PagamentoParcialContaPagar,
+    PlanoConta, RegraNegocioBancaria, StatusConciliacao, StatusContaPagar, StatusMovimentacaoBancaria, TipoContaPagar,
 )
 
 logger = logging.getLogger(__name__)
@@ -156,10 +156,32 @@ def _conciliar_receita(db: Session, regra: RegraNegocioBancaria, mov: Movimentac
         Atendimento.valor_servico == mov.valor,
         ~ja_vinculado,
     ).limit(2).all()
-    if len(candidatos) != 1:  # nenhum ou ambíguo: não arrisca
+    if len(candidatos) > 1:  # ambíguo: não arrisca
         return False
+    if not candidatos:
+        if not regra.criar_lancamento:
+            return False
+        candidatos = [_criar_recebimento(db, regra, mov)]
     vincular_recebimento(mov, candidatos[0])
     return True
+
+
+def _observacao_automatica(regra: RegraNegocioBancaria, mov: MovimentacaoBancaria) -> str:
+    return f"Criado pela regra bancária \"{regra.nome}\" a partir do extrato: {mov.descricao or ''}".strip()[:500]
+
+
+def _criar_recebimento(db: Session, regra: RegraNegocioBancaria, mov: MovimentacaoBancaria) -> Atendimento:
+    """Lançamento a receber criado pela regra (ex.: rendimento de aplicação), já com o plano da regra."""
+    plano = db.get(PlanoConta, regra.plano_conta_id)
+    at = Atendimento(
+        cliente_id=mov.cliente_id, data_atendimento=mov.data_movimento, valor_servico=mov.valor,
+        descricao_servico=plano.nome if plano else regra.nome, plano_conta_id=regra.plano_conta_id,
+        condicao_pagamento=CondicaoPagamento.transferencia, forma_pagamento=FormaPagamento.transferencia,
+        data_prevista_recebimento=mov.data_movimento, observacao=_observacao_automatica(regra, mov),
+    )
+    db.add(at)
+    db.flush()
+    return at
 
 
 def _conciliar_despesa(db: Session, regra: RegraNegocioBancaria, mov: MovimentacaoBancaria) -> bool:
@@ -175,8 +197,12 @@ def _conciliar_despesa(db: Session, regra: RegraNegocioBancaria, mov: Movimentac
     ).all()
     # Compara com o saldo em aberto (descontando pagamentos parciais), como a conciliação manual.
     candidatos = [c for c in possiveis if Decimal(str(c.valor)) - total_pago_conta(db, c.id) == Decimal(str(mov.valor))]
-    if len(candidatos) != 1:
+    if len(candidatos) > 1:
         return False
+    if not candidatos:
+        if not regra.criar_lancamento:
+            return False
+        candidatos = [_criar_despesa(db, regra, mov)]
     conta = candidatos[0]
     if not registrar_pagamento_conta(db, conta, mov.valor, mov.data_movimento, None, movimentacao_id=mov.id,
                                      observacao=f"Conciliação automática: {regra.nome}"):
@@ -184,6 +210,21 @@ def _conciliar_despesa(db: Session, regra: RegraNegocioBancaria, mov: Movimentac
     mov.conta_pagar_id = conta.id
     mov.status = StatusMovimentacaoBancaria.conciliada
     return True
+
+
+def _criar_despesa(db: Session, regra: RegraNegocioBancaria, mov: MovimentacaoBancaria) -> ContaPagar:
+    """Conta a pagar criada pela regra (ex.: tarifa bancária), pronta para receber a baixa do extrato."""
+    plano = db.get(PlanoConta, regra.plano_conta_id)
+    conta = ContaPagar(
+        cliente_id=mov.cliente_id, descricao=(mov.descricao or regra.nome)[:500], tipo=TipoContaPagar.pontual,
+        valor=mov.valor, vencimento=mov.data_movimento, data_competencia=mov.data_movimento,
+        plano_conta_id=regra.plano_conta_id, categoria_dre=plano.chave if plano else None,
+        conta_bancaria_id=mov.conta_bancaria_id, status=StatusContaPagar.pago_nao_conciliado,
+        observacao=_observacao_automatica(regra, mov),
+    )
+    db.add(conta)
+    db.flush()
+    return conta
 
 
 def _transferir(db: Session, regra: RegraNegocioBancaria, mov: MovimentacaoBancaria) -> bool:

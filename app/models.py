@@ -631,6 +631,8 @@ class RegraNegocioBancaria(AuditMixin, Base):
     conta_origem_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)
     conta_destino_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)
     plano_conta_id = Column(Integer, ForeignKey("planos_conta.id"), nullable=True)
+    # Receita/despesa: sem lançamento correspondente, cria o lançamento já conciliado (rendimentos, tarifas).
+    criar_lancamento = Column(Boolean, default=False, nullable=False, server_default="false")
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
