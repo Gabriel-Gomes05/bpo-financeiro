@@ -921,8 +921,14 @@
       </div>
       <div id="nosug-saida-mov-{{ mov.id }}" class="flex flex-col gap-2 bg-slate-50 border border-dashed border-red-200 rounded-xl items-center justify-center py-6">
         <p class="text-xs text-slate-400">Débito sem conta agendada</p>
-        <button onclick="toggleBuscaSaida('mov-{{ mov.id }}')"
-                class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Vincular conta</button>
+        <div class="flex flex-wrap justify-center gap-2">
+          <button onclick="toggleBuscaSaida('mov-{{ mov.id }}')"
+                  class="text-xs bg-white border border-slate-300 text-slate-600 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors font-medium">🔍 Vincular conta</button>
+          <button type="button" onclick="abrirDespesaDaSaida(this)"
+                  data-mov-id="{{ mov.id }}" data-valor="{{ '%.2f'|format(mov.valor|float) }}"
+                  data-data="{{ mov.data_movimento.isoformat() }}" data-descricao="{{ mov.descricao or '' }}"
+                  class="text-xs bg-white border border-red-200 text-red-700 rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors font-medium">+ Nova despesa</button>
+        </div>
       </div>
       <div id="busca-saida-mov-{{ mov.id }}-wrap" class="hidden col-start-3">
         <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm space-y-3">
@@ -1109,8 +1115,10 @@
       </div>
       <button type="button" onclick="fecharModalManual('despesa')" class="text-slate-400 hover:text-slate-600 text-xl">×</button>
     </div>
-    <form method="post" action="/conciliacao/banco/manual/despesa" class="p-5 space-y-4">
+    <form method="post" action="/conciliacao/banco/manual/despesa" class="p-5 space-y-4" id="form-manual-despesa">
       <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <input type="hidden" name="movimentacao_id" value="">
+      <div data-despesa-saida class="hidden rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800"></div>
       <input type="hidden" name="rateios_json" value="[]" data-rateio-json>
       <div class="rounded-xl border border-red-100 bg-red-50/50 p-4" data-rateio-bloco>
         <div class="flex items-center justify-between gap-3">
@@ -1301,7 +1309,31 @@ function iniciarRateioBanco(bloco) {
 }
 document.querySelectorAll('[data-rateio-bloco]').forEach(iniciarRateioBanco);
 
-function abrirModalManual(tipo) {
+function prepararDespesa(saida) {
+  // Sem saída: despesa agendada comum. Com saída: valor e data do extrato, já conciliada ao salvar.
+  var form = document.getElementById('form-manual-despesa');
+  if (!form) return;
+  form.movimentacao_id.value = saida ? saida.movId : '';
+  form.valor.readOnly = !!saida;
+  var aviso = form.querySelector('[data-despesa-saida]');
+  aviso.classList.toggle('hidden', !saida);
+  if (saida) {
+    form.valor.value = saida.valor;
+    form.vencimento.value = saida.data;
+    if (!form.descricao.value) form.descricao.value = saida.descricao;
+    aviso.textContent = 'Saída do extrato de ' + saida.data.split('-').reverse().join('/') + ' — R$ ' + saida.valor.replace('.', ',') +
+      '. A conta a pagar será criada já paga e conciliada com esta saída.';
+  }
+  form.querySelector('[type="submit"]').textContent = saida ? 'Criar e conciliar' : 'Criar despesa';
+}
+function abrirDespesaDaSaida(btn) {
+  var form = document.getElementById('form-manual-despesa');
+  if (form) form.reset();
+  prepararDespesa(btn.dataset);
+  abrirModalManual('despesa', true);
+}
+function abrirModalManual(tipo, manterDados) {
+  if (tipo === 'despesa' && !manterDados) prepararDespesa(null);
   var modal = document.getElementById('modal-manual-' + tipo);
   if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
 }

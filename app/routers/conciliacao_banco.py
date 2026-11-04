@@ -880,6 +880,8 @@ async def pagina_banco(
         flash_success = "Conta a receber criada e adicionada às sugestões da conciliação."
     elif manual_criado == "despesa":
         flash_success = "Despesa criada e adicionada às sugestões da conciliação."
+    elif manual_criado == "despesa_conciliada":
+        flash_success = "Conta a pagar criada a partir da saída do extrato, já paga e conciliada."
     elif manual_criado == "parcial":
         flash_success = "Pagamento parcial registrado. O saldo restante continua pendente."
     elif manual_criado == "movimentacao":
@@ -1061,6 +1063,7 @@ async def criar_despesa_manual_banco(
     plano_conta_id: int = Form(...),
     observacao: str = Form(""),
     rateios_json: str = Form("[]"),
+    movimentacao_id: Optional[str] = Form(None),
     db: Session = Depends(get_banco_db),
     usuario: Usuario = Depends(require_conciliacao),
 ):
@@ -1068,6 +1071,22 @@ async def criar_despesa_manual_banco(
     plano = _plano_valido(db, cliente_id, plano_conta_id, "despesa")
     if cliente_id not in [c.id for c in clientes] or valor <= 0 or not plano:
         return RedirectResponse(url="/conciliacao/banco", status_code=303)
+
+    # Criada a partir de uma saída do extrato: a conta já nasce paga e conciliada com ela.
+    saida = None
+    mov_id = str(movimentacao_id).strip() if isinstance(movimentacao_id, (str, int)) else ""
+    if mov_id:
+        if mov_id.isdigit():
+            saida = db.query(MovimentacaoBancaria).filter(
+                regras_svc.filtro_movimentos_elegiveis(cliente_id),
+                MovimentacaoBancaria.id == int(mov_id),
+                MovimentacaoBancaria.sentido == "pagamento",
+            ).with_for_update().first()
+        if not saida:
+            return RedirectResponse(
+                url=f"/conciliacao/banco?cliente_id={cliente_id}&manual_criado=movimentacao_invalida", status_code=303,
+            )
+        valor = Decimal(str(saida.valor))
 
     rateios = _montar_rateios_banco(db, cliente_id, valor, rateios_json)
     if rateios_json not in ("", "[]") and not rateios:
@@ -1086,6 +1105,10 @@ async def criar_despesa_manual_banco(
         categoria_dre=_chave_centro_custo(rateios[0]["centro"]) if rateios else None,
         plano_conta_id=plano.id,
     )
+    if saida:
+        conta.status = StatusContaPagar.pago_nao_conciliado
+        conta.data_competencia = vencimento
+        conta.conta_bancaria_id = saida.conta_bancaria_id
     db.add(conta)
     db.flush()
     for rateio in rateios:
@@ -1094,13 +1117,18 @@ async def criar_despesa_manual_banco(
             categoria_key=_chave_centro_custo(rateio["centro"]),
             percentual=rateio["percentual"], valor=rateio["valor"],
         ))
+    if saida:
+        _registrar_pagamento_conta(db, conta, saida.valor, saida.data_movimento, usuario.id, movimentacao_id=saida.id,
+                                   observacao="Despesa criada a partir da saída bancária")
+        saida.conta_pagar_id = conta.id
+        saida.status = StatusMovimentacaoBancaria.conciliada
     db.commit()
     _log(db, "Despesa criada na conciliação bancária", "conciliacao_banco",
          usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id,
          detalhes=f"Conta a pagar #{conta.id} - {descricao.strip()}",
          ip=request.client.host if request.client else None)
     return RedirectResponse(
-        url=f"/conciliacao/banco?cliente_id={cliente_id}&manual_criado=despesa",
+        url=f"/conciliacao/banco?cliente_id={cliente_id}&manual_criado={'despesa_conciliada' if saida else 'despesa'}",
         status_code=303,
     )
 
