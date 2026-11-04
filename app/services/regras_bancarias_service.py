@@ -81,6 +81,7 @@ def registrar_pagamento_conta(
         observacao=observacao,
         criado_por_id=usuario_id,
     ))
+    db.flush()  # o próximo pagamento da mesma conta precisa enxergar este (sessão sem autoflush)
     novo_total = pago_antes + valor
     if novo_total >= Decimal(str(conta.valor)):
         conta.status = StatusContaPagar.pago
@@ -162,6 +163,49 @@ def conciliar_pagamentos_agrupados(db: Session, mov: MovimentacaoBancaria, conta
                                   observacao="Pagamento conciliado em grupo com movimentação bancária")
     mov.status = StatusMovimentacaoBancaria.conciliada
     mov.conta_pagar_id = contas[0].id
+
+
+def _validar_movimentos_livres(movs: list[MovimentacaoBancaria], sentido: str, cliente_id: int) -> None:
+    if len(movs) < 2 or len({m.id for m in movs}) != len(movs):
+        raise ConciliacaoAgrupadaInvalida("Selecione dois ou mais movimentos diferentes do extrato.")
+    for m in movs:
+        if (m.cliente_id != cliente_id or m.sentido != sentido or m.deleted_at is not None
+                or m.status == StatusMovimentacaoBancaria.conciliada or m.arquivado_conciliacao_banco
+                or m.conciliada_com_atendimento_id or m.conta_pagar_id or m.transferencia_cartao_id):
+            raise ConciliacaoAgrupadaInvalida(f"Movimentação #{m.id} indisponível.")
+
+
+def conciliar_lancamento_com_movimentos(db: Session, at: Atendimento, movs: list[MovimentacaoBancaria]) -> None:
+    """Um lançamento a receber pago em vários créditos do extrato; a soma dos créditos precisa bater."""
+    if at.status_conciliacao == StatusConciliacao.conciliado or at.movimentacao_grupo_id:
+        raise ConciliacaoAgrupadaInvalida("Lançamento já conciliado.")
+    _validar_movimentos_livres(movs, "recebimento", at.cliente_id)
+    if _somar(m.valor for m in movs) != _somar([at.valor_servico]):
+        raise ConciliacaoAgrupadaInvalida("A soma dos créditos não bate com o valor do lançamento.")
+    for m in movs:
+        m.status = StatusMovimentacaoBancaria.conciliada
+        m.conciliada_com_atendimento_id = at.id
+    at.status_conciliacao = StatusConciliacao.conciliado
+    at.data_credito = max(m.data_movimento for m in movs)
+    at.valor_liquido = at.valor_servico
+
+
+def conciliar_conta_com_movimentos(db: Session, conta: ContaPagar, movs: list[MovimentacaoBancaria],
+                                   usuario_id: int | None) -> None:
+    """Uma conta a pagar quitada por vários débitos do extrato; a soma dos débitos precisa bater com o saldo."""
+    if conta.status not in STATUS_CONTA_CONCILIAVEL:
+        raise ConciliacaoAgrupadaInvalida("Conta indisponível para conciliação.")
+    saldo = Decimal(str(conta.valor)) - total_pago_conta(db, conta.id)
+    if saldo <= 0:
+        raise ConciliacaoAgrupadaInvalida("Conta já está quitada.")
+    _validar_movimentos_livres(movs, "pagamento", conta.cliente_id)
+    if _somar(m.valor for m in movs) != _somar([saldo]):
+        raise ConciliacaoAgrupadaInvalida("A soma dos débitos não bate com o saldo da conta.")
+    for m in sorted(movs, key=lambda m: (m.data_movimento, m.id)):
+        registrar_pagamento_conta(db, conta, m.valor, m.data_movimento, usuario_id, movimentacao_id=m.id,
+                                  observacao="Pagamento conciliado com vários débitos do extrato")
+        m.status = StatusMovimentacaoBancaria.conciliada
+        m.conta_pagar_id = conta.id
 
 
 # ------------------------------------------------------------------ seleção

@@ -263,6 +263,10 @@
             {% endif %}
             <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
               <span class="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">🔗 Pix / TED</span>
+              <button type="button" onclick="abrirAgrupar(this)" data-mov-id="{{ mov.id }}" data-sentido="recebimento"
+                      data-valor="{{ '%.2f'|format(mov.valor|float) }}" data-descricao="{{ mov.descricao or '' }}"
+                      data-data="{{ mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '' }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários</button>
               <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/arquivar"
                     onsubmit="return confirm('Arquivar este lançamento do banco?')">
                 <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
@@ -333,6 +337,9 @@
               <div><span class="font-medium text-slate-600">Juros/multa:</span> R$ 0,00 &nbsp;<span class="font-medium text-slate-600">Desconto:</span> R$ 0,00</div>
             </div>
             <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
+              <button type="button" onclick="abrirAgrupar(this)" data-lista="banco-recebimento" data-action="/conciliacao/banco/lancamento/{{ at.id }}/conciliar-movimentos" data-rotulo="Lançamento"
+                      data-valor="{{ '%.2f'|format(at.valor_servico|float) }}" data-descricao="{{ at.nome_paciente or at.descricao_servico or at.tipo_servico or '' }}" data-data="{{ at_data }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários do banco</button>
               {% if sug.diferenca_valor > 0 %}
               <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/conciliar">
                 <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
@@ -412,6 +419,30 @@
         </div>{# /grid pix #}
         {% endfor %}
         {% endif %}{# /painel.banco_pendente #}
+
+        {% if receitas_pendentes %}
+        <details class="rounded-xl border border-blue-200 bg-blue-50/40 overflow-hidden">
+          <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-blue-800 flex items-center justify-between hover:bg-blue-50">
+            <span>📋 {{ receitas_pendentes | length }} lançamento{{ 's' if receitas_pendentes | length > 1 }} do sistema a receber — conciliar com vários créditos do banco</span>
+            <span class="text-blue-400 text-xs">▸ expandir</span>
+          </summary>
+          <div class="divide-y divide-blue-100 border-t border-blue-100 bg-white max-h-96 overflow-y-auto">
+            {% for at in receitas_pendentes %}
+            {% set at_data = at.data_prevista_recebimento.strftime('%d/%m/%Y') if at.data_prevista_recebimento else '—' %}
+            <div class="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-slate-800 truncate">{{ at.nome_paciente or at.descricao_servico or at.tipo_servico or 'Lançamento' }}</p>
+                <p class="text-xs text-slate-500 truncate">{% if at.nome_paciente and (at.descricao_servico or at.tipo_servico) %}{{ at.descricao_servico or at.tipo_servico }} · {% endif %}{{ at_data }}</p>
+              </div>
+              <span class="font-semibold text-slate-800 whitespace-nowrap">R$ {{ '%.2f'|format(at.valor_servico|float) }}</span>
+              <button type="button" onclick="abrirAgrupar(this)" data-lista="banco-recebimento" data-action="/conciliacao/banco/lancamento/{{ at.id }}/conciliar-movimentos" data-rotulo="Lançamento"
+                      data-valor="{{ '%.2f'|format(at.valor_servico|float) }}" data-descricao="{{ at.nome_paciente or at.descricao_servico or at.tipo_servico or '' }}" data-data="{{ at_data }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários do banco</button>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
 
         {# ── PIX/TED já conciliados ─────────────────────────────────── #}
         {% if pix_conciliados %}
@@ -755,6 +786,10 @@
         <p class="text-slate-700 text-sm font-medium truncate">{{ m.descricao or 'Débito bancário' }}</p>
         <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
           <span class="inline-flex items-center gap-1 text-xs text-red-400 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1">↑ Saída</span>
+          <button type="button" onclick="abrirAgrupar(this)" data-mov-id="{{ m.id }}" data-sentido="pagamento"
+                      data-valor="{{ '%.2f'|format(m.valor|float) }}" data-descricao="{{ m.descricao or '' }}"
+                      data-data="{{ m.data_movimento.strftime('%d/%m/%Y') if m.data_movimento else '' }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários</button>
           <form method="post" action="/conciliacao/banco/movimentacao/{{ m.id }}/arquivar"
                 onsubmit="return confirm('Arquivar este lançamento do banco?')">
             <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
@@ -842,7 +877,10 @@
                   class="text-xs border border-slate-200 text-slate-500 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors">Trocar</button>
         </div>
         {% endif %}
-        <div class="flex justify-end pt-2 mt-2 border-t border-slate-100">
+        <div class="flex justify-between items-center gap-2 pt-2 mt-2 border-t border-slate-100">
+          <button type="button" onclick="abrirAgrupar(this)" data-lista="banco-pagamento" data-action="/conciliacao/banco/conta/{{ cp.id }}/conciliar-movimentos" data-rotulo="Conta a pagar"
+                      data-valor="{{ '%.2f'|format(cp.saldo_pendente|float) }}" data-descricao="{{ cp.descricao }}" data-data="{{ cp_data }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários do banco</button>
           <form method="post" action="/conciliacao/banco/conta/{{ cp.id }}/arquivar"
                 onsubmit="return confirm('Arquivar esta conta do sistema na conciliação bancária?')">
             <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
@@ -908,6 +946,10 @@
         <p class="text-slate-700 text-sm font-medium truncate">{{ mov.descricao or 'Débito bancário' }}</p>
         <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
           <span class="text-xs text-red-400 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1">↑ Saída sem conta</span>
+          <button type="button" onclick="abrirAgrupar(this)" data-mov-id="{{ mov.id }}" data-sentido="pagamento"
+                      data-valor="{{ '%.2f'|format(mov.valor|float) }}" data-descricao="{{ mov.descricao or '' }}"
+                      data-data="{{ mov.data_movimento.strftime('%d/%m/%Y') if mov.data_movimento else '' }}"
+                      class="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1 hover:bg-indigo-700 transition-colors">☑ Conciliar vários</button>
           <form method="post" action="/conciliacao/banco/movimentacao/{{ mov.id }}/arquivar"
                 onsubmit="return confirm('Arquivar este lançamento do banco?')">
             <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
@@ -1106,6 +1148,89 @@
       <div class="flex justify-end gap-3 pt-1">
         <button type="button" onclick="fecharModalManual('receita')" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
         <button type="submit" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Criar conta a receber</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-agrupar" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+    <div class="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Conciliar vários lançamentos</h3>
+        <p class="text-xs text-slate-500 mt-0.5" data-agrupar-titulo></p>
+      </div>
+      <button type="button" onclick="fecharAgrupar()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+    </div>
+    <form method="post" id="form-agrupar" class="flex flex-col min-h-0 flex-1" data-agrupar data-alvo="0">
+      <input type="hidden" name="cliente_id" value="{{ cliente_selecionado }}">
+      <div class="px-5 pt-4 space-y-2">
+        <p class="text-xs text-slate-600">Marque os itens que compõem este valor. O botão só libera quando a soma bater.</p>
+        <input type="text" placeholder="Filtrar por nome, descrição ou valor..." oninput="filtrarAgrupar(this.value)"
+               class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400">
+      </div>
+      <div class="px-5 py-3 space-y-1.5 overflow-y-auto flex-1" data-lista="recebimento">
+        {% for a in receitas_pendentes %}
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:border-indigo-300" data-item>
+          <input type="checkbox" name="atendimento_ids" value="{{ a.id }}" data-valor="{{ '%.2f'|format(a.valor_servico|float) }}">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-slate-800 truncate">{{ a.nome_paciente or a.descricao_servico or a.tipo_servico or 'Lançamento' }}</p>
+            <p class="text-xs text-slate-500 truncate">{% if a.nome_paciente and (a.descricao_servico or a.tipo_servico) %}{{ a.descricao_servico or a.tipo_servico }} · {% endif %}{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}</p>
+          </div>
+          <span class="text-sm font-semibold text-slate-800 whitespace-nowrap">R$ {{ '%.2f'|format(a.valor_servico|float) }}</span>
+        </label>
+        {% else %}
+        <p class="text-xs text-slate-500">Nenhum lançamento a receber pendente para este cliente.</p>
+        {% endfor %}
+      </div>
+      <div class="px-5 py-3 space-y-1.5 overflow-y-auto flex-1 hidden" data-lista="pagamento">
+        {% for cp in contas_agendadas %}
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:border-indigo-300" data-item>
+          <input type="checkbox" name="conta_ids" value="{{ cp.id }}" data-valor="{{ '%.2f'|format(cp.saldo_pendente|float) }}">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-slate-800 truncate">{{ cp.descricao }}</p>
+            <p class="text-xs text-slate-500">Vencimento {{ cp.vencimento.strftime('%d/%m/%Y') if cp.vencimento else '—' }}</p>
+          </div>
+          <span class="text-sm font-semibold text-slate-800 whitespace-nowrap">R$ {{ '%.2f'|format(cp.saldo_pendente|float) }}</span>
+        </label>
+        {% else %}
+        <p class="text-xs text-slate-500">Nenhuma conta a pagar em aberto para este cliente.</p>
+        {% endfor %}
+      </div>
+      <div class="px-5 py-3 space-y-1.5 overflow-y-auto flex-1 hidden" data-lista="banco-recebimento">
+        {% for m in movimentacoes_bancarias %}
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:border-indigo-300" data-item>
+          <input type="checkbox" name="mov_ids" value="{{ m.id }}" data-valor="{{ '%.2f'|format(m.valor|float) }}">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-slate-800 truncate">{{ m.descricao or 'Crédito bancário' }}</p>
+            <p class="text-xs text-slate-500">Extrato · {{ m.data_movimento.strftime('%d/%m/%Y') if m.data_movimento else '—' }}</p>
+          </div>
+          <span class="text-sm font-semibold text-emerald-700 whitespace-nowrap">+ R$ {{ '%.2f'|format(m.valor|float) }}</span>
+        </label>
+        {% else %}
+        <p class="text-xs text-slate-500">Nenhum crédito pendente no extrato.</p>
+        {% endfor %}
+      </div>
+      <div class="px-5 py-3 space-y-1.5 overflow-y-auto flex-1 hidden" data-lista="banco-pagamento">
+        {% for m in saidas_banco %}
+        <label class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:border-indigo-300" data-item>
+          <input type="checkbox" name="mov_ids" value="{{ m.id }}" data-valor="{{ '%.2f'|format(m.valor|float) }}">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-slate-800 truncate">{{ m.descricao or 'Débito bancário' }}</p>
+            <p class="text-xs text-slate-500">Extrato · {{ m.data_movimento.strftime('%d/%m/%Y') if m.data_movimento else '—' }}</p>
+          </div>
+          <span class="text-sm font-semibold text-red-600 whitespace-nowrap">− R$ {{ '%.2f'|format(m.valor|float) }}</span>
+        </label>
+        {% else %}
+        <p class="text-xs text-slate-500">Nenhum débito pendente no extrato.</p>
+        {% endfor %}
+      </div>
+      <div class="border-t border-slate-100 px-5 py-4 space-y-2">
+        <p class="text-xs" data-agrupar-status></p>
+        <div class="flex gap-2">
+          <button type="button" onclick="fecharAgrupar()" class="flex-1 rounded-lg border border-slate-200 text-slate-600 text-sm py-2 hover:bg-slate-50">Cancelar</button>
+          <button type="submit" disabled class="flex-1 rounded-lg bg-indigo-600 text-white text-sm font-semibold py-2 hover:bg-indigo-700 disabled:opacity-40">Vincular selecionado</button>
+        </div>
       </div>
     </form>
   </div>
@@ -1335,6 +1460,38 @@ function atualizarAgrupamento(form) {
 document.querySelectorAll('form[data-agrupar]').forEach(function (form) {
   form.addEventListener('change', function () { atualizarAgrupamento(form); });
 });
+
+function abrirAgrupar(btn) {
+  var d = btn.dataset, form = document.getElementById('form-agrupar');
+  var recebimento = d.sentido === 'recebimento';
+  var listaAtiva = d.lista || d.sentido;
+  form.action = d.action || (recebimento ? '/conciliacao/banco/movimentacao/' + d.movId + '/conciliar-selecionados'
+                                         : '/conciliacao/banco/saida/' + d.movId + '/conciliar-selecionadas');
+  form.dataset.alvo = d.valor;
+  form.querySelectorAll('[data-lista]').forEach(function (lista) {
+    var ativa = lista.dataset.lista === listaAtiva;
+    lista.classList.toggle('hidden', !ativa);
+    lista.querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.checked = false; c.disabled = !ativa; });
+  });
+  form.querySelectorAll('[data-item]').forEach(function (el) { el.classList.remove('hidden'); });
+  form.querySelector('input[type="text"]').value = '';
+  document.querySelector('[data-agrupar-titulo]').textContent = (d.rotulo || (recebimento ? 'Crédito' : 'Débito')) + ' de ' + d.data + ' — R$ ' +
+    parseFloat(d.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + (d.descricao ? ' — ' + d.descricao : '');
+  atualizarAgrupamento(form);
+  var modal = document.getElementById('modal-agrupar');
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+}
+function fecharAgrupar() {
+  var modal = document.getElementById('modal-agrupar');
+  modal.classList.add('hidden'); modal.classList.remove('flex');
+}
+function filtrarAgrupar(termo) {
+  termo = termo.toLowerCase().trim();
+  document.querySelectorAll('#form-agrupar [data-item]').forEach(function (el) {
+    var marcado = el.querySelector('input').checked;
+    el.classList.toggle('hidden', !!termo && !marcado && el.textContent.toLowerCase().indexOf(termo) === -1);
+  });
+}
 
 function prepararDespesa(saida) {
   // Sem saída: despesa agendada comum. Com saída: valor e data do extrato, já conciliada ao salvar.

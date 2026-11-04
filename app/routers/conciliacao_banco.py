@@ -889,6 +889,8 @@ async def pagina_banco(
         flash_success = "Conta a receber criada e adicionada às sugestões da conciliação."
     elif manual_criado == "despesa":
         flash_success = "Despesa criada e adicionada às sugestões da conciliação."
+    elif request.query_params.get("agrupado_banco", "").isdigit():
+        flash_success = f"{request.query_params['agrupado_banco']} movimentos do extrato conciliados com um único lançamento."
     elif request.query_params.get("agrupado", "").isdigit():
         flash_success = f"{request.query_params['agrupado']} lançamentos conciliados com um único movimento do extrato."
     elif request.query_params.get("erro") == "agrupado_soma":
@@ -1418,6 +1420,91 @@ async def conciliar_saida_selecionadas(
     _log(db, "Conciliação agrupada de pagamentos", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome,
          cliente_id=cliente_id, detalhes=f"Movimentação #{mov_id} -> contas {', '.join('#' + str(i) for i in ids)}")
     return RedirectResponse(f"{destino}&agrupado={len(ids)}", status_code=303)
+
+
+def _movimentos_selecionados(db: Session, cliente_id: int, mov_ids: list[int]):
+    ids = list(dict.fromkeys(mov_ids))
+    movs = db.query(MovimentacaoBancaria).filter(
+        MovimentacaoBancaria.id.in_(ids), MovimentacaoBancaria.cliente_id == cliente_id,
+    ).with_for_update().all() if ids else []
+    return movs if len(movs) == len(ids) else []
+
+
+@router.post("/conciliacao/banco/lancamento/{at_id}/conciliar-movimentos")
+async def conciliar_lancamento_movimentos(
+    at_id: int,
+    cliente_id: int = Form(...),
+    mov_ids: List[int] = Form(default=[]),
+    db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    """Um lançamento a receber com um ou vários créditos do extrato (vários: a soma precisa bater)."""
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    at = db.query(Atendimento).filter(
+        Atendimento.id == at_id, Atendimento.cliente_id == cliente_id,
+    ).with_for_update().first()
+    movs = _movimentos_selecionados(db, cliente_id, mov_ids)
+    if not at or not movs:
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    if len(movs) == 1:
+        mov = movs[0]
+        if (mov.sentido != "recebimento" or mov.status == StatusMovimentacaoBancaria.conciliada
+                or mov.conciliada_com_atendimento_id or at.status_conciliacao == StatusConciliacao.conciliado):
+            return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+        _aplicar_conciliacao(db, mov, at)
+        return RedirectResponse(destino, status_code=303)
+    try:
+        regras_svc.conciliar_lancamento_com_movimentos(db, at, movs)
+    except regras_svc.ConciliacaoAgrupadaInvalida:
+        db.rollback()
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    db.commit()
+    _log(db, "Conciliação de lançamento com vários créditos", "conciliacao", usuario_id=usuario.id,
+         usuario_nome=usuario.nome, cliente_id=cliente_id,
+         detalhes=f"Lançamento #{at_id} <- movimentações {', '.join('#' + str(m.id) for m in movs)}")
+    return RedirectResponse(f"{destino}&agrupado_banco={len(movs)}", status_code=303)
+
+
+@router.post("/conciliacao/banco/conta/{conta_id}/conciliar-movimentos")
+async def conciliar_conta_movimentos(
+    conta_id: int,
+    cliente_id: int = Form(...),
+    mov_ids: List[int] = Form(default=[]),
+    db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    """Uma conta a pagar com um ou vários débitos do extrato (vários: a soma precisa bater com o saldo)."""
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    conta = db.query(ContaPagar).filter(
+        ContaPagar.id == conta_id, ContaPagar.cliente_id == cliente_id,
+    ).with_for_update().first()
+    movs = _movimentos_selecionados(db, cliente_id, mov_ids)
+    if not conta or not movs:
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    if len(movs) == 1:
+        mov = movs[0]
+        if mov.sentido != "pagamento" or mov.status == StatusMovimentacaoBancaria.conciliada or mov.conta_pagar_id:
+            return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+        if _registrar_pagamento_conta(db, conta, mov.valor, mov.data_movimento, usuario.id, movimentacao_id=mov.id,
+                                      observacao="Pagamento conciliado com movimentação bancária"):
+            mov.conta_pagar_id = conta.id
+            mov.status = StatusMovimentacaoBancaria.conciliada
+            db.commit()
+        return RedirectResponse(destino, status_code=303)
+    try:
+        regras_svc.conciliar_conta_com_movimentos(db, conta, movs, usuario.id)
+    except regras_svc.ConciliacaoAgrupadaInvalida:
+        db.rollback()
+        return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
+    db.commit()
+    _log(db, "Conciliação de conta com vários débitos", "conciliacao", usuario_id=usuario.id,
+         usuario_nome=usuario.nome, cliente_id=cliente_id,
+         detalhes=f"Conta #{conta_id} <- movimentações {', '.join('#' + str(m.id) for m in movs)}")
+    return RedirectResponse(f"{destino}&agrupado_banco={len(movs)}", status_code=303)
 
 
 @router.post("/conciliacao/banco/movimentacao/{mov_id}/revisar")

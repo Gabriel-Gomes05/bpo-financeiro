@@ -33,12 +33,24 @@ def _reabrir_recebimento(atendimento):
 
 
 def desfazer_movimento_recebimento(db, mov):
-    """Solta o crédito do extrato e reabre todos os lançamentos que ele pagou (inclusive o grupo)."""
-    for at in db.query(Atendimento).filter(or_(
+    """Solta o crédito do extrato e reabre todos os lançamentos que ele pagou (inclusive o grupo).
+
+    Se o lançamento foi pago por vários créditos, os outros créditos também voltam a ficar pendentes.
+    """
+    lancamentos = db.query(Atendimento).filter(or_(
         Atendimento.movimentacao_grupo_id == mov.id, Atendimento.id == mov.conciliada_com_atendimento_id,
-    )).all():
+    )).all()
+    for at in lancamentos:
         _mesmo_cliente(at, mov.cliente_id)
         _reabrir_recebimento(at)
+    if lancamentos:
+        for outro in db.query(MovimentacaoBancaria).filter(
+            MovimentacaoBancaria.conciliada_com_atendimento_id.in_([a.id for a in lancamentos]),
+            MovimentacaoBancaria.id != mov.id,
+        ).all():
+            _mesmo_cliente(outro, mov.cliente_id)
+            outro.conciliada_com_atendimento_id = None
+            outro.status = StatusMovimentacaoBancaria.importada
     mov.conciliada_com_atendimento_id = None
     mov.status = StatusMovimentacaoBancaria.importada
 
