@@ -116,7 +116,7 @@
         {% endfor %}
       </div>
     </fieldset>
-    <label class="block text-sm">Banco *<input name="banco" required class="mt-1 w-full rounded-lg border p-2"></label>
+    <label class="block text-sm"><span data-rotulo-banco>Banco *</span><input name="banco" data-obrigatorio-em="bancaria investimento" class="mt-1 w-full rounded-lg border p-2"></label>
     <label class="block text-sm" data-tipos="investimento cartao">
       <span data-rotulo-nome>Nome da conta *</span>
       <input name="nome" maxlength="100" data-obrigatorio-em="investimento cartao" class="mt-1 w-full rounded-lg border p-2">
@@ -172,6 +172,7 @@ function alternarTipoConta(tipo) {
   });
   form.querySelector('[data-rotulo-nome]').textContent = tipo === 'cartao' ? 'Nome do cartão *' : 'Nome da conta *';
   form.querySelector('[data-rotulo-saldo]').textContent = tipo === 'investimento' ? '(opcional)' : '*';
+  form.querySelector('[data-rotulo-banco]').textContent = tipo === 'cartao' ? 'Banco (opcional)' : 'Banco *';
 }
 document.addEventListener('DOMContentLoaded', () => {
   const marcado = document.querySelector('#form-conta-banco [name="tipo"]:checked');

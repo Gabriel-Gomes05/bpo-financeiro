@@ -229,7 +229,7 @@ _DEFINICOES = [
        "Escolha um plano de contas ativo do tipo correto."),
     _e("FLIC-CON-004", 400, "Conta bancária incompleta", "Preencha os campos obrigatórios da conta.",
        "Conta Corrente exige banco, agência e número; Investimentos exige banco, nome e descrição; "
-       "Cartão de Crédito exige banco e nome.",
+       "Cartão de Crédito exige só o nome do cartão.",
        "Preencha os campos obrigatórios do tipo de conta escolhido."),
     _e("FLIC-CON-018", 500, "Falha ao aplicar regra", "A regra foi salva, mas não foi possível aplicá-la aos lançamentos existentes.",
        "Ocorreu um erro durante a aplicação retroativa. O que já tinha sido conciliado em lotes anteriores foi mantido; "

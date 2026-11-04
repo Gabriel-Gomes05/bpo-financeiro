@@ -122,8 +122,17 @@ def test_cartao_de_credito_so_e_cadastrado(db):
     assert exc.value.codigo == "FLIC-CON-007"
 
 
-def test_cartao_exige_banco_e_nome(db):
+def test_cartao_exige_so_o_nome(db):
     assert erro_ao_cadastrar(db, tipo="cartao", banco="Nubank", nome="") == "FLIC-CON-004"
+    cadastrar(db, tipo="cartao", nome="Cartão Visa Empresa")
+    cartao = db.query(ContaBancaria).one()
+    assert (cartao.nome, cartao.banco) == ("Cartão Visa Empresa", None)
+    assert erro_ao_cadastrar(db, tipo="cartao", nome="cartão visa empresa") == "FLIC-CON-006"
+
+
+def test_conta_corrente_e_investimento_continuam_exigindo_banco(db):
+    assert erro_ao_cadastrar(db, tipo="bancaria", agencia="1", numero="2", saldo="0") == "FLIC-CON-004"
+    assert erro_ao_cadastrar(db, tipo="investimento", nome="CDB", descricao="Reserva") == "FLIC-CON-004"
 
 
 # ---------------------------------------------------------------- geral

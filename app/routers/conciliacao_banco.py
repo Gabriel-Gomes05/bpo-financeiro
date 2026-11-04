@@ -221,7 +221,9 @@ def _dados_conta_por_tipo(tipo: str, nome: str, banco: str, agencia: str, numero
     except ValueError:
         raise erro("FLIC-CON-017") from None
     nome, banco, agencia, numero, descricao = (v.strip() for v in (nome, banco, agencia, numero, descricao))
-    if not banco or len(nome) > 100 or len(descricao) > 500:
+    if len(nome) > 100 or len(descricao) > 500:
+        raise erro("FLIC-CON-004")
+    if tipo_conta != TipoContaBancaria.cartao and not banco:
         raise erro("FLIC-CON-004")
     if tipo_conta == TipoContaBancaria.bancaria:
         if not agencia or not numero:
@@ -233,12 +235,16 @@ def _dados_conta_por_tipo(tipo: str, nome: str, banco: str, agencia: str, numero
             raise erro("FLIC-CON-004", "Investimentos: informe banco, nome e descrição da conta.")
         return {"tipo": tipo_conta, "banco": banco, "agencia": None, "conta": None, "descricao": descricao, "nome": nome}
     if not nome:
-        raise erro("FLIC-CON-004", "Cartão de Crédito: informe banco e nome do cartão.")
-    return {"tipo": tipo_conta, "banco": banco, "agencia": None, "conta": None, "descricao": descricao or None, "nome": nome}
+        raise erro("FLIC-CON-004", "Cartão de Crédito: informe o nome do cartão.")
+    return {"tipo": tipo_conta, "banco": banco or None, "agencia": None, "conta": None, "descricao": descricao or None, "nome": nome}
 
 
 def _conta_duplicada(existente: ContaBancaria, dados: dict) -> bool:
-    if existente.tipo != dados["tipo"] or (existente.banco or "").strip().casefold() != dados["banco"].casefold():
+    if existente.tipo != dados["tipo"]:
+        return False
+    if dados["tipo"] == TipoContaBancaria.cartao:  # cartão é identificado só pelo nome
+        return (existente.nome or "").strip().casefold() == dados["nome"].casefold()
+    if (existente.banco or "").strip().casefold() != dados["banco"].casefold():
         return False
     if dados["tipo"] == TipoContaBancaria.bancaria:
         return (existente.agencia or "").strip() == dados["agencia"] and (existente.conta or "").strip() == dados["conta"]
