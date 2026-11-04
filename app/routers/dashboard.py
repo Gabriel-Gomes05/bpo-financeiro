@@ -7,7 +7,7 @@ from app.jinja import templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.auth import get_usuario_atual, ve_todos_os_clientes
 from app.database import get_db
 from app.models import (
     Atendimento, ClienteBPO, ContaPagar, DivergenciaConciliacao,
@@ -42,13 +42,13 @@ async def dashboard(
     permitidos = db.query(ClienteBPO).filter(
         ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None),
     )
-    if usuario.perfil not in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if not ve_todos_os_clientes(usuario):
         permitidos = permitidos.filter(ClienteBPO.funcionario_id == usuario.id)
     clientes = permitidos.order_by(ClienteBPO.nome).all()
     if cliente_ativo_id and cliente_ativo_id not in {c.id for c in clientes}:
         return RedirectResponse("/painel", status_code=303)
 
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         contexto = _dashboard_coordenador(db, hoje, cliente_ativo_id)
     else:
         contexto = _dashboard_funcionario(db, hoje, usuario, cliente_ativo_id)

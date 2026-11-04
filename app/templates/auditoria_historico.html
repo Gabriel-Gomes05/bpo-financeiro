@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Histórico de alterações - FLIC{% endblock %}
+{% block page_title %}Auditoria · Histórico de alterações{% endblock %}
+
+{% macro selo_acao(acao) -%}
+<span class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold
+  {% if acao == 'criacao' %}bg-emerald-50 text-emerald-700{% elif acao == 'edicao' %}bg-blue-50 text-blue-700{% elif acao == 'tentativa_bloqueada' %}bg-red-50 text-red-700{% else %}bg-amber-50 text-amber-700{% endif %}">{{ acoes.get(acao, acao) }}</span>
+{%- endmacro %}
+
+{% block content %}
+<div class="space-y-5">
+
+  <p class="text-sm text-slate-500">
+    Tudo o que as secretárias criam ou alteram é gravado automaticamente, campo a campo, junto com a própria operação.
+    Os registros não podem ser editados nem excluídos.
+  </p>
+
+  <form method="get" action="/auditoria/historico"
+        class="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
+    <div>
+      <label for="f-secretaria" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Secretária</label>
+      <select id="f-secretaria" name="secretaria_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">Todas</option>
+        {% for s in secretarias %}<option value="{{ s.id }}" {% if filtros.secretaria_id == s.id %}selected{% endif %}>{{ s.nome }}{% if not s.ativo or s.deleted_at %} (inativa){% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="f-cliente" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Cliente</label>
+      <select id="f-cliente" name="cliente_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">Todos</option>
+        {% for c in clientes_filtro %}<option value="{{ c.id }}" {% if filtros.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="f-acao" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Tipo de operação</label>
+      <select id="f-acao" name="acao" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">Todas</option>
+        {% for valor, rotulo in acoes.items() %}<option value="{{ valor }}" {% if filtros.acao == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="f-campo" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Tipo de alteração (campo)</label>
+      <input id="f-campo" name="campo" list="lista-campos" value="{{ filtros.campo or '' }}" placeholder="Ex.: Valor, Data, Status"
+             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      <datalist id="lista-campos">{% for c in campos %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+    <div>
+      <label for="f-inicio" class="mb-1 block text-xs font-semibold uppercase text-gray-500">De</label>
+      <input id="f-inicio" type="date" name="data_inicio" value="{{ filtros.data_inicio.isoformat() if filtros.data_inicio else '' }}"
+             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label for="f-fim" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Até</label>
+      <input id="f-fim" type="date" name="data_fim" value="{{ filtros.data_fim.isoformat() if filtros.data_fim else '' }}"
+             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label for="f-registro" class="mb-1 block text-xs font-semibold uppercase text-gray-500">Registro financeiro (nº)</label>
+      <input id="f-registro" name="registro" inputmode="numeric" value="{{ filtros.registro or '' }}" placeholder="Ex.: 152"
+             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div class="flex items-end gap-2">
+      <button type="submit" class="rounded-lg bg-[#222049] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1a1836]">Filtrar</button>
+      <a href="/auditoria/historico" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Limpar</a>
+    </div>
+  </form>
+
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-100 px-5 py-3 text-xs text-slate-500">
+      {{ total_operacoes }} operação(ões){% if total_operacoes > limite %} — exibindo as {{ limite }} mais recentes; refine os filtros{% endif %}
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <tr>
+            <th class="px-4 py-3">Data</th>
+            <th class="px-4 py-3">Hora</th>
+            <th class="px-4 py-3">Secretária</th>
+            <th class="px-4 py-3">Cliente</th>
+            <th class="px-4 py-3">Operação</th>
+            <th class="px-4 py-3">Registro</th>
+            <th class="px-4 py-3">Alterações</th>
+            <th class="px-4 py-3">IP</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for op in operacoes %}
+          {% set l = op.linha %}
+          <tr class="align-top hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3">{{ op.quando.strftime('%d/%m/%Y') }}</td>
+            <td class="whitespace-nowrap px-4 py-3">{{ op.quando.strftime('%H:%M') }}</td>
+            <td class="px-4 py-3 font-medium text-slate-700">{{ l.usuario_nome }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ l.cliente_nome or '—' }}</td>
+            <td class="px-4 py-3">{{ selo_acao(op.acao) }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-slate-600">{{ entidades.get(l.entidade, l.entidade) }}{% if l.entidade_id %} #{{ l.entidade_id }}{% endif %}</td>
+            <td class="px-4 py-3 text-xs text-slate-600">
+              {% for c in op.campos[:3] %}
+              <div class="max-w-[360px] truncate">
+                <strong class="text-slate-700">{{ c.campo or '—' }}:</strong>
+                {% if op.acao == 'tentativa_bloqueada' %}{{ c.valor_novo }}
+                {% elif c.valor_anterior is not none and c.valor_novo is not none %}{{ c.valor_anterior }} → {{ c.valor_novo }}
+                {% elif c.valor_novo is not none %}{{ c.valor_novo }}
+                {% else %}<span class="line-through">{{ c.valor_anterior }}</span>{% endif %}
+              </div>
+              {% endfor %}
+              {% if op.campos|length > 3 %}<div class="text-slate-400">+{{ op.campos|length - 3 }} campo(s)</div>{% endif %}
+            </td>
+            <td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">{{ l.ip or '—' }}</td>
+            <td class="whitespace-nowrap px-4 py-3">
+              <a href="/auditoria/historico/{{ l.operacao_id }}" class="text-xs font-semibold text-[#315f9a] hover:underline">Detalhes</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="px-4 py-10 text-center text-slate-400">Nenhuma alteração encontrada para os filtros.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

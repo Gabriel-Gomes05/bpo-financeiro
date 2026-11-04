@@ -19,6 +19,8 @@ class Permission(str, Enum):
     ADMIN_CLIENTES = "admin_clientes"
     ADMIN_USUARIOS = "admin_usuarios"
     LOGS = "logs"
+    SECRETARIAS = "secretarias"
+    AUDITORIA = "auditoria"
 
 
 ROLE_PERMISSIONS: dict[PerfilUsuario, frozenset[Permission]] = {
@@ -30,6 +32,8 @@ ROLE_PERMISSIONS: dict[PerfilUsuario, frozenset[Permission]] = {
             Permission.CONTAS_PAGAR,
             Permission.GESTAO,
             Permission.ADMIN_CLIENTES,
+            Permission.SECRETARIAS,
+            Permission.AUDITORIA,
         }
     ),
     PerfilUsuario.funcionario: frozenset(

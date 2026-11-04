@@ -8,11 +8,20 @@ from fastapi import HTTPException
 from app.models import ContaBancaria, MovimentacaoBancaria, StatusMovimentacaoBancaria, TipoContaBancaria
 from app.errors import erro
 
+ROTULOS_TIPO_CONTA = {
+    TipoContaBancaria.bancaria: "Conta Corrente",
+    TipoContaBancaria.investimento: "Investimentos",
+    TipoContaBancaria.cartao: "Cartão de Crédito",
+}
+# Tipos que têm saldo, extrato, transferências e regras automáticas. O cartão de crédito
+# fica de fora até as regras de fatura (pagamento, baixa e fechamento) serem definidas.
+TIPOS_COM_SALDO = (TipoContaBancaria.bancaria, TipoContaBancaria.investimento)
+
 
 def conta_do_cliente(db, cliente_id, conta_id, bloquear=False):
     query = db.query(ContaBancaria).filter(
         ContaBancaria.id == conta_id, ContaBancaria.cliente_id == cliente_id,
-        ContaBancaria.ativo.is_(True), ContaBancaria.tipo == TipoContaBancaria.bancaria,
+        ContaBancaria.ativo.is_(True), ContaBancaria.tipo.in_(TIPOS_COM_SALDO),
     )
     conta = (query.with_for_update() if bloquear else query).first()
     if not conta:

@@ -65,6 +65,36 @@ def pode_acessar_cliente(db: Session, usuario: Usuario, cliente_id: int) -> bool
     ).first() is not None
 
 
+def _responsaveis(db: Session, usuario: Usuario, atual_id: Optional[int] = None):
+    """Opções de responsável: o coordenador escolhe qualquer funcionário ou editor ativo;
+    o editor só pode designar a si mesmo (o responsável atual continua listado)."""
+    if usuario.perfil == PerfilUsuario.coordenador:
+        return db.query(Usuario).filter(
+            Usuario.perfil.in_([PerfilUsuario.funcionario, PerfilUsuario.editor]),
+            Usuario.ativo == True, Usuario.deleted_at.is_(None),
+        ).order_by(Usuario.nome).all()
+    ids = {usuario.id} | ({atual_id} if atual_id else set())
+    return db.query(Usuario).filter(Usuario.id.in_(ids)).order_by(Usuario.nome).all()
+
+
+def _novo_responsavel(db: Session, usuario: Usuario, escolhido: Optional[int], atual: Optional[int]) -> Optional[int]:
+    """Aplica a escolha de responsável respeitando o perfil; escolha não permitida mantém o atual."""
+    if usuario.perfil == PerfilUsuario.coordenador:
+        if not escolhido:
+            return None
+        responsavel = db.query(Usuario).filter(
+            Usuario.id == escolhido, Usuario.ativo == True,
+            Usuario.perfil.notin_([PerfilUsuario.secretaria, PerfilUsuario.medico]),
+        ).first()
+        return responsavel.id if responsavel else atual
+    if usuario.perfil == PerfilUsuario.editor:
+        if escolhido == usuario.id:
+            return usuario.id
+        if not escolhido and atual == usuario.id:
+            return None
+    return atual
+
+
 def _url_retorno_maquininha(
     cliente_id: int,
     origem: str | None,
@@ -101,10 +131,6 @@ async def pagina_clientes(
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    funcionarios = db.query(Usuario).filter(
-        Usuario.perfil == PerfilUsuario.funcionario,
-        Usuario.ativo == True,
-    ).order_by(Usuario.nome).all()
     grupos = db.query(GrupoEmpresarial).filter(
         GrupoEmpresarial.ativo == True,
     ).order_by(GrupoEmpresarial.nome).all()
@@ -113,7 +139,8 @@ async def pagina_clientes(
         "request": request,
         "usuario": usuario,
         "clientes": clientes,
-        "funcionarios": funcionarios,
+        "funcionarios": _responsaveis(db, usuario),
+        "pode_atribuir": tem_acesso_geral(usuario),
         "grupos": grupos,
         "bandeiras": BANDEIRAS,
         "redes_maquininha": REDES_MAQUININHA,
@@ -355,6 +382,10 @@ async def criar_usuario(
     ):
         return RedirectResponse(url="/admin/funcionarios?erro=dados_invalidos", status_code=303)
 
+    if perfil == PerfilUsuario.secretaria.value:
+        # Secretária exige cliente vinculado, informado só no cadastro próprio.
+        return RedirectResponse(url="/admin/funcionarios?erro=usar_tela_secretarias", status_code=303)
+
     existente = db.query(Usuario).filter(Usuario.email == email).first()
     if existente:
         return RedirectResponse(url="/admin/funcionarios?erro=email_duplicado", status_code=303)
@@ -395,6 +426,8 @@ async def editar_usuario(
         return RedirectResponse(url=f"/admin/funcionarios?erro=senha_curta&editar={usuario_id}", status_code=303)
     if usuario_id == coordenador.id and perfil != PerfilUsuario.coordenador.value:
         return RedirectResponse(url="/admin/funcionarios?erro=perfil_proprio", status_code=303)
+    if perfil == PerfilUsuario.secretaria.value and not alvo.cliente_id:
+        return RedirectResponse(url=f"/admin/funcionarios?erro=usar_tela_secretarias&editar={usuario_id}", status_code=303)
 
     duplicado = db.query(Usuario).filter(
         Usuario.email == email,
@@ -403,9 +436,13 @@ async def editar_usuario(
     if duplicado:
         return RedirectResponse(url=f"/admin/funcionarios?erro=email_duplicado&editar={usuario_id}", status_code=303)
 
+    if perfil != alvo.perfil.value:
+        alvo.auth_version += 1  # perfil novo = permissões novas: força novo login
     alvo.nome = nome
     alvo.email = email
     alvo.perfil = perfil
+    if perfil != PerfilUsuario.secretaria.value:
+        alvo.cliente_id = None
     if senha:
         alvo.senha_hash = hash_senha(senha)
         alvo.auth_version += 1
@@ -493,7 +530,7 @@ async def criar_cliente(
         tem_maquininha=usa_maquininha,
         rede_maquininha=rede_maquininha if usa_maquininha and rede_maquininha else None,
         antecipa=antecipa == "sim" if usa_maquininha else False,
-        funcionario_id=funcionario_id if usuario.perfil == PerfilUsuario.coordenador and funcionario_id else None,
+        funcionario_id=_novo_responsavel(db, usuario, funcionario_id, None),
         grupo_empresarial_id=grupo_empresarial_id or None,
         ativo=True,
     )
@@ -569,10 +606,6 @@ async def pagina_editar_cliente(
     if not cliente:
         return RedirectResponse(url="/admin/clientes?erro=cliente_nao_encontrado", status_code=303)
 
-    funcionarios = db.query(Usuario).filter(
-        Usuario.perfil == PerfilUsuario.funcionario,
-        Usuario.ativo == True,
-    ).order_by(Usuario.nome).all()
     grupos = db.query(GrupoEmpresarial).filter(
         GrupoEmpresarial.ativo == True,
     ).order_by(GrupoEmpresarial.nome).all()
@@ -580,7 +613,8 @@ async def pagina_editar_cliente(
         "request": request,
         "usuario": usuario,
         "cliente": cliente,
-        "funcionarios": funcionarios,
+        "funcionarios": _responsaveis(db, usuario, cliente.funcionario_id),
+        "pode_atribuir": tem_acesso_geral(usuario),
         "grupos": grupos,
         "redes_maquininha": REDES_MAQUININHA,
         "pode_coordenar": usuario.perfil == PerfilUsuario.coordenador,
@@ -631,14 +665,8 @@ async def editar_cliente_completo(
     cliente.tem_maquininha = tem_maquininha == "sim"
     cliente.rede_maquininha = ((rede_maquininha or "").strip() or None) if cliente.tem_maquininha else None
     cliente.antecipa = antecipa == "sim" if cliente.tem_maquininha else False
-    if usuario.perfil == PerfilUsuario.coordenador:
-        responsavel = None
-        if funcionario_id:
-            responsavel = db.query(Usuario).filter(
-                Usuario.id == funcionario_id,
-                Usuario.ativo == True,
-            ).first()
-        cliente.funcionario_id = responsavel.id if responsavel else None
+    if tem_acesso_geral(usuario):
+        cliente.funcionario_id = _novo_responsavel(db, usuario, funcionario_id, cliente.funcionario_id)
     if tem_acesso_geral(usuario):
         grupo = None
         if grupo_empresarial_id:

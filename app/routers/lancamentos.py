@@ -13,7 +13,7 @@ from app.jinja import templates
 from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.auth import get_usuario_atual, ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.database import get_db
 from app.database import aplicar_contexto_auditoria
@@ -39,8 +39,14 @@ require_lancamentos = require_permission(Permission.LANCAMENTOS)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
+    if usuario.perfil == PerfilUsuario.secretaria:
+        # Somente o cliente do cadastro dela; cookie, URL e formulário são ignorados.
+        return db.query(ClienteBPO).filter(
+            ClienteBPO.id == usuario.cliente_id,
+            ClienteBPO.ativo == True,
+        ).all()
     return db.query(ClienteBPO).filter(
         ClienteBPO.funcionario_id == usuario.id,
         ClienteBPO.ativo == True,
@@ -530,6 +536,8 @@ async def salvar_edicao_lancamento(
         return RedirectResponse(url="/lancamentos", status_code=303)
     vinculado = _lancamento_vinculado(db, at)
     if vinculado:
+        if usuario.perfil == PerfilUsuario.secretaria:
+            raise erro("FLIC-REC-015")
         exigir_confirmacao(confirmar_conciliacao)
 
     def decimal_campo(raw, nome, limite):

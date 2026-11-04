@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
+from app.auth import ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
     return db.query(ClienteBPO).filter(
         ClienteBPO.funcionario_id == usuario.id,

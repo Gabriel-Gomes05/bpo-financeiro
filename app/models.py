@@ -58,8 +58,9 @@ class StatusMovimentacaoBancaria(str, PyEnum):
 
 
 class TipoContaBancaria(str, PyEnum):
-    bancaria = "bancaria"
-    cartao = "cartao"
+    bancaria = "bancaria"          # Conta Corrente
+    investimento = "investimento"  # Investimentos
+    cartao = "cartao"              # Cartão de Crédito (regras de fatura ainda não definidas)
 
 
 class StatusTransferenciaCartao(str, PyEnum):
@@ -139,9 +140,12 @@ class Usuario(AuditMixin, Base):
     ativo = Column(Boolean, default=True, nullable=False)
     auth_version = Column(Integer, default=0, nullable=False, server_default="0")
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
+    # Perfil secretária: único cliente que ela enxerga (obrigatório para esse perfil).
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=True, index=True)
 
     # clientes atribuídos a este funcionário
     clientes = relationship("ClienteBPO", back_populates="funcionario", foreign_keys="ClienteBPO.funcionario_id")
+    cliente_vinculado = relationship("ClienteBPO", foreign_keys=[cliente_id])
 
 
 class GrupoEmpresarial(AuditMixin, Base):
@@ -325,6 +329,7 @@ class ContaPagar(AuditMixin, Base):
     recorrencia_dias = Column(Integer, nullable=True)           # usado quando recorrencia_intervalo == personalizado
     recorrencia_grupo_id = Column(Integer, ForeignKey("contas_pagar.id"), nullable=True)
     aviso_dias_antes = Column(Integer, nullable=True)            # recorrentes: alerta no dashboard N dias antes
+    conta_bancaria_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)  # conta do cliente que paga
     especialidade = Column(String(100), nullable=True)
     documento_path = Column(EncryptedText("contas_pagar.documento_path"))
     observacao = Column(EncryptedText("contas_pagar.observacao"))
@@ -333,6 +338,7 @@ class ContaPagar(AuditMixin, Base):
     criado_em = Column(DateTime, server_default=func.now(), nullable=False)
 
     cliente = relationship("ClienteBPO", back_populates="contas_pagar")
+    conta_bancaria = relationship("ContaBancaria", foreign_keys=[conta_bancaria_id])
     rateios_centro_custo = relationship("ContaPagarCentroCustoRateio", back_populates="conta", cascade="all, delete-orphan")
     pagamentos_parciais = relationship("PagamentoParcialContaPagar", back_populates="conta", cascade="all, delete-orphan")
     lancado_por = relationship("Usuario", foreign_keys=[lancado_por_id])
@@ -494,6 +500,7 @@ class ContaBancaria(AuditMixin, Base):
     banco = Column(EncryptedText("contas_bancarias.banco"))
     agencia = Column(EncryptedText("contas_bancarias.agencia"))
     conta = Column(EncryptedText("contas_bancarias.conta"))
+    descricao = Column(EncryptedText("contas_bancarias.descricao"), nullable=True)  # investimentos
     saldo_atual = Column(Numeric(14, 2), nullable=True)
     saldo_data_referencia = Column(DateTime, nullable=True)
     saldo_atualizado_em = Column(DateTime, nullable=True)
@@ -726,6 +733,71 @@ class AnotacaoCliente(AuditMixin, Base):
 
     cliente = relationship("ClienteBPO", back_populates="anotacoes")
     autor = relationship("Usuario", foreign_keys=[autor_id])
+
+
+class PeriodoFechado(AuditMixin, Base):
+    """Fechamento de um período do cliente. Só é criado com o extrato bancário (PDF) anexado;
+    os totais ficam congelados como estavam no momento do fechamento."""
+    __tablename__ = "periodos_fechados"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes_bpo.id"), nullable=False, index=True)
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+    total_receitas = Column(Numeric(14, 2), nullable=False)
+    total_despesas = Column(Numeric(14, 2), nullable=False)
+    resultado = Column(Numeric(14, 2), nullable=False)
+    observacao = Column(EncryptedText("periodos_fechados.observacao"), nullable=True)
+    fechado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    fechado_em = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    cliente = relationship("ClienteBPO")
+    fechado_por = relationship("Usuario", foreign_keys=[fechado_por_id])
+    extratos = relationship("ExtratoPeriodoFechado", back_populates="periodo", order_by="ExtratoPeriodoFechado.id")
+
+
+class ExtratoPeriodoFechado(AuditMixin, Base):
+    """Extrato bancário em PDF anexado ao fechamento de período (consulta: coordenador e editor)."""
+    __tablename__ = "extratos_periodos_fechados"
+
+    id = Column(Integer, primary_key=True, index=True)
+    periodo_id = Column(Integer, ForeignKey("periodos_fechados.id"), nullable=False, index=True)
+    conta_bancaria_id = Column(Integer, ForeignKey("contas_bancarias.id"), nullable=True)
+    nome_arquivo = Column(String(255), nullable=False)
+    caminho = Column(EncryptedText("extratos_periodos_fechados.caminho"), nullable=False)
+    tamanho_bytes = Column(Integer, nullable=False)
+    enviado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    enviado_em = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    periodo = relationship("PeriodoFechado", back_populates="extratos")
+    conta_bancaria = relationship("ContaBancaria")
+    enviado_por = relationship("Usuario", foreign_keys=[enviado_por_id])
+
+
+class HistoricoAlteracao(Base):
+    """Histórico campo a campo do que as secretárias criam e alteram. Imutável:
+    gravado na mesma transação da operação e protegido por trigger contra UPDATE/DELETE."""
+
+    __tablename__ = "historico_alteracoes"
+
+    id = Column(Integer, primary_key=True)
+    operacao_id = Column(Uuid(as_uuid=True), nullable=False, index=True)  # agrupa as linhas de uma mesma ação
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
+    usuario_nome = Column(Text, nullable=False)
+    cliente_id = Column(Integer, nullable=True, index=True)
+    cliente_nome = Column(Text, nullable=True)
+    acao = Column(String(30), nullable=False)          # criacao | edicao | remocao | tentativa_bloqueada
+    modulo = Column(String(50), nullable=False)
+    entidade = Column(String(60), nullable=False)
+    entidade_id = Column(Integer, nullable=True)
+    campo = Column(String(80), nullable=True)
+    valor_anterior = Column(EncryptedText("historico_alteracoes.valor_anterior"), nullable=True)
+    valor_novo = Column(EncryptedText("historico_alteracoes.valor_novo"), nullable=True)
+    ip = Column(EncryptedText("historico_alteracoes.ip"), nullable=True)
+    request_id = Column(Uuid(as_uuid=True), nullable=True)
+    criado_em = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    usuario = relationship("Usuario", foreign_keys=[usuario_id])
 
 
 class AuditEvent(Base):

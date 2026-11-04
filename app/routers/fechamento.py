@@ -1,25 +1,29 @@
 from calendar import monthrange
+import os
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
 import html
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
+from app.auth import tem_acesso_geral, ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.database import get_db
-from app.utils import cliente_ativo as _ca
+from app.utils import cliente_ativo as _ca, salvar_upload_temporario
 from app.models import (
-    ClienteBPO, ContaPagar, MovimentacaoBancaria, PerfilUsuario,
-    StatusContaPagar, StatusMovimentacaoBancaria, StatusTransferenciaCartao,
+    ClienteBPO, ContaBancaria, ContaPagar, ExtratoPeriodoFechado, MovimentacaoBancaria, PerfilUsuario,
+    PeriodoFechado, StatusContaPagar, StatusMovimentacaoBancaria, StatusTransferenciaCartao,
     TransferenciaCartao, Usuario,
 )
+from app.services.log_service import registrar as _log
 from app.errors import erro
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,7 +49,7 @@ router = APIRouter()
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
     return db.query(ClienteBPO).filter(
         ClienteBPO.funcionario_id == usuario.id,
@@ -379,6 +383,83 @@ async def pdf_aprovacao(
     )
 
 
+def _calcular_fechamento(db: Session, cliente_id: int, di: date, df: date) -> dict:
+    """Receitas confirmadas no banco, lotes de cartão conciliados e despesas pagas no período."""
+    # Receitas PIX/TED: movimentações bancárias de recebimento conciliadas com atendimento
+    # Fonte: banco confirmado — Atendimento é só para conciliação, não para receita
+    receitas_banco = (
+        db.query(MovimentacaoBancaria)
+        .filter(
+            MovimentacaoBancaria.cliente_id == cliente_id,
+            MovimentacaoBancaria.sentido == "recebimento",
+            MovimentacaoBancaria.status == StatusMovimentacaoBancaria.conciliada,
+            MovimentacaoBancaria.conciliada_com_atendimento_id.isnot(None),
+            MovimentacaoBancaria.transferencia_cartao_id.is_(None),
+            MovimentacaoBancaria.data_movimento >= di,
+            MovimentacaoBancaria.data_movimento <= df,
+        )
+        .order_by(MovimentacaoBancaria.data_movimento.asc())
+        .all()
+    )
+    total_receitas_banco = sum((m.valor or Decimal("0")) for m in receitas_banco)
+
+    # Receitas de cartão: lotes conciliados no banco
+    lotes_cartao = (
+        db.query(TransferenciaCartao)
+        .filter(
+            TransferenciaCartao.cliente_id == cliente_id,
+            TransferenciaCartao.status == StatusTransferenciaCartao.conciliada,
+            TransferenciaCartao.data >= di,
+            TransferenciaCartao.data <= df,
+        )
+        .order_by(TransferenciaCartao.data.asc(), TransferenciaCartao.bandeira)
+        .all()
+    )
+    total_receitas_cartao = sum((l.valor_liquido or Decimal("0")) for l in lotes_cartao)
+
+    contas = (
+        db.query(ContaPagar)
+        .filter(
+            ContaPagar.cliente_id == cliente_id,
+            ContaPagar.status == StatusContaPagar.pago,
+            ContaPagar.data_pagamento >= di,
+            ContaPagar.data_pagamento <= df,
+        )
+        .order_by(ContaPagar.data_pagamento.asc())
+        .all()
+    )
+    total_despesas = sum((c.valor or Decimal("0")) for c in contas)
+    total_receitas = total_receitas_banco + total_receitas_cartao
+    return {
+        "receitas_banco": receitas_banco,
+        "lotes_cartao": lotes_cartao,
+        "contas": contas,
+        "total_receitas": total_receitas,
+        "total_receitas_banco": total_receitas_banco,
+        "total_receitas_cartao": total_receitas_cartao,
+        "total_despesas": total_despesas,
+        "resultado": total_receitas - total_despesas,
+    }
+
+
+def _periodos_do_cliente(db: Session, cliente_id: int) -> list[PeriodoFechado]:
+    return db.query(PeriodoFechado).filter(
+        PeriodoFechado.cliente_id == cliente_id, PeriodoFechado.deleted_at.is_(None),
+    ).order_by(PeriodoFechado.data_inicio.desc()).all()
+
+
+def _periodo_sobreposto(db: Session, cliente_id: int, di: date, df: date) -> Optional[PeriodoFechado]:
+    return db.query(PeriodoFechado).filter(
+        PeriodoFechado.cliente_id == cliente_id, PeriodoFechado.deleted_at.is_(None),
+        PeriodoFechado.data_inicio <= df, PeriodoFechado.data_fim >= di,
+    ).first()
+
+
+def pode_consultar_extratos(usuario: Usuario) -> bool:
+    """Extratos dos fechamentos: somente coordenador (admin) e editor."""
+    return tem_acesso_geral(usuario)
+
+
 @router.get("/fechamento/mensal", response_class=HTMLResponse)
 async def fechamento_mensal(
     request: Request,
@@ -405,65 +486,20 @@ async def fechamento_mensal(
     ids_permitidos = [c.id for c in clientes]
 
     cliente = None
-    receitas_banco = []   # MovimentacaoBancaria PIX/TED conciliadas
-    lotes_cartao = []     # TransferenciaCartao conciliadas no banco
-    contas = []
-    total_receitas = Decimal("0")
-    total_receitas_banco = Decimal("0")
-    total_receitas_cartao = Decimal("0")
-    total_despesas = Decimal("0")
-
+    dados = {
+        "receitas_banco": [], "lotes_cartao": [], "contas": [], "total_receitas": Decimal("0"),
+        "total_receitas_banco": Decimal("0"), "total_receitas_cartao": Decimal("0"),
+        "total_despesas": Decimal("0"), "resultado": Decimal("0"),
+    }
+    periodos, periodo_atual, contas_bancarias = [], None, []
     if cliente_id and cliente_id in ids_permitidos:
         cliente = db.query(ClienteBPO).filter(ClienteBPO.id == cliente_id).first()
-
-        # Receitas PIX/TED: movimentações bancárias de recebimento conciliadas com atendimento
-        # Fonte: banco confirmado — Atendimento é só para conciliação, não para receita
-        receitas_banco = (
-            db.query(MovimentacaoBancaria)
-            .filter(
-                MovimentacaoBancaria.cliente_id == cliente_id,
-                MovimentacaoBancaria.sentido == "recebimento",
-                MovimentacaoBancaria.status == StatusMovimentacaoBancaria.conciliada,
-                MovimentacaoBancaria.conciliada_com_atendimento_id.isnot(None),
-                MovimentacaoBancaria.transferencia_cartao_id.is_(None),
-                MovimentacaoBancaria.data_movimento >= di,
-                MovimentacaoBancaria.data_movimento <= df,
-            )
-            .order_by(MovimentacaoBancaria.data_movimento.asc())
-            .all()
-        )
-        total_receitas_banco = sum((m.valor or Decimal("0")) for m in receitas_banco)
-
-        # Receitas de cartão: lotes conciliados no banco
-        lotes_cartao = (
-            db.query(TransferenciaCartao)
-            .filter(
-                TransferenciaCartao.cliente_id == cliente_id,
-                TransferenciaCartao.status == StatusTransferenciaCartao.conciliada,
-                TransferenciaCartao.data >= di,
-                TransferenciaCartao.data <= df,
-            )
-            .order_by(TransferenciaCartao.data.asc(), TransferenciaCartao.bandeira)
-            .all()
-        )
-        total_receitas_cartao = sum((l.valor_liquido or Decimal("0")) for l in lotes_cartao)
-
-        total_receitas = total_receitas_banco + total_receitas_cartao
-
-        contas = (
-            db.query(ContaPagar)
-            .filter(
-                ContaPagar.cliente_id == cliente_id,
-                ContaPagar.status == StatusContaPagar.pago,
-                ContaPagar.data_pagamento >= di,
-                ContaPagar.data_pagamento <= df,
-            )
-            .order_by(ContaPagar.data_pagamento.asc())
-            .all()
-        )
-        total_despesas = sum((c.valor or Decimal("0")) for c in contas)
-
-    resultado = total_receitas - total_despesas
+        dados = _calcular_fechamento(db, cliente_id, di, df)
+        periodos = _periodos_do_cliente(db, cliente_id)
+        periodo_atual = _periodo_sobreposto(db, cliente_id, di, df)
+        contas_bancarias = db.query(ContaBancaria).filter(
+            ContaBancaria.cliente_id == cliente_id, ContaBancaria.ativo.is_(True),
+        ).order_by(ContaBancaria.nome).all()
 
     return templates.TemplateResponse("fechamento_mensal.html", {
         "request": request,
@@ -473,13 +509,92 @@ async def fechamento_mensal(
         "cliente": cliente,
         "data_inicio": di_str,
         "data_fim": df_str,
-        "receitas_banco": receitas_banco,
-        "lotes_cartao": lotes_cartao,
-        "contas": contas,
-        "total_receitas": total_receitas,
-        "total_receitas_banco": total_receitas_banco,
-        "total_receitas_cartao": total_receitas_cartao,
-        "total_despesas": total_despesas,
-        "resultado": resultado,
+        **dados,
+        "periodos_fechados": periodos,
+        "periodo_atual": periodo_atual,
+        "contas_bancarias": contas_bancarias,
+        "pode_fechar": usuario.perfil != PerfilUsuario.medico,
+        "pode_ver_extratos": pode_consultar_extratos(usuario),
         "formatar_brl": formatar_brl,
     })
+
+
+def _voltar_fechamento(di: str, df: str, aviso: str) -> RedirectResponse:
+    """Volta ao fechamento do mesmo período com ?erro=<slug> ou ?sucesso=<slug>."""
+    return RedirectResponse(f"/fechamento/mensal?data_inicio={quote(di)}&data_fim={quote(df)}&{aviso}", status_code=303)
+
+
+@router.post("/fechamento/mensal/fechar")
+async def fechar_periodo(
+    request: Request,
+    data_inicio: str = Form(""),
+    data_fim: str = Form(""),
+    observacao: str = Form(""),
+    conta_bancaria_id: Optional[str] = Form(None),
+    extratos: List[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_gestao),
+):
+    if usuario.perfil == PerfilUsuario.medico:
+        raise erro("FLIC-AUT-002")
+    cliente_id = _ca(request, None)
+    if not cliente_id or cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    try:
+        di, df = date.fromisoformat(data_inicio), date.fromisoformat(data_fim)
+    except ValueError:
+        return _voltar_fechamento(data_inicio, data_fim, "erro=periodo_invalido")
+    if df < di:
+        return _voltar_fechamento(data_inicio, data_fim, "erro=periodo_invalido")
+    if _periodo_sobreposto(db, cliente_id, di, df):
+        return _voltar_fechamento(data_inicio, data_fim, "erro=periodo_ja_fechado")
+    arquivos = [a for a in extratos if a is not None and (a.filename or "").strip()]
+    if not arquivos:
+        return _voltar_fechamento(data_inicio, data_fim, "erro=extrato_obrigatorio")
+    conta = None
+    if str(conta_bancaria_id or "").isdigit():
+        conta = db.query(ContaBancaria).filter(
+            ContaBancaria.id == int(conta_bancaria_id), ContaBancaria.cliente_id == cliente_id,
+        ).first()
+
+    salvos: list[tuple[str, str]] = []
+    try:
+        for arquivo in arquivos:
+            caminho, nome_original, _ = await salvar_upload_temporario(arquivo, {".pdf"})
+            salvos.append((caminho, nome_original))
+    except ValueError:
+        for caminho, _ in salvos:
+            _remover_arquivo(caminho)
+        return _voltar_fechamento(data_inicio, data_fim, "erro=extrato_invalido")
+
+    dados = _calcular_fechamento(db, cliente_id, di, df)
+    periodo = PeriodoFechado(
+        cliente_id=cliente_id, data_inicio=di, data_fim=df,
+        total_receitas=dados["total_receitas"], total_despesas=dados["total_despesas"],
+        resultado=dados["resultado"], observacao=observacao.strip()[:1000] or None, fechado_por_id=usuario.id,
+    )
+    db.add(periodo)
+    db.flush()
+    for caminho, nome_original in salvos:
+        db.add(ExtratoPeriodoFechado(
+            periodo_id=periodo.id, conta_bancaria_id=conta.id if conta else None,
+            nome_arquivo=nome_original[:255], caminho=caminho,
+            tamanho_bytes=os.path.getsize(caminho), enviado_por_id=usuario.id,
+        ))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        for caminho, _ in salvos:
+            _remover_arquivo(caminho)
+        raise
+    _log(db, "Período fechado", "fechamento", usuario_id=usuario.id, usuario_nome=usuario.nome,
+         cliente_id=cliente_id, detalhes=f"{di:%d/%m/%Y} a {df:%d/%m/%Y} — {len(salvos)} extrato(s) PDF")
+    return _voltar_fechamento(data_inicio, data_fim, "sucesso=periodo_fechado")
+
+
+def _remover_arquivo(caminho: str) -> None:
+    try:
+        os.remove(caminho)
+    except OSError:
+        pass

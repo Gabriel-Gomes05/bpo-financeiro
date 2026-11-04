@@ -111,6 +111,7 @@
               data-cliente="{{ conta.cliente.nome | e }}"
               data-descricao="{{ conta.descricao | e }}"
               data-fornecedor="{{ conta.fornecedor or '—' }}"
+              data-conta-bancaria="{% if conta.conta_bancaria %}{{ conta.conta_bancaria.nome }}{% if conta.conta_bancaria.banco %} · {{ conta.conta_bancaria.banco }}{% endif %}{% else %}Não informada{% endif %}"
               data-tipo="{{ conta.tipo.value | capitalize }}"
               data-valor="R$ {{ '%.2f'|format(conta.valor|float) }}"
               data-media-3-meses="{% if medias_por_conta[conta.id].media is not none %}R$ {{ '%.2f'|format(medias_por_conta[conta.id].media|float) }}{% else %}Sem histórico{% endif %}"
@@ -303,6 +304,11 @@
         <p id="d-fornecedor" style="font-size:13px; color:#374151;"></p>
       </div>
 
+      <div>
+        <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Conta bancária</p>
+        <p id="d-conta-bancaria" style="font-size:13px; color:#374151;"></p>
+      </div>
+
       <div style="grid-column:1 / -1;">
         <p style="font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px;">Centro de custo / Plano de conta</p>
         <p id="d-categoria" style="font-size:13px; color:#374151;"></p>
@@ -379,6 +385,7 @@ function abrirDetalhe(row) {
   document.getElementById('d-cliente').textContent  = d.cliente;
   document.getElementById('d-tipo').textContent     = d.tipo;
   document.getElementById('d-fornecedor').textContent = d.fornecedor;
+  document.getElementById('d-conta-bancaria').textContent = d.contaBancaria;
   document.getElementById('d-categoria').textContent  = d.categoria;
   document.getElementById('d-vencimento').textContent = d.vencimento;
   document.getElementById('d-pagamento').textContent  = d.pagamento;

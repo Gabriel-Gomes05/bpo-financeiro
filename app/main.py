@@ -26,6 +26,7 @@ from app.redis_client import redis_async
 from app.routers import (
     admin,
     ajuda,
+    auditoria,
     auth,
     cliente_ativo,
     conciliacao,
@@ -40,6 +41,7 @@ from app.routers import (
     importacoes,
     plano_contas,
     procedimentos,
+    secretarias,
     tarefas,
 )
 from app.security import MaxBodySizeMiddleware, SecurityMiddleware
@@ -114,7 +116,9 @@ app.include_router(contas_pagar_conciliacao.router)
 app.include_router(fechamento.router)
 app.include_router(gestao.router)
 app.include_router(cliente_ativo.router)
+app.include_router(secretarias.router)
 app.include_router(admin.router)
+app.include_router(auditoria.router)
 app.include_router(logs.router)
 app.include_router(plano_contas.router)
 app.include_router(procedimentos.router)

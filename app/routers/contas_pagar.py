@@ -20,7 +20,7 @@ from app.jinja import templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual
+from app.auth import get_usuario_atual, ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.constants import CATEGORIAS_DESPESA, CATEGORIA_NOME
@@ -33,6 +33,7 @@ from app.utils import (
 from app.models import (
     CentroCusto,
     ClienteBPO,
+    ContaBancaria,
     ContaPagar,
     ContaPagarCentroCustoRateio,
     ExtratoLinhaBancaria,
@@ -75,8 +76,39 @@ def _plano_despesa_valido(db: Session, cliente_id: int, plano_conta_id: int | No
 
 
 
+def _contas_bancarias_por_cliente(db: Session, ids_clientes: list[int]) -> dict[int, list[dict]]:
+    """Contas bancárias ativas de cada cliente, para escolher de qual conta sai o pagamento."""
+    from app.services.contas_bancarias_service import ROTULOS_TIPO_CONTA
+    contas: dict[int, list[dict]] = {}
+    if not ids_clientes:
+        return contas
+    for c in db.query(ContaBancaria).filter(
+        ContaBancaria.cliente_id.in_(ids_clientes), ContaBancaria.ativo.is_(True),
+    ).order_by(ContaBancaria.tipo, ContaBancaria.nome):
+        detalhe = " · ".join(filter(None, [c.banco, f"C/C {c.conta}" if c.conta else None]))
+        contas.setdefault(c.cliente_id, []).append({
+            "id": c.id, "nome": c.nome, "tipo": ROTULOS_TIPO_CONTA[c.tipo], "detalhe": detalhe,
+        })
+    return contas
+
+
+def _conta_bancaria_valida(db: Session, cliente_id: int, conta_bancaria_id: Optional[str]) -> Optional[int]:
+    """Valida a conta bancária escolhida: vazia = não informada; precisa ser ativa e do mesmo cliente."""
+    valor = str(conta_bancaria_id).strip() if isinstance(conta_bancaria_id, (str, int)) else ""
+    if not valor:
+        return None
+    conta = None
+    if valor.isdigit():
+        conta = db.query(ContaBancaria.id).filter(
+            ContaBancaria.id == int(valor), ContaBancaria.cliente_id == cliente_id, ContaBancaria.ativo.is_(True),
+        ).first()
+    if not conta:
+        raise erro("FLIC-PAG-018")
+    return conta.id
+
+
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
     return db.query(ClienteBPO).filter(
         ClienteBPO.funcionario_id == usuario.id,
@@ -393,6 +425,7 @@ async def pagina_nova_conta(
         "cliente_selecionado": cliente_id if cliente_id in ids_permitidos else None,
         "centros_custo_por_cliente": centros_por_cliente,
         "planos_conta_despesa": _planos_despesa(db, ids_permitidos),
+        "contas_bancarias_por_cliente": _contas_bancarias_por_cliente(db, ids_permitidos),
         "conta_origem": None,
         "rateios_iniciais": [],
     })
@@ -417,6 +450,7 @@ async def clonar_conta(
         "cliente_selecionado": conta.cliente_id,
         "centros_custo_por_cliente": _centros_custo_por_cliente(db, ids_permitidos),
         "planos_conta_despesa": _planos_despesa(db, ids_permitidos),
+        "contas_bancarias_por_cliente": _contas_bancarias_por_cliente(db, ids_permitidos),
         "conta_origem": conta,
         "rateios_iniciais": [
             {"key": rateio.categoria_key, "percentual": float(rateio.percentual)}
@@ -469,6 +503,7 @@ async def form_editar_conta(
         "formas_pagamento": list(FormaPagamento),
         "planos_conta_despesa": _planos_despesa(db, [conta.cliente_id]),
         "centros_custo": centros_por_cliente.get(conta.cliente_id, []),
+        "contas_bancarias": _contas_bancarias_por_cliente(db, [conta.cliente_id]).get(conta.cliente_id, []),
     })
 
 
@@ -481,6 +516,7 @@ async def salvar_edicao_conta(
     vencimento: date = Form(...),
     data_competencia: Optional[date] = Form(None),
     forma_pagamento: Optional[str] = Form(None),
+    conta_bancaria_id: Optional[str] = Form(None),
     plano_conta_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
     escopo_valor: str = Form("somente"),
@@ -501,6 +537,7 @@ async def salvar_edicao_conta(
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
     vencimento_original = conta.vencimento
+    conta_bancaria_escolhida = _conta_bancaria_valida(db, conta.cliente_id, conta_bancaria_id)
 
     novos_rateios = None
     if isinstance(rateio_centro_custo_key, list):
@@ -555,6 +592,7 @@ async def salvar_edicao_conta(
     conta.vencimento = vencimento
     conta.data_competencia = data_competencia or vencimento
     conta.forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
+    conta.conta_bancaria_id = conta_bancaria_escolhida
     plano = _plano_despesa_valido(db, conta.cliente_id, plano_conta_id)
     conta.plano_conta_id = plano.id if plano else None
     conta.categoria_dre = plano.chave if plano else None
@@ -724,6 +762,7 @@ async def criar_conta(
     vencimento: date = Form(...),
     data_competencia: Optional[date] = Form(None),
     forma_pagamento: Optional[str] = Form(None),
+    conta_bancaria_id: Optional[str] = Form(None),
     categoria_dre: Optional[str] = Form(None),
     plano_conta_id: Optional[int] = Form(None),
     rateio_centro_custo_key: List[str] = Form(default=[]),
@@ -753,6 +792,7 @@ async def criar_conta(
     qtd_ocorrencias = max(1, min(recorrencia_qtd or 1, RECORRENCIA_QTD_MAXIMA)) if recorrente else 1
     tipo = TipoContaPagar.fixa if recorrente else TipoContaPagar.pontual
     forma_pagamento = forma_pagamento if forma_pagamento in FORMAS_PAGAMENTO_VALIDAS else None
+    conta_bancaria_escolhida = _conta_bancaria_valida(db, cliente_id, conta_bancaria_id)
     data_competencia = data_competencia or vencimento
 
     # Salva documento se enviado
@@ -786,6 +826,7 @@ async def criar_conta(
         vencimento=vencimento,
         data_competencia=data_competencia,
         forma_pagamento=forma_pagamento,
+        conta_bancaria_id=conta_bancaria_escolhida,
         categoria_dre=categoria_compat,
         plano_conta_id=plano.id if plano else None,
         especialidade=especialidade_valor,
@@ -830,6 +871,7 @@ async def criar_conta(
                 vencimento=data_ocorrencia,
                 data_competencia=_data_recorrencia(data_competencia, recorrencia_intervalo, recorrencia_dias, indice),
                 forma_pagamento=conta.forma_pagamento,
+                conta_bancaria_id=conta.conta_bancaria_id,
                 categoria_dre=conta.categoria_dre,
                 plano_conta_id=conta.plano_conta_id,
                 especialidade=conta.especialidade,
