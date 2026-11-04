@@ -171,6 +171,9 @@ def get_usuario_atual(
     request.state.usuario_id = usuario.id
     db.info["actor_id"] = usuario.id
     db.info["request_id"] = getattr(request.state, "request_id", None)
+    if usuario.perfil == PerfilUsuario.secretaria:
+        from app.acesso_secretaria import verificar_acesso
+        verificar_acesso(request, db, usuario)
     return usuario
 
 
@@ -181,7 +184,14 @@ def requer_coordenador(usuario: Usuario = Depends(get_usuario_atual)) -> Usuario
 
 
 def tem_acesso_geral(usuario: Usuario) -> bool:
+    """Poderes administrativos (cadastros, equipe, tarefas): coordenador e editor."""
     return usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor)
+
+
+def ve_todos_os_clientes(usuario: Usuario) -> bool:
+    """Na operação, só o coordenador enxerga todos os clientes; editor e funcionário
+    veem apenas os clientes em que são o responsável (ClienteBPO.funcionario_id)."""
+    return usuario.perfil == PerfilUsuario.coordenador
 
 
 class AuthMiddleware:

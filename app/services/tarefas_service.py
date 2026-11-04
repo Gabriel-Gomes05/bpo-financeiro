@@ -4,10 +4,10 @@ from datetime import date, timedelta
 from typing import Optional
 from urllib.parse import urlparse
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import tem_acesso_geral
+from app.auth import tem_acesso_geral, ve_todos_os_clientes
 from app.errors import com_codigo
 from app.models import ClienteBPO, Tarefa, Usuario
 
@@ -55,7 +55,7 @@ def normalizar_link(valor: Optional[str]) -> Optional[str]:
 
 def clientes_permitidos(db: Session, usuario: Usuario) -> list[ClienteBPO]:
     query = db.query(ClienteBPO).filter(ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None))
-    if not tem_acesso_geral(usuario):
+    if not ve_todos_os_clientes(usuario):
         query = query.filter(ClienteBPO.funcionario_id == usuario.id)
     return query.order_by(ClienteBPO.nome).all()
 
@@ -64,9 +64,17 @@ def tarefas_visiveis(db: Session, usuario: Usuario):
     query = db.query(Tarefa).options(
         joinedload(Tarefa.cliente), joinedload(Tarefa.responsavel),
     ).filter(Tarefa.deleted_at.is_(None))
-    if not eh_admin(usuario):
-        query = query.filter(or_(Tarefa.responsavel_id == usuario.id, Tarefa.criado_por_id == usuario.id))
-    return query
+    if ve_todos_os_clientes(usuario):
+        return query
+    proprias = or_(Tarefa.responsavel_id == usuario.id, Tarefa.criado_por_id == usuario.id)
+    if eh_admin(usuario):
+        # Editor: tarefas dos clientes designados a ele e as pessoais (sem cliente) dele.
+        meus_clientes = db.query(ClienteBPO.id).filter(ClienteBPO.funcionario_id == usuario.id)
+        return query.filter(or_(
+            Tarefa.cliente_id.in_(meus_clientes),
+            and_(Tarefa.cliente_id.is_(None), proprias),
+        ))
+    return query.filter(proprias)
 
 
 def ordenar(query):

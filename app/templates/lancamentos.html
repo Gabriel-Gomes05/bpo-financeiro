@@ -88,7 +88,7 @@
     </div>
 
 
-    {% if usuario.perfil != 'medico' %}
+    {% if usuario.perfil not in ['medico', 'secretaria'] %}
     <form id="form-lote" data-total-filtro="{{ total_filtro }}" method="post" action="/lancamentos/lote/excluir" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
       <strong class="text-sm">Ações em lote</strong>
       <input type="hidden" name="filtros" value="{{ request.url.query }}">
@@ -104,7 +104,7 @@
       <table id="tbl-lancamentos" class="w-full text-sm">
         <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
           <tr>
-            <th class="px-4 py-3">{% if usuario.perfil != 'medico' %}<input type="checkbox" id="selecionar-todos" aria-label="Selecionar todos os itens exibidos" onchange="document.querySelectorAll('.selecao-lote:not(:disabled)').forEach(c => c.checked = this.checked); atualizarSelecaoLote()">{% endif %}</th>
+            <th class="px-4 py-3">{% if usuario.perfil not in ['medico', 'secretaria'] %}<input type="checkbox" id="selecionar-todos" aria-label="Selecionar todos os itens exibidos" onchange="document.querySelectorAll('.selecao-lote:not(:disabled)').forEach(c => c.checked = this.checked); atualizarSelecaoLote()">{% endif %}</th>
             <th data-col="data"              class="px-4 py-3 text-left whitespace-nowrap">Data</th>
             <th data-col="cliente"           class="px-4 py-3 text-left whitespace-nowrap">Cliente</th>
             <th data-col="nome_paciente"     class="px-4 py-3 text-left whitespace-nowrap">Paciente</th>
@@ -136,7 +136,7 @@
         <tbody class="divide-y divide-gray-100">
           {% for a in atendimentos %}
           <tr class="hover:bg-gray-50">
-            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ a.id }}" aria-label="Selecionar registro {{ a.id }}" onchange="atualizarSelecaoLote()" >{% endif %}</td>
+            <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil not in ['medico', 'secretaria'] %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ a.id }}" aria-label="Selecionar registro {{ a.id }}" onchange="atualizarSelecaoLote()" >{% endif %}</td>
             <td data-col="data"              class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ a.data_atendimento.strftime('%d/%m/%Y') }}</td>
             <td data-col="cliente"           class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{{ a.cliente.nome }}</td>
             <td data-col="nome_paciente"     class="px-4 py-3 text-gray-600">{{ a.nome_paciente or '—' }}</td>
@@ -197,12 +197,14 @@
               <div class="flex items-center justify-center gap-1">
                 <a href="/lancamentos/{{ a.id }}/editar"
                    class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100 transition">✏ Editar</a>
+                {% if usuario.perfil != 'secretaria' %}
                 <form method="post" action="/lancamentos/{{ a.id }}/excluir"
                       onsubmit="return confirm('Excluir este lançamento?')" class="inline">
                   <input type="hidden" name="cliente_id" value="{{ a.cliente_id }}">
                   <button type="submit"
                           class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition">✕ Excluir</button>
                 </form>
+                {% endif %}
               </div>
               {% else %}
               <span class="text-xs text-gray-300">—</span>

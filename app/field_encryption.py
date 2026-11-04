@@ -40,6 +40,7 @@ SENSITIVE_FIELDS = (
     ("contas_bancarias", "banco", "contas_bancarias.banco", False),
     ("contas_bancarias", "agencia", "contas_bancarias.agencia", False),
     ("contas_bancarias", "conta", "contas_bancarias.conta", False),
+    ("contas_bancarias", "descricao", "contas_bancarias.descricao", False),
     ("extratos_bancarios", "descricao", "extratos_bancarios.descricao", False),
     ("extratos_bancarios", "origem_arquivo", "extratos_bancarios.origem_arquivo", False),
     ("regras_auto_match", "padrao_descricao", "regras_auto_match.padrao_descricao", False),
@@ -52,6 +53,11 @@ SENSITIVE_FIELDS = (
     ("vendas_cartao", "origem_arquivo", "vendas_cartao.origem_arquivo", False),
     ("logs_auditoria", "detalhes", "logs_auditoria.detalhes", False),
     ("logs_auditoria", "ip", "logs_auditoria.ip", False),
+    ("periodos_fechados", "observacao", "periodos_fechados.observacao", False),
+    ("extratos_periodos_fechados", "caminho", "extratos_periodos_fechados.caminho", False),
+    ("historico_alteracoes", "valor_anterior", "historico_alteracoes.valor_anterior", False),
+    ("historico_alteracoes", "valor_novo", "historico_alteracoes.valor_novo", False),
+    ("historico_alteracoes", "ip", "historico_alteracoes.ip", False),
     ("anotacoes_clientes", "titulo", "anotacoes_clientes.titulo", False),
     ("anotacoes_clientes", "conteudo", "anotacoes_clientes.conteudo", False),
 )
@@ -67,6 +73,8 @@ BASIC_PLAINTEXT_FIELDS = (
     ("tarefas_rotina", "descricao"),
     ("logs_auditoria", "usuario_nome"),
     ("logs_auditoria", "cliente_nome"),
+    ("historico_alteracoes", "usuario_nome"),
+    ("historico_alteracoes", "cliente_nome"),
 )
 
 

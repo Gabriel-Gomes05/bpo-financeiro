@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
-from app.auth import get_usuario_atual, tem_acesso_geral
+from app.auth import get_usuario_atual, ve_todos_os_clientes
 from app.database import get_db
 from app.models import ClienteBPO, Usuario
 from app.security import secure_cookie_for
@@ -26,7 +26,7 @@ async def painel_geral(
     query = db.query(ClienteBPO).filter(
         ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None),
     )
-    if not tem_acesso_geral(usuario):
+    if not ve_todos_os_clientes(usuario):
         query = query.filter(ClienteBPO.funcionario_id == usuario.id)
     clientes = query.order_by(ClienteBPO.nome).all()
     response = templates.TemplateResponse("painel.html", {
@@ -65,7 +65,7 @@ async def selecionar_cliente(
             ClienteBPO.ativo.is_(True),
             ClienteBPO.deleted_at.is_(None),
         )
-        if not tem_acesso_geral(usuario):
+        if not ve_todos_os_clientes(usuario):
             query = query.filter(ClienteBPO.funcionario_id == usuario.id)
         autorizado = query.first() is not None
 

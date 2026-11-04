@@ -30,13 +30,14 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | Sigla | Área | Códigos |
 |---|---|---|
 | `GER` | [Geral](#ger--geral) | 10 |
-| `AUT` | [Acesso e autenticação](#aut--acesso-e-autenticação) | 7 |
-| `REC` | [Contas a receber](#rec--contas-a-receber) | 14 |
-| `PAG` | [Contas a pagar](#pag--contas-a-pagar) | 17 |
-| `CON` | [Conciliação e contas bancárias](#con--conciliação-e-contas-bancárias) | 16 |
+| `AUT` | [Acesso e autenticação](#aut--acesso-e-autenticação) | 10 |
+| `REC` | [Contas a receber](#rec--contas-a-receber) | 15 |
+| `PAG` | [Contas a pagar](#pag--contas-a-pagar) | 18 |
+| `CON` | [Conciliação e contas bancárias](#con--conciliação-e-contas-bancárias) | 19 |
 | `IMP` | [Importações](#imp--importações) | 29 |
 | `TAR` | [Tarefas](#tar--tarefas) | 10 |
-| `CAD` | [Cadastros](#cad--cadastros) | 15 |
+| `FEC` | [Fechamento de período](#fec--fechamento-de-período) | 5 |
+| `CAD` | [Cadastros](#cad--cadastros) | 17 |
 
 ## GER — Geral
 
@@ -64,6 +65,9 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-AUT-005` | 400 | Nenhuma empresa selecionada | Selecione uma empresa no painel geral. | A tela depende de uma empresa ativa e nenhuma está selecionada. | Vá ao Painel geral, escolha a empresa e repita a ação. |
 | `FLIC-AUT-006` | 403 | Sem acesso ao registro <br>`?erro=sem_acesso` | Você não tem acesso a este registro. | O registro pertence a uma empresa ou usuário fora do seu acesso. | Confira a empresa selecionada ou peça acesso a um coordenador. |
 | `FLIC-AUT-007` | 400 | Login não autorizado | Não foi possível entrar com as credenciais informadas. | E-mail ou senha incorretos, usuário inativo ou limite de tentativas de login excedido. Por segurança, a tela não informa qual dos casos ocorreu. | Confira e-mail e senha. Após várias tentativas, aguarde alguns minutos antes de tentar de novo. |
+| `FLIC-AUT-008` | 403 | Área não liberada para secretária | Esta área não está liberada para o perfil Secretária. | O perfil Secretária acessa somente Contas a Receber e Lançamentos do cliente vinculado. A tentativa foi registrada no histórico de alterações. | Use o menu lateral. Se precisar de outra área, peça a um administrador ou editor. |
+| `FLIC-AUT-009` | 403 | Exclusão não permitida | O perfil Secretária não pode excluir registros. | Secretárias podem incluir e editar lançamentos, mas nunca excluir. A tentativa foi registrada no histórico. | Peça a um administrador ou editor para fazer a exclusão. |
+| `FLIC-AUT-010` | 403 | Secretária sem cliente vinculado | Seu usuário não está vinculado a um cliente ativo. | Toda secretária precisa de um cliente vinculado. O vínculo está vazio ou o cliente foi inativado. | Peça a um administrador ou editor para vincular seu usuário a um cliente em Cadastros → Secretárias. |
 
 ## REC — Contas a receber
 
@@ -83,6 +87,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-REC-012` | 404 | Seleção indisponível | Seleção contém lançamentos indisponíveis. | Algum lançamento selecionado foi excluído ou não pertence às suas empresas. | Recarregue a listagem e selecione novamente. |
 | `FLIC-REC-013` | 404 | Lançamento indisponível | Lançamento indisponível. | O lançamento foi excluído ou pertence a uma empresa fora do seu acesso. | Volte à listagem de lançamentos e recarregue a página. |
 | `FLIC-REC-014` | 409 | Lista mudou durante a ação | A lista mudou desde a seleção. Confira e selecione novamente. | Entre a seleção "todos do filtro" e a confirmação, lançamentos foram incluídos ou removidos. | Recarregue a listagem, confira a quantidade e repita a ação. |
+| `FLIC-REC-015` | 403 | Lançamento conciliado | Lançamentos já conciliados não podem ser editados pela secretária. | Editar um lançamento conciliado desfaz a conciliação bancária, o que é restrito à equipe do BPO. | Peça a um administrador ou editor para fazer a alteração. |
 
 ## PAG — Contas a pagar
 
@@ -105,6 +110,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-PAG-015` | 400 | Nenhum campo para editar | Escolha ao menos um campo para editar. | A edição em lote foi enviada sem plano de contas, centro de custo ou status. | Preencha ao menos um campo da edição em lote. |
 | `FLIC-PAG-016` | 400 | Plano de contas inválido no lote | Categoria inválida para um dos clientes selecionados. | O plano de contas escolhido na edição em lote não está disponível para todas as empresas das contas selecionadas. | Selecione contas de uma empresa por vez ou use um plano de contas comum a todas. |
 | `FLIC-PAG-017` | 400 | Centro de custo inválido no lote | Centro de custo inválido para um dos clientes selecionados. | O centro de custo pertence a uma empresa diferente da de alguma conta selecionada. | Selecione contas de uma empresa só ao aplicar centro de custo em lote. |
+| `FLIC-PAG-018` | 400 | Conta bancária inválida | Escolha uma conta bancária ativa do cliente. | A conta escolhida não existe, foi desativada ou é de outro cliente. | Selecione uma das contas listadas para o cliente ou deixe "Não informada". |
 
 ## CON — Conciliação e contas bancárias
 
@@ -113,7 +119,7 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-CON-001` | 400 | Regra bancária incompleta | Informe o tipo, nome e texto da regra. | Regra automática sem tipo, nome ou texto de busca no extrato. | Preencha todos os campos da regra. |
 | `FLIC-CON-002` | 400 | Contas de origem e destino iguais | Informe contas de origem e destino diferentes. | Transferência ou regra com a mesma conta na origem e no destino. | Escolha contas diferentes para origem e destino. |
 | `FLIC-CON-003` | 400 | Plano de contas incompatível | Selecione um plano de contas compatível. | O plano escolhido não combina com o tipo de regra (receita × despesa) ou não está ativo. | Escolha um plano de contas ativo do tipo correto. |
-| `FLIC-CON-004` | 400 | Conta bancária incompleta | Informe nome, banco e número da conta. | Cadastro de conta bancária sem nome, banco ou número. | Preencha nome, banco e número da conta. |
+| `FLIC-CON-004` | 400 | Conta bancária incompleta | Preencha os campos obrigatórios da conta. | Conta Corrente exige banco, agência e número; Investimentos exige banco, nome e descrição; Cartão de Crédito exige banco e nome. | Preencha os campos obrigatórios do tipo de conta escolhido. |
 | `FLIC-CON-005` | 400 | Saldo inválido | Saldo inválido. | O saldo informado não é um número válido. | Informe o saldo em reais, por exemplo 1.234,56. |
 | `FLIC-CON-006` | 409 | Conta bancária duplicada | Esta conta já está cadastrada para o cliente. | Já existe uma conta com o mesmo banco e número para a empresa. | Use a conta existente ou corrija os dados. |
 | `FLIC-CON-007` | 404 | Conta bancária indisponível | Conta bancária indisponível para este cliente. | A conta foi removida ou pertence a outra empresa. | Recarregue a tela e escolha uma conta da empresa atual. |
@@ -126,6 +132,9 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-CON-014` | 400 | Rateio inválido | Rateio inválido: use centros diferentes e feche exatamente 100%. | Os percentuais do rateio não somam 100% ou repetem o mesmo centro. | Ajuste o rateio para fechar exatamente 100%. |
 | `FLIC-CON-015` | 400 | Nenhuma venda para fechar o lote | Nenhuma venda conciliada nesta data de pagamento para fechar o lote. | O lote só agrupa vendas de cartão já conciliadas com um lançamento e ainda não agrupadas, na data (e bandeira) escolhida. | Concilie as vendas da maquininha com os lançamentos antes de fechar o lote, e confira a data de pagamento e a bandeira. |
 | `FLIC-CON-016` | 500 | Falha ao fechar o lote | Não foi possível fechar o lote de cartão. | Erro inesperado ao agrupar as vendas do dia. Detalhes no log do servidor. | Tente novamente. Se repetir, envie o código e o identificador ao suporte. |
+| `FLIC-CON-017` | 400 | Tipo de conta inválido | Escolha o tipo da conta: Conta Corrente, Investimentos ou Cartão de Crédito. | O cadastro foi enviado sem tipo de conta ou com um tipo desconhecido. | Selecione um dos três tipos e preencha os campos que aparecerem. |
+| `FLIC-CON-018` | 500 | Falha ao aplicar regra <br>`?erro=regra_retroativa_falhou` | A regra foi salva, mas não foi possível aplicá-la aos lançamentos existentes. | Ocorreu um erro durante a aplicação retroativa. O que já tinha sido conciliado em lotes anteriores foi mantido; nenhum lançamento ficou pela metade. | Tente aplicar de novo (a execução é segura para repetir). Se persistir, informe o código e o horário ao suporte. |
+| `FLIC-CON-019` | 404 | Regra indisponível | Regra não encontrada ou inativa para este cliente. | A regra foi removida ou pertence a outra empresa. | Recarregue a conciliação bancária e escolha uma regra da lista. |
 
 ## IMP — Importações
 
@@ -176,6 +185,16 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-TAR-009` | 400 | Link inválido | Link inválido. Use um endereço http(s) ou um caminho do sistema iniciado por /. | O link não começa com http://, https:// ou /, ou passou de 500 caracteres. | Cole o endereço completo (https://...) ou um caminho interno como /contas-pagar. |
 | `FLIC-TAR-010` | 403 | Sem acesso ao cliente da tarefa | Você não tem acesso ao cliente desta tarefa. | A tarefa é de uma empresa que não está atribuída a você. | Peça a um coordenador para atribuir a empresa ou reatribuir a tarefa. |
 
+## FEC — Fechamento de período
+
+| Código | HTTP | Título | Mensagem | Causa | O que fazer |
+|---|---|---|---|---|---|
+| `FLIC-FEC-001` | 400 | Extrato bancário obrigatório <br>`?erro=extrato_obrigatorio` | Anexe o extrato bancário em PDF para fechar o período. | O período só pode ser fechado com ao menos um extrato bancário em PDF anexado. | Clique em "Extrato bancário (PDF)", escolha o arquivo e feche o período novamente. |
+| `FLIC-FEC-002` | 400 | Extrato inválido <br>`?erro=extrato_invalido` | O extrato precisa ser um PDF válido de até 10 MB. | O arquivo enviado não é PDF, está vazio, passa de 10 MB ou o envio total passou de 12 MB. | Exporte o extrato em PDF pelo banco. Se forem vários arquivos grandes, feche com um e anexe os demais depois. |
+| `FLIC-FEC-003` | 409 | Período já fechado <br>`?erro=periodo_ja_fechado` | Já existe um fechamento que cobre parte deste período. | Os períodos fechados de um cliente não podem se sobrepor. | Confira a lista de períodos fechados e escolha datas fora deles. |
+| `FLIC-FEC-004` | 400 | Período inválido <br>`?erro=periodo_invalido` | Informe um período válido para fechar. | A data final é anterior à inicial ou as datas não foram informadas. | Escolha as datas de início e fim e gere o fechamento antes de fechar. |
+| `FLIC-FEC-005` | 404 | Extrato indisponível | Extrato não encontrado. | O arquivo não existe mais, pertence a um cliente fora do seu acesso ou o perfil não pode consultá-lo. | Consulte os extratos em Auditoria → Extratos de fechamento com um usuário administrador ou editor. |
+
 ## CAD — Cadastros
 
 | Código | HTTP | Título | Mensagem | Causa | O que fazer |
@@ -195,6 +214,8 @@ Dentro do sistema, a mesma lista está em **Códigos de erro** (menu lateral, `/
 | `FLIC-CAD-013` | 400 | Centro de custo inválido <br>`?erro=centro_custo_inv` | Centro de custo inválido. | O centro de custo não existe ou pertence a outra empresa. | Escolha um centro de custo da empresa. |
 | `FLIC-CAD-014` | 403 | Conta padrão protegida | Contas padrão protegidas. | Contas do plano padrão (globais) não podem ser excluídas por esta tela. | Para remover uma conta padrão, entre em Cadastros → Serviços → Contas padrão. |
 | `FLIC-CAD-015` | 403 | Acesso negado ao cadastro <br>`?erro=acesso_negado` | Acesso negado. | O perfil do usuário não pode alterar este cadastro. | Peça a um coordenador para fazer a alteração. |
+| `FLIC-CAD-016` | 400 | Cliente obrigatório <br>`?erro=cliente_obrigatorio` | Selecione o cliente vinculado à secretária. | Toda secretária precisa estar vinculada a um único cliente ativo. | Escolha o cliente na lista e salve novamente. |
+| `FLIC-CAD-017` | 400 | Use o cadastro de secretárias <br>`?erro=usar_tela_secretarias` | Secretárias são cadastradas na tela Secretárias. | O perfil Secretária exige cliente vinculado, que só é informado na tela própria. | Entre em Cadastros → Secretárias para criar ou vincular a secretária. |
 
 ## Como criar um código novo
 

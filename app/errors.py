@@ -37,6 +37,7 @@ AREAS = {
     "CON": "Conciliação e contas bancárias",
     "IMP": "Importações",
     "TAR": "Tarefas",
+    "FEC": "Fechamento de período",
     "CAD": "Cadastros",
 }
 
@@ -101,6 +102,16 @@ _DEFINICOES = [
        "E-mail ou senha incorretos, usuário inativo ou limite de tentativas de login excedido. "
        "Por segurança, a tela não informa qual dos casos ocorreu.",
        "Confira e-mail e senha. Após várias tentativas, aguarde alguns minutos antes de tentar de novo."),
+    _e("FLIC-AUT-008", 403, "Área não liberada para secretária", "Esta área não está liberada para o perfil Secretária.",
+       "O perfil Secretária acessa somente Contas a Receber e Lançamentos do cliente vinculado. "
+       "A tentativa foi registrada no histórico de alterações.",
+       "Use o menu lateral. Se precisar de outra área, peça a um administrador ou editor."),
+    _e("FLIC-AUT-009", 403, "Exclusão não permitida", "O perfil Secretária não pode excluir registros.",
+       "Secretárias podem incluir e editar lançamentos, mas nunca excluir. A tentativa foi registrada no histórico.",
+       "Peça a um administrador ou editor para fazer a exclusão."),
+    _e("FLIC-AUT-010", 403, "Secretária sem cliente vinculado", "Seu usuário não está vinculado a um cliente ativo.",
+       "Toda secretária precisa de um cliente vinculado. O vínculo está vazio ou o cliente foi inativado.",
+       "Peça a um administrador ou editor para vincular seu usuário a um cliente em Cadastros → Secretárias."),
 
     # ---------------------------------------------------------------- Contas a receber
     _e("FLIC-REC-001", 400, "Campo do lançamento inválido", "Campo inválido.",
@@ -145,6 +156,9 @@ _DEFINICOES = [
     _e("FLIC-REC-014", 409, "Lista mudou durante a ação", "A lista mudou desde a seleção. Confira e selecione novamente.",
        "Entre a seleção \"todos do filtro\" e a confirmação, lançamentos foram incluídos ou removidos.",
        "Recarregue a listagem, confira a quantidade e repita a ação."),
+    _e("FLIC-REC-015", 403, "Lançamento conciliado", "Lançamentos já conciliados não podem ser editados pela secretária.",
+       "Editar um lançamento conciliado desfaz a conciliação bancária, o que é restrito à equipe do BPO.",
+       "Peça a um administrador ou editor para fazer a alteração."),
 
     # ---------------------------------------------------------------- Contas a pagar
     _e("FLIC-PAG-001", 400, "Opção de edição inválida", "Opção de edição inválida.",
@@ -196,6 +210,9 @@ _DEFINICOES = [
     _e("FLIC-PAG-016", 400, "Plano de contas inválido no lote", "Categoria inválida para um dos clientes selecionados.",
        "O plano de contas escolhido na edição em lote não está disponível para todas as empresas das contas selecionadas.",
        "Selecione contas de uma empresa por vez ou use um plano de contas comum a todas."),
+    _e("FLIC-PAG-018", 400, "Conta bancária inválida", "Escolha uma conta bancária ativa do cliente.",
+       "A conta escolhida não existe, foi desativada ou é de outro cliente.",
+       "Selecione uma das contas listadas para o cliente ou deixe \"Não informada\"."),
     _e("FLIC-PAG-017", 400, "Centro de custo inválido no lote", "Centro de custo inválido para um dos clientes selecionados.",
        "O centro de custo pertence a uma empresa diferente da de alguma conta selecionada.",
        "Selecione contas de uma empresa só ao aplicar centro de custo em lote."),
@@ -210,9 +227,21 @@ _DEFINICOES = [
     _e("FLIC-CON-003", 400, "Plano de contas incompatível", "Selecione um plano de contas compatível.",
        "O plano escolhido não combina com o tipo de regra (receita × despesa) ou não está ativo.",
        "Escolha um plano de contas ativo do tipo correto."),
-    _e("FLIC-CON-004", 400, "Conta bancária incompleta", "Informe nome, banco e número da conta.",
-       "Cadastro de conta bancária sem nome, banco ou número.",
-       "Preencha nome, banco e número da conta."),
+    _e("FLIC-CON-004", 400, "Conta bancária incompleta", "Preencha os campos obrigatórios da conta.",
+       "Conta Corrente exige banco, agência e número; Investimentos exige banco, nome e descrição; "
+       "Cartão de Crédito exige banco e nome.",
+       "Preencha os campos obrigatórios do tipo de conta escolhido."),
+    _e("FLIC-CON-018", 500, "Falha ao aplicar regra", "A regra foi salva, mas não foi possível aplicá-la aos lançamentos existentes.",
+       "Ocorreu um erro durante a aplicação retroativa. O que já tinha sido conciliado em lotes anteriores foi mantido; "
+       "nenhum lançamento ficou pela metade.",
+       "Tente aplicar de novo (a execução é segura para repetir). Se persistir, informe o código e o horário ao suporte.",
+       slug="regra_retroativa_falhou"),
+    _e("FLIC-CON-019", 404, "Regra indisponível", "Regra não encontrada ou inativa para este cliente.",
+       "A regra foi removida ou pertence a outra empresa.",
+       "Recarregue a conciliação bancária e escolha uma regra da lista."),
+    _e("FLIC-CON-017", 400, "Tipo de conta inválido", "Escolha o tipo da conta: Conta Corrente, Investimentos ou Cartão de Crédito.",
+       "O cadastro foi enviado sem tipo de conta ou com um tipo desconhecido.",
+       "Selecione um dos três tipos e preencha os campos que aparecerem."),
     _e("FLIC-CON-005", 400, "Saldo inválido", "Saldo inválido.",
        "O saldo informado não é um número válido.",
        "Informe o saldo em reais, por exemplo 1.234,56."),
@@ -375,6 +404,24 @@ _DEFINICOES = [
        "A tarefa é de uma empresa que não está atribuída a você.",
        "Peça a um coordenador para atribuir a empresa ou reatribuir a tarefa."),
 
+    # ---------------------------------------------------------------- Fechamento de período
+    _e("FLIC-FEC-001", 400, "Extrato bancário obrigatório", "Anexe o extrato bancário em PDF para fechar o período.",
+       "O período só pode ser fechado com ao menos um extrato bancário em PDF anexado.",
+       "Clique em \"Extrato bancário (PDF)\", escolha o arquivo e feche o período novamente.", slug="extrato_obrigatorio"),
+    _e("FLIC-FEC-002", 400, "Extrato inválido", "O extrato precisa ser um PDF válido de até 10 MB.",
+       "O arquivo enviado não é PDF, está vazio, passa de 10 MB ou o envio total passou de 12 MB.",
+       "Exporte o extrato em PDF pelo banco. Se forem vários arquivos grandes, feche com um e anexe os demais depois.",
+       slug="extrato_invalido"),
+    _e("FLIC-FEC-003", 409, "Período já fechado", "Já existe um fechamento que cobre parte deste período.",
+       "Os períodos fechados de um cliente não podem se sobrepor.",
+       "Confira a lista de períodos fechados e escolha datas fora deles.", slug="periodo_ja_fechado"),
+    _e("FLIC-FEC-004", 400, "Período inválido", "Informe um período válido para fechar.",
+       "A data final é anterior à inicial ou as datas não foram informadas.",
+       "Escolha as datas de início e fim e gere o fechamento antes de fechar.", slug="periodo_invalido"),
+    _e("FLIC-FEC-005", 404, "Extrato indisponível", "Extrato não encontrado.",
+       "O arquivo não existe mais, pertence a um cliente fora do seu acesso ou o perfil não pode consultá-lo.",
+       "Consulte os extratos em Auditoria → Extratos de fechamento com um usuário administrador ou editor."),
+
     # ---------------------------------------------------------------- Cadastros
     _e("FLIC-CAD-001", 400, "Dados inválidos", "Não foi possível salvar. Revise os campos informados.",
        "Algum campo obrigatório ficou vazio ou foi preenchido em formato inválido.",
@@ -421,6 +468,12 @@ _DEFINICOES = [
     _e("FLIC-CAD-015", 403, "Acesso negado ao cadastro", "Acesso negado.",
        "O perfil do usuário não pode alterar este cadastro.",
        "Peça a um coordenador para fazer a alteração.", slug="acesso_negado"),
+    _e("FLIC-CAD-016", 400, "Cliente obrigatório", "Selecione o cliente vinculado à secretária.",
+       "Toda secretária precisa estar vinculada a um único cliente ativo.",
+       "Escolha o cliente na lista e salve novamente.", slug="cliente_obrigatorio"),
+    _e("FLIC-CAD-017", 400, "Use o cadastro de secretárias", "Secretárias são cadastradas na tela Secretárias.",
+       "O perfil Secretária exige cliente vinculado, que só é informado na tela própria.",
+       "Entre em Cadastros → Secretárias para criar ou vincular a secretária.", slug="usar_tela_secretarias"),
 ]
 
 CATALOGO: dict[str, DefinicaoErro] = {d.codigo: d for d in _DEFINICOES}

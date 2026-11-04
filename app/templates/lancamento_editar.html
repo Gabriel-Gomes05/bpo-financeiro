@@ -11,6 +11,15 @@
     <span class="text-gray-700 font-medium">Editar #{{ at.id }}</span>
   </div>
 
+  {% set _somente_leitura = bloqueado and usuario.perfil == 'secretaria' %}
+  {% if _somente_leitura %}
+  <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+    Este lançamento já foi conciliado e não pode ser editado pelo perfil Secretária.
+    Peça a um administrador ou editor se precisar alterar.
+    <a href="/ajuda/erros#FLIC-REC-015" class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-bold hover:underline">FLIC-REC-015</a>
+  </div>
+  {% endif %}
+
   <form method="post" action="/lancamentos/{{ at.id }}/editar" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -180,10 +189,12 @@
     <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
       <a href="/lancamentos?cliente_id={{ at.cliente_id }}"
          class="rounded-lg border border-gray-300 px-5 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition">Cancelar</a>
+      {% if not _somente_leitura %}
       <button type="submit"
               class="bg-[#222049] hover:bg-[#1a1836] text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors">
         Salvar alterações
       </button>
+      {% endif %}
     </div>
 
   </form>

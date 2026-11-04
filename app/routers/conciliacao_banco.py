@@ -12,6 +12,7 @@ from app.jinja import templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.auth import ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.config import UPLOAD_DIR
 from app.database import get_db
@@ -56,7 +57,15 @@ from app.services.conciliacao_service import (
 from app.services.log_service import registrar as _log
 from app.errors import com_codigo, erro, public_import_error
 
-from app.services.contas_bancarias_service import conta_do_cliente, registrar_transferencia, saldo_previsto
+from app.services import regras_bancarias_service as regras_svc
+from app.services.regras_bancarias_service import (
+    registrar_pagamento_conta as _registrar_pagamento_conta,
+    total_pago_conta as _total_pago_conta,
+    vincular_recebimento,
+)
+from app.services.contas_bancarias_service import (
+    ROTULOS_TIPO_CONTA, TIPOS_COM_SALDO, conta_do_cliente, registrar_transferencia, saldo_previsto,
+)
 
 
 async def get_banco_db(request: Request, db: Session = Depends(get_db)):
@@ -95,88 +104,8 @@ def _plano_valido(db: Session, cliente_id: int, plano_id: int, tipo: str) -> Pla
 
 
 def _aplicar_regras_bancarias(db: Session, cliente_id: int) -> int:
-    regras = db.query(RegraNegocioBancaria).filter(
-        RegraNegocioBancaria.cliente_id == cliente_id,
-        RegraNegocioBancaria.ativo.is_(True),
-    ).all()
-    movimentos = db.query(MovimentacaoBancaria).filter(
-        MovimentacaoBancaria.cliente_id == cliente_id,
-        MovimentacaoBancaria.status != StatusMovimentacaoBancaria.conciliada,
-        MovimentacaoBancaria.conta_bancaria_id.isnot(None),
-    ).all()
-    aplicadas = 0
-    for movimento in movimentos:
-        descricao = (movimento.descricao or "").casefold()
-        for regra in regras:
-            if regra.conta_origem_id and movimento.conta_bancaria_id != regra.conta_origem_id:
-                continue
-            if (regra.padrao_descricao or "").strip().casefold() not in descricao:
-                continue
-            if regra.acao == "conciliar_receita":
-                if movimento.sentido != "recebimento" or not regra.plano_conta_id:
-                    continue
-                candidatos = db.query(Atendimento).filter(
-                    Atendimento.cliente_id == cliente_id,
-                    Atendimento.plano_conta_id == regra.plano_conta_id,
-                    Atendimento.status_conciliacao == StatusConciliacao.pendente,
-                    Atendimento.valor_servico == movimento.valor,
-                ).all()
-                if len(candidatos) != 1:
-                    continue
-                atendimento = candidatos[0]
-                atendimento.status_conciliacao = StatusConciliacao.conciliado
-                atendimento.data_credito = movimento.data_movimento
-                movimento.conciliada_com_atendimento_id = atendimento.id
-                movimento.status = StatusMovimentacaoBancaria.conciliada
-                aplicadas += 1
-                break
-            if regra.acao == "conciliar_despesa":
-                if movimento.sentido != "pagamento" or not regra.plano_conta_id:
-                    continue
-                candidatos = db.query(ContaPagar).filter(
-                    ContaPagar.cliente_id == cliente_id,
-                    ContaPagar.plano_conta_id == regra.plano_conta_id,
-                    ContaPagar.status.in_([StatusContaPagar.agendado, StatusContaPagar.pago_nao_conciliado]),
-                    ContaPagar.valor == movimento.valor,
-                ).all()
-                if len(candidatos) != 1:
-                    continue
-                conta = candidatos[0]
-                conta.status = StatusContaPagar.pago
-                conta.data_pagamento = movimento.data_movimento
-                movimento.conta_pagar_id = conta.id
-                movimento.status = StatusMovimentacaoBancaria.conciliada
-                db.add(PagamentoParcialContaPagar(
-                    conta_pagar_id=conta.id, movimentacao_id=movimento.id,
-                    valor=movimento.valor, data_pagamento=movimento.data_movimento,
-                    observacao=f"Conciliação automática: {regra.nome}",
-                ))
-                aplicadas += 1
-                break
-            if regra.acao != "transferencia" or not regra.conta_destino_id or movimento.sentido != "pagamento":
-                continue
-            identificador = f"regra-bancaria:{regra.id}:{movimento.id}"
-            existente = db.query(MovimentacaoBancaria.id).filter(
-                MovimentacaoBancaria.identificador_externo == identificador,
-            ).first()
-            if existente:
-                break
-            movimento.tipo = "transf_interna"
-            movimento.status = StatusMovimentacaoBancaria.conciliada
-            db.add(MovimentacaoBancaria(
-                cliente_id=cliente_id, conta_bancaria_id=regra.conta_destino_id,
-                identificador_externo=identificador, origem_manual=False,
-                tipo="transf_interna", sentido="recebimento",
-                data_movimento=movimento.data_movimento, valor=movimento.valor,
-                descricao=f"Transferência automática: {regra.nome}",
-                origem_arquivo="Regra de negócio bancária",
-                status=StatusMovimentacaoBancaria.conciliada,
-            ))
-            aplicadas += 1
-            break
-    if aplicadas:
-        db.flush()
-    return aplicadas
+    """Aplica todas as regras ativas às movimentações pendentes (na transação de quem chamou)."""
+    return regras_svc.aplicar_regras(db, cliente_id).conciliados
 
 
 @router.post("/conciliacao/banco/regras")
@@ -184,11 +113,12 @@ async def criar_regra_bancaria(
     cliente_id: int = Form(...), nome: str = Form(...), padrao_descricao: str = Form(...),
     acao: str = Form("transferencia"), conta_origem_id: Optional[int] = Form(None),
     conta_destino_id: Optional[int] = Form(None), plano_conta_id: Optional[int] = Form(None),
+    aplicar_existentes: bool = Form(False),
     db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    if acao not in {"transferencia", "conciliar_receita", "conciliar_despesa"} or not nome.strip() or not padrao_descricao.strip():
+    if acao not in regras_svc.ACOES or not nome.strip() or not padrao_descricao.strip():
         raise erro("FLIC-CON-001")
     if conta_origem_id:
         conta_do_cliente(db, cliente_id, conta_origem_id)
@@ -202,16 +132,53 @@ async def criar_regra_bancaria(
         plano = _plano_valido(db, cliente_id, plano_conta_id or 0, tipo_plano)
         if not plano:
             raise erro("FLIC-CON-003")
-    db.add(RegraNegocioBancaria(
+    regra = RegraNegocioBancaria(
         cliente_id=cliente_id, nome=nome.strip(), padrao_descricao=padrao_descricao.strip(),
         acao=acao, conta_origem_id=conta_origem_id,
         conta_destino_id=conta_destino_id if acao == "transferencia" else None,
         plano_conta_id=plano.id if plano else None, ativo=True,
-    ))
-    db.flush()
-    _aplicar_regras_bancarias(db, cliente_id)
-    db.commit()
-    return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
+    )
+    db.add(regra)
+    db.commit()  # a regra fica salva mesmo que a aplicação retroativa falhe
+    regra_id, usuario_id, usuario_nome = regra.id, usuario.id, usuario.nome
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    if not aplicar_existentes:
+        return RedirectResponse(f"{destino}&regra_criada=1#regras-bancarias", 303)
+
+    return _aplicar_regra_existentes(db, cliente_id, regra_id, usuario_id, usuario_nome)
+
+
+def _aplicar_regra_existentes(db: Session, cliente_id: int, regra_id: int, usuario_id: int, usuario_nome: str):
+    """Aplica uma regra já salva a todo o histórico não conciliado e volta com o resumo."""
+    destino = f"/conciliacao/banco?cliente_id={cliente_id}"
+    try:
+        resultado = regras_svc.aplicar_regras(
+            db, cliente_id, regras_svc.regras_ativas(db, cliente_id, [regra_id]), confirmar_por_lote=True,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("regra_bancaria_retroativa_falhou", extra={"client_id": cliente_id, "rule_id": regra_id})
+        return RedirectResponse(f"{destino}&erro=regra_retroativa_falhou#regras-bancarias", 303)
+    _log(db, "Regra bancária aplicada aos lançamentos existentes", "conciliacao", usuario_id=usuario_id,
+         usuario_nome=usuario_nome, cliente_id=cliente_id,
+         detalhes=f"Regra #{regra_id}: {resultado.analisados} analisados, {resultado.conciliados} conciliados, "
+                  f"{resultado.ignorados} ignorados, {resultado.falhas} falhas")
+    return RedirectResponse(
+        f"{destino}&regra_analisados={resultado.analisados}&regra_conciliados={resultado.conciliados}"
+        f"&regra_ignorados={resultado.ignorados}&regra_falhas={resultado.falhas}#regras-bancarias", 303,
+    )
+
+
+@router.post("/conciliacao/banco/regras/{regra_id}/aplicar")
+async def aplicar_regra_existentes(
+    regra_id: int, cliente_id: int = Form(...), db: Session = Depends(get_banco_db),
+    usuario: Usuario = Depends(require_conciliacao),
+):
+    if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
+        raise erro("FLIC-AUT-004")
+    if not regras_svc.regras_ativas(db, cliente_id, [regra_id]):
+        raise erro("FLIC-CON-019")
+    return _aplicar_regra_existentes(db, cliente_id, regra_id, usuario.id, usuario.nome)
 
 
 @router.post("/conciliacao/banco/regras/{regra_id}/excluir")
@@ -230,28 +197,72 @@ async def excluir_regra_bancaria(
     return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
 
 
+def _dados_conta_por_tipo(tipo: str, nome: str, banco: str, agencia: str, numero: str, descricao: str) -> dict:
+    """Valida os campos obrigatórios de cada tipo e devolve só os que o tipo usa."""
+    try:
+        tipo_conta = TipoContaBancaria(tipo)
+    except ValueError:
+        raise erro("FLIC-CON-017") from None
+    nome, banco, agencia, numero, descricao = (v.strip() for v in (nome, banco, agencia, numero, descricao))
+    if not banco or len(nome) > 100 or len(descricao) > 500:
+        raise erro("FLIC-CON-004")
+    if tipo_conta == TipoContaBancaria.bancaria:
+        if not agencia or not numero:
+            raise erro("FLIC-CON-004", "Conta Corrente: informe banco, agência e número da conta.")
+        return {"tipo": tipo_conta, "banco": banco, "agencia": agencia, "conta": numero, "descricao": None,
+                "nome": nome or f"{banco} · Ag. {agencia} · C/C {numero}"[:100]}
+    if tipo_conta == TipoContaBancaria.investimento:
+        if not nome or not descricao:
+            raise erro("FLIC-CON-004", "Investimentos: informe banco, nome e descrição da conta.")
+        return {"tipo": tipo_conta, "banco": banco, "agencia": None, "conta": None, "descricao": descricao, "nome": nome}
+    if not nome:
+        raise erro("FLIC-CON-004", "Cartão de Crédito: informe banco e nome do cartão.")
+    return {"tipo": tipo_conta, "banco": banco, "agencia": None, "conta": None, "descricao": descricao or None, "nome": nome}
+
+
+def _conta_duplicada(existente: ContaBancaria, dados: dict) -> bool:
+    if existente.tipo != dados["tipo"] or (existente.banco or "").strip().casefold() != dados["banco"].casefold():
+        return False
+    if dados["tipo"] == TipoContaBancaria.bancaria:
+        return (existente.agencia or "").strip() == dados["agencia"] and (existente.conta or "").strip() == dados["conta"]
+    return (existente.nome or "").strip().casefold() == dados["nome"].casefold()
+
+
 @router.post("/conciliacao/banco/contas")
 async def cadastrar_conta_bancaria(
-    cliente_id: int = Form(...), nome: str = Form(...), banco: str = Form(...),
-    agencia: str = Form(""), numero: str = Form(...), saldo: Decimal = Form(...),
-    data_saldo: date = Form(...), db: Session = Depends(get_banco_db),
-    usuario: Usuario = Depends(require_conciliacao),
+    cliente_id: int = Form(...), tipo: str = Form("bancaria"), nome: str = Form(""), banco: str = Form(""),
+    agencia: str = Form(""), numero: str = Form(""), descricao: str = Form(""),
+    saldo: Optional[str] = Form(None), data_saldo: Optional[date] = Form(None),
+    db: Session = Depends(get_banco_db), usuario: Usuario = Depends(require_conciliacao),
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    if not nome.strip() or len(nome.strip()) > 100 or not banco.strip() or not numero.strip():
-        raise erro("FLIC-CON-004")
-    if not saldo.is_finite() or abs(saldo) > Decimal("999999999999.99") or saldo != saldo.quantize(Decimal("0.01")):
-        raise erro("FLIC-CON-005")
+    dados = _dados_conta_por_tipo(tipo, nome, banco, agencia, numero, descricao)
+    saldo_inicial = None
+    if dados["tipo"] in TIPOS_COM_SALDO and (saldo or "").strip():
+        try:
+            saldo_inicial = Decimal(saldo.strip().replace(",", "."))
+        except InvalidOperation:
+            raise erro("FLIC-CON-005") from None
+        if (not saldo_inicial.is_finite() or abs(saldo_inicial) > Decimal("999999999999.99")
+                or saldo_inicial != saldo_inicial.quantize(Decimal("0.01"))):
+            raise erro("FLIC-CON-005")
+    elif dados["tipo"] == TipoContaBancaria.bancaria:
+        raise erro("FLIC-CON-005", "Conta Corrente: informe o saldo inicial.")
     existentes = db.query(ContaBancaria).filter(ContaBancaria.cliente_id == cliente_id).all()
-    if any((c.banco or "").strip().casefold() == banco.strip().casefold() and (c.agencia or "").strip() == agencia.strip() and (c.conta or "").strip() == numero.strip() for c in existentes):
+    if any(_conta_duplicada(c, dados) for c in existentes):
         raise erro("FLIC-CON-006")
-    conta = ContaBancaria(cliente_id=cliente_id, nome=nome.strip(), banco=banco.strip(), agencia=agencia.strip() or None,
-        conta=numero.strip(), tipo=TipoContaBancaria.bancaria, ativo=True, saldo_atual=saldo,
-        saldo_data_referencia=datetime.combine(data_saldo, datetime.min.time()), saldo_atualizado_em=datetime.now())
+    conta = ContaBancaria(cliente_id=cliente_id, ativo=True, **dados)
+    if saldo_inicial is not None:
+        conta.saldo_atual = saldo_inicial
+        conta.saldo_data_referencia = datetime.combine(data_saldo or date.today(), datetime.min.time())
+        conta.saldo_atualizado_em = datetime.now()
     db.add(conta)
     db.commit()
-    _log(db, "Conta bancária cadastrada", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome, cliente_id=cliente_id, detalhes=f"Conta #{conta.id}")
+    _log(db, "Conta bancária cadastrada", "conciliacao", usuario_id=usuario.id, usuario_nome=usuario.nome,
+         cliente_id=cliente_id, detalhes=f"Conta #{conta.id} ({ROTULOS_TIPO_CONTA[conta.tipo]})")
+    if conta.tipo not in TIPOS_COM_SALDO:
+        return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#contas-cadastradas", status_code=303)
     response = RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}&conta_bancaria_id={conta.id}#movimentacoes", status_code=303)
     response.set_cookie(f"banco_conta_{cliente_id}", str(conta.id), samesite="lax")
     return response
@@ -308,7 +319,7 @@ def _montar_rateios_banco(db: Session, cliente_id: int, valor_total: Decimal, ra
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil in (PerfilUsuario.coordenador, PerfilUsuario.editor):
+    if ve_todos_os_clientes(usuario):
         return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
     return db.query(ClienteBPO).filter(
         ClienteBPO.funcionario_id == usuario.id,
@@ -316,43 +327,6 @@ def clientes_do_usuario(db: Session, usuario: Usuario):
     ).all()
 
 
-def _total_pago_conta(db: Session, conta_id: int) -> Decimal:
-    total = db.query(func.coalesce(func.sum(PagamentoParcialContaPagar.valor), 0)).filter(
-        PagamentoParcialContaPagar.conta_pagar_id == conta_id,
-    ).scalar()
-    return Decimal(str(total or 0))
-
-
-def _registrar_pagamento_conta(
-    db: Session,
-    conta: ContaPagar,
-    valor: Decimal,
-    data_pagamento: date,
-    usuario_id: int | None,
-    movimentacao_id: int | None = None,
-    observacao: str | None = None,
-) -> bool:
-    valor = Decimal(str(valor))
-    saldo = Decimal(str(conta.valor)) - _total_pago_conta(db, conta.id)
-    if valor <= 0 or valor > saldo:
-        return False
-
-    db.add(PagamentoParcialContaPagar(
-        conta_pagar_id=conta.id,
-        movimentacao_id=movimentacao_id,
-        valor=valor,
-        data_pagamento=data_pagamento,
-        observacao=observacao,
-        criado_por_id=usuario_id,
-    ))
-    novo_total = _total_pago_conta(db, conta.id) + valor
-    if novo_total >= Decimal(str(conta.valor)):
-        conta.status = StatusContaPagar.pago
-        conta.data_pagamento = data_pagamento
-    else:
-        conta.status = StatusContaPagar.agendado
-        conta.data_pagamento = None
-    return True
 
 
 def _carregar_movimentacoes(db: Session, cliente_id: int):
@@ -467,11 +441,7 @@ def _montar_painel(
 
 
 def _aplicar_conciliacao(db: Session, mov: MovimentacaoBancaria, at: Atendimento):
-    at.status_conciliacao = StatusConciliacao.conciliado
-    at.data_credito = mov.data_movimento
-    at.valor_liquido = mov.valor
-    mov.status = StatusMovimentacaoBancaria.conciliada
-    mov.conciliada_com_atendimento_id = at.id
+    vincular_recebimento(mov, at)
     db.commit()
 
 
@@ -744,7 +714,7 @@ def _resumo_saldos_bancarios(db: Session, cliente_id: int | None) -> list[dict]:
     contas = db.query(ContaBancaria).filter(
         ContaBancaria.cliente_id == cliente_id,
         ContaBancaria.ativo == True,
-        ContaBancaria.tipo == TipoContaBancaria.bancaria,
+        ContaBancaria.tipo.in_(TIPOS_COM_SALDO),
     ).order_by(ContaBancaria.nome).all()
     resumos = []
     for conta in contas:
@@ -831,6 +801,10 @@ def _ctx_padrao(db, usuario, cliente_id, busca_mov_id=None, busca_termo=None, me
         "contas_arquivadas": arquivados[2],
         "painel": painel,
         "saldos_bancarios": _resumo_saldos_bancarios(db, cliente_id),
+        "contas_cliente": db.query(ContaBancaria).filter(
+            ContaBancaria.cliente_id == cliente_id, ContaBancaria.ativo.is_(True),
+        ).order_by(ContaBancaria.tipo, ContaBancaria.nome).all() if cliente_id else [],
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
         "regras_bancarias": db.query(RegraNegocioBancaria).filter(
             RegraNegocioBancaria.cliente_id == cliente_id,
             RegraNegocioBancaria.ativo.is_(True),
@@ -1008,6 +982,7 @@ async def criar_movimentacao_manual_banco(
             ContaBancaria.id == conta_bancaria_id,
             ContaBancaria.cliente_id == cliente_id,
             ContaBancaria.ativo == True,
+            ContaBancaria.tipo.in_(TIPOS_COM_SALDO),
         ).first()
     if not conta_bancaria:
         banco_nome = banco.strip()

@@ -17,6 +17,7 @@
     {% elif erro == 'excluir_proprio' %}Você não pode excluir a própria conta.
     {% elif erro == 'perfil_proprio' %}Você não pode retirar o perfil de coordenador da própria conta.
     {% elif erro == 'senha_curta' %}A nova senha deve ter pelo menos 6 caracteres e no máximo 72 bytes.
+    {% elif erro == 'usar_tela_secretarias' %}Secretárias precisam de cliente vinculado: cadastre-as na tela <a href="/admin/secretarias" class="font-semibold underline">Secretárias</a>.
     {% else %}Não foi possível concluir a operação. Confira os dados e tente novamente.{% endif %}
   {% include "partials/codigo_erro.html" %}</div>
   {% endif %}
@@ -52,7 +53,6 @@
           <option value="funcionario">Funcionário</option>
           <option value="editor">Editor</option>
           <option value="coordenador">Coordenador</option>
-          <option value="secretaria">Secretaria</option>
           <option value="medico">Médico</option>
         </select>
       </div>
@@ -82,7 +82,11 @@
         </div>
         <div class="mt-4 flex items-center justify-between gap-3">
           <span class="rounded-full bg-[#5e93cc]/10 px-2.5 py-1 text-xs font-semibold capitalize text-[#222049]">{{ u.perfil.value }}</span>
+          {% if u.perfil.value == 'secretaria' %}
+          <a href="/admin/secretarias" class="truncate text-xs text-slate-500 hover:underline">{{ u.cliente_vinculado.nome if u.cliente_vinculado else 'Sem cliente' }}</a>
+          {% else %}
           <span class="text-xs text-slate-500">{{ u.clientes|length }} cliente(s)</span>
+          {% endif %}
         </div>
         {% if u.clientes %}
         <div class="mt-3 flex min-w-0 flex-wrap gap-1.5">

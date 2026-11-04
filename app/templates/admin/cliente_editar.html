@@ -57,9 +57,9 @@
             {% endfor %}
           </select>
         </div>
-        {% if pode_coordenar %}
+        {% if pode_atribuir %}
         <div>
-          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Funcionário responsável</label>
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Responsável</label>
           <select name="funcionario_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#5e93cc]">
             <option value="">Sem responsável</option>
             {% for f in funcionarios %}
