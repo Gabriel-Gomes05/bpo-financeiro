@@ -335,6 +335,8 @@ html.dark .fx-theme-toggle .fx-moon { display: none; }
 .fx-card-hover:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .fx-kpi { position: relative; padding: 18px 18px 16px; overflow: hidden; }
 .fx-kpi-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.fx-kpi > .flex:first-child { flex-wrap: wrap; row-gap: 6px; }
+.fx-kpi-label { min-width: 0; }
 .fx-kpi-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; }
 .fx-kpi-icon svg { width: 16px; height: 16px; }
 .fx-kpi-value { margin-top: 12px; font-size: 26px; line-height: 1.1; font-weight: 650; letter-spacing: -0.025em; color: var(--text); font-variant-numeric: tabular-nums; }
