@@ -157,7 +157,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _origem_permitida(request):
             return PlainTextResponse("Origem da requisição não permitida.", status_code=403)
 
-        if request.url.path not in {"/health", "/ready"}:
+        # Arquivos estáticos (CSS, JS, fontes, ícones) são públicos e versionados: não consomem o
+        # limite global — uma página carrega vários deles — e ficam em cache no navegador.
+        estatico = request.method == "GET" and request.url.path.startswith("/static/")
+        if request.url.path not in {"/health", "/ready"} and not estatico:
             try:
                 allowed, remaining, retry_after = await consume(
                     f"rate:global:{ip}",
@@ -188,7 +191,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response.headers["Content-Security-Policy"] = self.CSP
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-        response.headers["Cache-Control"] = "no-store"
+        response.headers["Cache-Control"] = (
+            "public, max-age=604800" if estatico and response.status_code == 200 else "no-store"
+        )
         if HTTPS_ONLY:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=63072000; includeSubDomains; preload"

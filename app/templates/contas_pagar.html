@@ -3,70 +3,110 @@
 {% block page_title %}Contas a Pagar{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+{% set somente_leitura = usuario.perfil in ['medico'] %}
+{% set _abertas = contas|selectattr('status.value', 'in', ['pendente', 'aguardando_aprovacao', 'agendado'])|list %}
+{% set _vencidas = _abertas|selectattr('vencimento', 'lt', hoje)|list %}
+{% set _pagas = contas|selectattr('status.value', 'in', ['pago', 'pago_nao_conciliado'])|list %}
+<style>
+  .cp-resumo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 1024px) { .cp-resumo { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .cp-card { padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-xs); }
+  .cp-card .rot { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+  .cp-card .fx-kpi-icon { width: 26px; height: 26px; border-radius: 8px; }
+  .cp-card .fx-kpi-icon svg { width: 14px; height: 14px; }
+  .cp-card .num { margin-top: 8px; font-size: 20px; font-weight: 650; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cp-card .sub { margin-top: 2px; font-size: 12.5px; color: var(--text-3); }
+  .cp-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+  .cp-filtros label { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+  .cp-filtros input, .cp-filtros select { height: 36px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); padding: 0 10px; font-size: 13px; color: var(--text); }
+</style>
+<div class="space-y-5">
 
-  {% if flash_error %}<div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{{ flash_error }}</div>{% endif %}
-  {% if flash_success %}<div role="status" class="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">{{ flash_success }}</div>{% endif %}
-  {% if flash %}
-  <div class="rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-800">
-    {{ flash }}
+  {% if flash_error %}<div hidden data-flash="{{ flash_error }}" data-flash-tipo="erro"></div>{% endif %}
+  {% if flash_success %}<div hidden data-flash="{{ flash_success }}" data-flash-tipo="sucesso"></div>{% endif %}
+  {% if flash %}<div hidden data-flash="{{ flash }}" data-flash-tipo="aviso"></div>{% endif %}
+
+  <div class="fx-page-head flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h2>Contas a pagar</h2>
+      <p>Vencimentos, aprovações e pagamentos da empresa</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      {% if usuario.perfil not in ['medico', 'secretaria'] %}
+      <a href="/importacoes" class="fx-btn fx-btn-secondary"><i data-lucide="upload"></i>Importar planilha</a>
+      {% endif %}
+      {% if not somente_leitura %}
+      <a href="/contas-pagar/novo" class="fx-btn fx-btn-primary"><i data-lucide="plus"></i>Nova conta</a>
+      {% endif %}
+    </div>
   </div>
-  {% endif %}
 
-  {% set somente_leitura = usuario.perfil in ['medico'] %}
-
-
-  {% if usuario.perfil not in ['medico', 'secretaria'] %}
-  <a href="/importacoes" class="text-sm text-blue-700 hover:underline">Importar planilha</a>
-  {% endif %}
+  <div class="cp-resumo">
+    <div class="cp-card">
+      <span class="rot"><span class="fx-kpi-icon fx-tone-brand"><i data-lucide="wallet"></i></span>Contas listadas</span>
+      <p class="num">{{ contas|length }}</p>
+      <p class="sub">R$ {{ contas|sum(attribute='valor')|brl }}</p>
+    </div>
+    <div class="cp-card">
+      <span class="rot"><span class="fx-kpi-icon fx-tone-warning"><i data-lucide="calendar-clock"></i></span>Em aberto</span>
+      <p class="num">{{ _abertas|length }}</p>
+      <p class="sub">R$ {{ _abertas|sum(attribute='valor')|brl }}</p>
+    </div>
+    <div class="cp-card">
+      <span class="rot"><span class="fx-kpi-icon {{ 'fx-tone-danger' if _vencidas else 'fx-tone-neutral' }}"><i data-lucide="calendar-x-2"></i></span>Vencidas</span>
+      <p class="num" style="{% if _vencidas %}color:var(--danger-text){% endif %}">{{ _vencidas|length }}</p>
+      <p class="sub">{% if _vencidas %}R$ {{ _vencidas|sum(attribute='valor')|brl }}{% else %}Nada vencido{% endif %}</p>
+    </div>
+    <div class="cp-card">
+      <span class="rot"><span class="fx-kpi-icon fx-tone-success"><i data-lucide="circle-check"></i></span>Pagas</span>
+      <p class="num">{{ _pagas|length }}</p>
+      <p class="sub">R$ {{ _pagas|sum(attribute='valor')|brl }}</p>
+    </div>
+  </div>
 
   <!-- Filtros -->
-  <div class="flex items-center justify-between gap-3 flex-wrap">
-    <form method="get" action="/contas-pagar" class="flex items-center gap-2 flex-wrap">
-      <select name="cliente_id"
-              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none" style="display:none" aria-hidden="true" tabindex="-1">
-<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
-</select>
-{% include "partials/empresa_atual.html" %}
-      <select name="situacao" class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm">
-        {% for valor, rotulo in [('', 'Situação: todas'), ('aberto', 'Em aberto'), ('a_vencer', 'A vencer (inclui hoje)'), ('vencidas', 'Vencidas')] %}<option value="{{ valor }}" {% if situacao_selecionada == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+  <div class="fx-card px-5 py-4">
+    <form method="get" action="/contas-pagar" class="cp-filtros">
+      <select name="cliente_id" style="display:none" aria-hidden="true" tabindex="-1">
+        <option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
       </select>
-      <select name="status"
-              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none">
-        <option value="">Status: todos</option>
-        <option value="pendente" {% if status_selecionado == 'pendente' %}selected{% endif %}>Pendente</option>
-        <option value="aguardando_aprovacao" {% if status_selecionado == 'aguardando_aprovacao' %}selected{% endif %}>Aguardando aprovação</option>
-        <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Agendado</option>
-        <option value="pago_nao_conciliado" {% if status_selecionado == 'pago_nao_conciliado' %}selected{% endif %}>Pago — não conciliado</option>
-        <option value="pago" {% if status_selecionado == 'pago' %}selected{% endif %}>Pago</option>
-        <option value="cancelado" {% if status_selecionado == 'cancelado' %}selected{% endif %}>Cancelado</option>
-      </select>
-      <select name="forma_pagamento"
-              class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none">
-        <option value="">Forma: todas</option>
-        <option value="pix" {% if forma_pagamento_selecionada == 'pix' %}selected{% endif %}>Pix</option>
-        <option value="transferencia" {% if forma_pagamento_selecionada == 'transferencia' %}selected{% endif %}>Transferência</option>
-        <option value="cartao_credito" {% if forma_pagamento_selecionada == 'cartao_credito' %}selected{% endif %}>Cartão de crédito</option>
-        <option value="dinheiro" {% if forma_pagamento_selecionada == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
-        <option value="boleto" {% if forma_pagamento_selecionada == 'boleto' %}selected{% endif %}>Boleto</option>
-        <option value="cheque" {% if forma_pagamento_selecionada == 'cheque' %}selected{% endif %}>Cheque</option>
-        <option value="debito_automatico" {% if forma_pagamento_selecionada == 'debito_automatico' %}selected{% endif %}>Débito automático</option>
-      </select>
-      <input type="date" name="vencimento_inicio" value="{{ vencimento_inicio }}"
-             class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none" />
-      <input type="date" name="vencimento_fim" value="{{ vencimento_fim }}"
-             class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none" />
-      <button type="submit"
-              class="rounded-lg bg-[#222049] px-3 py-1.5 text-sm text-white font-semibold hover:bg-[#1a1836] transition">Filtrar</button>
+      <div><label for="cp-sit">Situação</label>
+        <select id="cp-sit" name="situacao">
+          {% for valor, rotulo in [('', 'Todas'), ('aberto', 'Em aberto'), ('a_vencer', 'A vencer (inclui hoje)'), ('vencidas', 'Vencidas')] %}<option value="{{ valor }}" {% if situacao_selecionada == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label for="cp-st">Status</label>
+        <select id="cp-st" name="status">
+          <option value="">Todos</option>
+          <option value="pendente" {% if status_selecionado == 'pendente' %}selected{% endif %}>Pendente</option>
+          <option value="aguardando_aprovacao" {% if status_selecionado == 'aguardando_aprovacao' %}selected{% endif %}>Aguardando aprovação</option>
+          <option value="agendado" {% if status_selecionado == 'agendado' %}selected{% endif %}>Agendado</option>
+          <option value="pago_nao_conciliado" {% if status_selecionado == 'pago_nao_conciliado' %}selected{% endif %}>Pago — não conciliado</option>
+          <option value="pago" {% if status_selecionado == 'pago' %}selected{% endif %}>Pago</option>
+          <option value="cancelado" {% if status_selecionado == 'cancelado' %}selected{% endif %}>Cancelado</option>
+        </select>
+      </div>
+      <div><label for="cp-fp">Forma</label>
+        <select id="cp-fp" name="forma_pagamento">
+          <option value="">Todas</option>
+          <option value="pix" {% if forma_pagamento_selecionada == 'pix' %}selected{% endif %}>Pix</option>
+          <option value="transferencia" {% if forma_pagamento_selecionada == 'transferencia' %}selected{% endif %}>Transferência</option>
+          <option value="cartao_credito" {% if forma_pagamento_selecionada == 'cartao_credito' %}selected{% endif %}>Cartão de crédito</option>
+          <option value="dinheiro" {% if forma_pagamento_selecionada == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+          <option value="boleto" {% if forma_pagamento_selecionada == 'boleto' %}selected{% endif %}>Boleto</option>
+          <option value="cheque" {% if forma_pagamento_selecionada == 'cheque' %}selected{% endif %}>Cheque</option>
+          <option value="debito_automatico" {% if forma_pagamento_selecionada == 'debito_automatico' %}selected{% endif %}>Débito automático</option>
+        </select>
+      </div>
+      <div><label for="cp-vi">Vencimento de</label><input id="cp-vi" type="date" name="vencimento_inicio" value="{{ vencimento_inicio }}"></div>
+      <div><label for="cp-vf">Até</label><input id="cp-vf" type="date" name="vencimento_fim" value="{{ vencimento_fim }}"></div>
+      <button type="submit" class="fx-btn fx-btn-primary"><i data-lucide="filter"></i>Filtrar</button>
+      <div class="ml-auto flex items-center gap-2 text-xs" style="color:var(--text-3)"><i data-lucide="building-2" style="width:14px;height:14px"></i>{% include "partials/empresa_atual.html" %}</div>
     </form>
-    {% if not somente_leitura %}
-    <a href="/contas-pagar/novo"
-       class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Incluir</a>
-    {% endif %}
   </div>
 
   <!-- Tabela de contas -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="fx-card overflow-hidden">
 
     {% if usuario.perfil != 'medico' %}
     <form id="form-lote" data-total-filtro="{{ total_filtro }}" method="post" action="/contas-pagar/lote/aplicar" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
@@ -75,18 +115,18 @@
       <input type="hidden" name="filtros_lote" value="{{ filtros_lote }}">
       <input type="hidden" name="total_esperado" value="{{ total_filtro }}">
       <span id="total-selecionados" class="text-sm text-gray-500">0 selecionado(s)</span>
-      <label class="text-xs">Categoria / plano de contas<select name="plano_conta_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter categoria</option>{% for p in planos_lote %}<option value="{{ p.id }}">{{ p.codigo or '' }} - {{ p.nome }}{% if p.cliente_id %} (cliente #{{ p.cliente_id }}){% endif %}</option>{% endfor %}</select></label>
-      <label class="text-xs">Centro de custo<select name="centro_custo_id" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter centros de custo</option>{% for cc in centros_lote %}<option value="{{ cc.id }}">{{ cc.nome }} (cliente #{{ cc.cliente_id }})</option>{% endfor %}</select></label>
-      <label class="text-xs">Status<select name="novo_status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Agendado</option><option value="pago_nao_conciliado">Pago — não conciliado</option><option value="cancelado">Cancelado</option></select></label>
-      <button type="submit" name="acao" value="editar" class="rounded-lg bg-[#222049] text-white px-3 py-2 text-sm">Editar selecionados</button>
-      <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button><p class="w-full text-xs text-gray-500">O centro escolhido substituirá o rateio por 100% nesse centro. A baixa como pago é feita na conciliação bancária.</p>
+      <label class="text-xs flex max-w-full flex-col gap-1" style="color:var(--text-3)">Categoria / plano de contas<select name="plano_conta_id" class="max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter categoria</option>{% for p in planos_lote %}<option value="{{ p.id }}">{{ p.codigo or '' }} - {{ p.nome }}{% if p.cliente_id %} (cliente #{{ p.cliente_id }}){% endif %}</option>{% endfor %}</select></label>
+      <label class="text-xs flex max-w-full flex-col gap-1" style="color:var(--text-3)">Centro de custo<select name="centro_custo_id" class="max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter centros de custo</option>{% for cc in centros_lote %}<option value="{{ cc.id }}">{{ cc.nome }} (cliente #{{ cc.cliente_id }})</option>{% endfor %}</select></label>
+      <label class="text-xs flex max-w-full flex-col gap-1" style="color:var(--text-3)">Status<select name="novo_status" class="max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Manter status</option><option value="aguardando_aprovacao">Aguardando aprovação</option><option value="agendado">Agendado</option><option value="pago_nao_conciliado">Pago — não conciliado</option><option value="cancelado">Cancelado</option></select></label>
+      <button type="submit" name="acao" value="editar" class="fx-btn fx-btn-primary fx-btn-sm"><i data-lucide="pencil-line"></i>Editar selecionados</button>
+      <button type="submit" name="acao" value="excluir" class="fx-btn fx-btn-sm" style="background:var(--danger);color:#fff"><i data-lucide="trash-2"></i>Excluir selecionados</button><p class="w-full text-xs text-gray-500">O centro escolhido substituirá o rateio por 100% nesse centro. A baixa como pago é feita na conciliação bancária.</p>
     </form>
     <div id="lote-todos" class="mx-4 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900" role="status" hidden></div>
     <p class="px-4 pb-3 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação serão desconciliados antes, após sua confirmação.</p>
     {% endif %}
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+        <thead>
           <tr>
             <th class="px-4 py-3">{% if usuario.perfil != 'medico' %}<input type="checkbox" id="selecionar-todos" aria-label="Selecionar todos os itens exibidos" onchange="document.querySelectorAll('.selecao-lote:not(:disabled)').forEach(c => c.checked = this.checked); atualizarSelecaoLote()">{% endif %}</th>
             <th class="px-4 py-3 text-left">Vencimento</th>
@@ -113,7 +153,7 @@
               data-fornecedor="{{ conta.fornecedor or '—' }}"
               data-conta-bancaria="{% if conta.conta_bancaria %}{{ conta.conta_bancaria.nome }}{% if conta.conta_bancaria.banco %} · {{ conta.conta_bancaria.banco }}{% endif %}{% else %}Não informada{% endif %}"
               data-tipo="{{ conta.tipo.value | capitalize }}"
-              data-valor="R$ {{ '%.2f'|format(conta.valor|float) }}"
+              data-valor="R$ {{ conta.valor|brl }}"
               data-media-3-meses="{% if medias_por_conta[conta.id].media is not none %}R$ {{ '%.2f'|format(medias_por_conta[conta.id].media|float) }}{% else %}Sem histórico{% endif %}"
               data-media-quantidade="{{ medias_por_conta[conta.id].quantidade }}"
               data-grafico-meses='{{ medias_por_conta[conta.id].meses|tojson }}'
@@ -127,12 +167,12 @@
               data-doc-url="{% if conta.documento_path %}/contas-pagar/{{ conta.id }}/documento{% endif %}">
 
             <td class="px-4 py-3" onclick="event.stopPropagation()">{% if usuario.perfil != 'medico' %}<input type="checkbox" class="selecao-lote" name="ids" form="form-lote" value="{{ conta.id }}" aria-label="Selecionar registro {{ conta.id }}" onchange="atualizarSelecaoLote()" >{% endif %}</td>
-            <td class="px-4 py-3 {% if vencida %}text-red-600 font-semibold{% elif vence_hoje %}text-amber-600 font-semibold{% else %}text-gray-600{% endif %}">
+            <td class="px-4 py-3 whitespace-nowrap {% if vencida %}text-red-600 font-semibold{% elif vence_hoje %}text-amber-600 font-semibold{% else %}text-gray-600{% endif %}">
               {{ conta.vencimento.strftime('%d/%m/%Y') }}
-              {% if vencida %}<span class="text-xs ml-1">(vencida)</span>{% endif %}
-              {% if vence_hoje %}<span class="text-xs ml-1">(hoje)</span>{% endif %}
+              {% if vencida %}<span class="fx-badge fx-badge-danger ml-1">vencida</span>{% endif %}
+              {% if vence_hoje %}<span class="fx-badge fx-badge-warning ml-1">hoje</span>{% endif %}
             </td>
-            <td class="px-4 py-3 font-medium text-gray-800">{{ conta.cliente.nome }}</td>
+            <td class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{{ conta.cliente.nome }}</td>
             <td class="px-4 py-3 text-gray-700">{{ conta.descricao }}</td>
             <td class="px-4 py-3 text-gray-500">{{ conta.fornecedor or '—' }}</td>
             <td class="px-4 py-3 text-xs text-gray-500">
@@ -142,7 +182,7 @@
               {% if conta.rateios_centro_custo %}
                 {% for r in conta.rateios_centro_custo %}
                 <span class="mb-1 inline-block rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
-                  {{ r.centro_custo.nome }} - {{ '%.2f'|format(r.percentual|float) }}% / R$ {{ '%.2f'|format(r.valor|float) }}
+                  {{ r.centro_custo.nome }} - {{ '%.2f'|format(r.percentual|float) }}% / R$ {{ r.valor|brl }}
                 </span>
                 {% endfor %}
               {% elif conta.categoria_dre and not conta.plano_conta %}
@@ -151,25 +191,15 @@
               </span>
               {% elif not conta.plano_conta %}—{% endif %}
             </td>
-            <td class="px-4 py-3 text-right font-medium text-gray-800">
-              R$ {{ '%.2f'|format(conta.valor|float) }}
-            </td>
+            <td class="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap tabular">R$ {{ conta.valor|brl }}</td>
             <td class="px-4 py-3 text-center">
-              {% if conta.status == 'pago' %}
-                <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago</span>
-              {% elif conta.status == 'agendado' %}
-                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">Agendado</span>
-              {% elif conta.status == 'pago_nao_conciliado' %}
-                <span class="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-medium">Pago — não conciliado</span>
-              {% elif conta.status == 'aguardando_aprovacao' %}
-                <span class="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">Aguardando aprovação</span>
-              {% elif conta.status == 'cancelado' %}
-                <span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">Cancelado</span>
-              {% elif vencida %}
-                <span class="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">Vencida</span>
-              {% else %}
-                <span class="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">Pendente</span>
-              {% endif %}
+              {% if conta.status == 'pago' %}<span class="fx-badge fx-badge-success">Pago</span>
+              {% elif conta.status == 'agendado' %}<span class="fx-badge fx-badge-info">Agendado</span>
+              {% elif conta.status == 'pago_nao_conciliado' %}<span class="fx-badge fx-badge-violet">Pago — não conciliado</span>
+              {% elif conta.status == 'aguardando_aprovacao' %}<span class="fx-badge fx-badge-warning">Aguardando aprovação</span>
+              {% elif conta.status == 'cancelado' %}<span class="fx-badge fx-badge-neutral">Cancelado</span>
+              {% elif vencida %}<span class="fx-badge fx-badge-danger">Vencida</span>
+              {% else %}<span class="fx-badge fx-badge-warning">Pendente</span>{% endif %}
             </td>
             <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
               <form method="post" action="/contas-pagar/{{ conta.id }}/recebido">
@@ -196,7 +226,7 @@
                   </select>
                 </form>
                 {% elif conta.status == 'pago' %}
-                <span class="text-xs text-green-600 font-medium">Conciliado</span>
+                <span class="fx-badge fx-badge-success no-dot"><i data-lucide="check" style="width:12px;height:12px"></i>Conciliado</span>
                 {% else %}
                 <span class="text-gray-300">—</span>
                 {% endif %}

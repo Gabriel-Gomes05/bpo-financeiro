@@ -4,932 +4,203 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}FLIC{% endblock %}</title>
-
-  <!-- Tailwind CSS via CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- HTMX -->
+  {% include "partials/head_comum.html" %}
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-
-  <style>
-    [x-cloak] { display: none !important; }
-    :root {
-      --brand-ink: #222049;
-      --brand-blue: #5e93cc;
-      --surface-soft: #f6f9fc;
-      --line: #dbe5ef;
-      --shadow-soft: 0 14px 36px rgba(34,32,73,0.08);
-      --shadow-lift: 0 18px 46px rgba(34,32,73,0.13);
-      --ease-out: cubic-bezier(.2,.8,.2,1);
-    }
-
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(94,147,204,.45) transparent;
-    }
-
-    ::selection {
-      background: rgba(94,147,204,.22);
-      color: var(--brand-ink);
-    }
-
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(94,147,204,.34);
-      border: 3px solid transparent;
-      border-radius: 999px;
-      background-clip: padding-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 52%, #f6f7fb 100%);
-      text-rendering: optimizeLegibility;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    @keyframes pageEnter {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes softPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(94,147,204,0); }
-      50% { box-shadow: 0 0 0 4px rgba(94,147,204,.08); }
-    }
-
-    a, button, input, select, textarea, summary {
-      transition:
-        color .18s var(--ease-out),
-        background-color .18s var(--ease-out),
-        border-color .18s var(--ease-out),
-        box-shadow .18s var(--ease-out),
-        transform .18s var(--ease-out),
-        opacity .18s var(--ease-out);
-    }
-
-    button:not(:disabled), summary { cursor: pointer; }
-
-    button:not(:disabled):active,
-    a:active {
-      transform: translateY(1px);
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: var(--brand-blue) !important;
-      box-shadow: 0 0 0 4px rgba(94,147,204,.14) !important;
-    }
-
-    .app-shell { isolation: isolate; }
-
-    .app-sidebar {
-      position: relative;
-      box-shadow: 12px 0 34px rgba(14,20,44,.18);
-    }
-
-    .app-sidebar::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 1px;
-      background: linear-gradient(180deg, transparent, rgba(94,147,204,.45), transparent);
-      pointer-events: none;
-    }
-
-    .app-sidebar nav a {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .app-sidebar nav a::before {
-      content: "";
-      position: absolute;
-      inset: 0 auto 0 0;
-      width: 3px;
-      background: var(--brand-blue);
-      opacity: 0;
-      transform: scaleY(.35);
-      transition: opacity .18s var(--ease-out), transform .18s var(--ease-out);
-    }
-
-    .app-sidebar nav a:hover {
-      background-color: rgba(94,147,204,.14) !important;
-      transform: translateX(2px);
-    }
-
-    .app-sidebar nav a:hover::before,
-    .app-sidebar nav a.font-semibold::before {
-      opacity: 1;
-      transform: scaleY(1);
-    }
-
-    .app-topbar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      background: rgba(255,255,255,.86) !important;
-      backdrop-filter: blur(14px);
-      box-shadow: 0 10px 28px rgba(15,23,42,.06);
-    }
-
-    .app-content-shell {
-      animation: pageEnter .34s var(--ease-out) both;
-    }
-
-    .app-content-shell > * {
-      animation: pageEnter .32s var(--ease-out) both;
-    }
-
-    .app-content-shell > *:nth-child(2) { animation-delay: .03s; }
-    .app-content-shell > *:nth-child(3) { animation-delay: .06s; }
-    .app-content-shell > *:nth-child(4) { animation-delay: .09s; }
-
-    .bg-white.rounded-xl,
-    .bg-white.rounded-2xl,
-    section.bg-white,
-    article.bg-white {
-      border-color: rgba(203,213,225,.86) !important;
-      box-shadow: var(--shadow-soft) !important;
-    }
-
-    .bg-white.rounded-xl:hover,
-    .bg-white.rounded-2xl:hover,
-    section.bg-white:hover,
-    article.bg-white:hover {
-      box-shadow: var(--shadow-lift) !important;
-    }
-
-    .shadow-sm { box-shadow: var(--shadow-soft) !important; }
-    .shadow-xl { box-shadow: 0 24px 60px rgba(34,32,73,.17) !important; }
-
-    button[class*="bg-[#222049]"],
-    a[class*="bg-[#222049]"] {
-      box-shadow: 0 10px 22px rgba(34,32,73,.20);
-    }
-
-    button[class*="bg-[#222049]"]:hover,
-    a[class*="bg-[#222049]"]:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 14px 30px rgba(34,32,73,.26);
-    }
-
-    .flash-card {
-      animation: pageEnter .28s var(--ease-out) both, softPulse 1.8s ease-in-out 1;
-    }
-
-    /* ── Tabelas globais ─────────────────────────────── */
-    table {
-      background: transparent;
-      border-collapse: collapse;
-      width: 100%;
-    }
-    thead tr {
-      background: #dde3ed !important;
-    }
-    thead th {
-      border-right: 1px solid #c4cdd9 !important;
-      border-bottom: 2px solid #b0bccb !important;
-    }
-    thead th:last-child {
-      border-right: none !important;
-    }
-    tbody tr {
-      background: #ffffff;
-      border-bottom: 1px solid #d5dce6;
-      transition: background-color .16s var(--ease-out), box-shadow .16s var(--ease-out);
-    }
-    tbody tr:hover {
-      background: #eef3fb !important;
-      box-shadow: inset 3px 0 0 rgba(94,147,204,.8);
-    }
-    tbody td {
-      border-right: 1px solid #d5dce6 !important;
-    }
-    tbody td:last-child {
-      border-right: none !important;
-    }
-    tfoot tr {
-      background: inherit;
-    }
-    tfoot td {
-      border-right: 1px solid #d5dce6 !important;
-      border-top: 2px solid #b0bccb;
-    }
-    tfoot td:last-child {
-      border-right: none !important;
-    }
-
-    .table-tools {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 0 0 12px;
-    }
-    .table-tools input,
-    .table-tools select {
-      border: 1px solid #cbd5e1;
-      border-radius: 10px;
-      background: rgba(255,255,255,.92);
-      color: #334155;
-      font-size: 12px;
-      outline: none;
-      transition: border-color .15s ease, box-shadow .15s ease;
-    }
-    .table-tools input {
-      min-width: min(280px, 100%);
-      padding: 8px 11px;
-    }
-    .table-tools select {
-      padding: 8px 28px 8px 10px;
-    }
-    .table-tools input:focus,
-    .table-tools select:focus {
-      border-color: #5e93cc;
-      box-shadow: 0 0 0 4px rgba(94,147,204,0.15);
-    }
-    .table-pager {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 12px 0 0;
-      color: #64748b;
-      font-size: 12px;
-    }
-    .table-pager button {
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      background: #ffffff;
-      color: #475569;
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 600;
-      transition: background .15s ease, color .15s ease, border-color .15s ease;
-    }
-    .table-pager button:hover:not(:disabled) {
-      background: #eef4fb;
-      border-color: #93b8df;
-      color: #315f90;
-      transform: translateY(-1px);
-    }
-    .table-pager button:disabled {
-      cursor: not-allowed;
-      opacity: .45;
-    }
-    .table-empty-filter {
-      display: none;
-    }
-
-    .mobile-nav-button { display: none; }
-    .app-sidebar .include-link { color: rgba(244,244,244,.8); }
-    .app-sidebar .include-link[aria-current="page"] { color: white; background: rgba(94,147,204,.2); }
-    .app-content-shell .grid > * { min-width: 0; }
-    @media (max-width: 767px) {
-      .mobile-nav-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; }
-      #sidebar { position: fixed; inset: 0 auto 0 0; height: 100dvh; min-height: 0; overflow-y: auto; z-index: 50; transform: translateX(-100%); transition: transform .2s ease; }
-      #sidebar[data-open="true"] { transform: translateX(0); }
-      .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; }
-      .app-topbar { padding: 10px 12px; gap: 8px; }
-      .app-topbar > div { flex: 1; flex-wrap: wrap; gap: 8px; }
-      .app-topbar h2 { flex-shrink: 1; font-size: 14px; overflow-wrap: anywhere; }
-      .app-topbar > span { display: none; }
-      .app-content-shell { padding: 12px; min-width: 0; max-width: 100vw; }
-      .app-content-shell form input, .app-content-shell form select { max-width: 100%; min-width: 0; }
-      .linha-servico > div:first-child { flex-wrap: wrap; gap: 8px; }
-      .linha-servico > div:first-child > div { flex-wrap: wrap; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *,
-      *::before,
-      *::after {
-        animation-duration: .01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: .01ms !important;
-      }
-    }
-  </style>
-<link rel="stylesheet" href="/static/css/confirmacao_banco.css">
+  <link rel="stylesheet" href="/static/css/confirmacao_banco.css">
 </head>
 
-<body class="bg-[#f4f4f4] text-gray-800 min-h-screen flex app-shell">
+{# ── Item do menu lateral ── #}
+{% macro item(href, icone, rotulo, ativo=false, sub=false) -%}
+<a href="{{ href }}" class="fx-nav-link{% if sub %} fx-nav-sub{% endif %}" data-tip="{{ rotulo }}"{% if ativo %} aria-current="page"{% endif %}>
+  <i data-lucide="{{ icone }}"></i><span class="fx-nav-label">{{ rotulo }}</span>
+</a>
+{%- endmacro %}
 
-  <button type="button" class="mobile-nav-overlay" id="mobile-nav-overlay" hidden aria-label="Fechar menu" tabindex="-1"></button>
-  <!-- =========================================================
-       SIDEBAR
-  ========================================================== -->
-  <aside id="sidebar"
-         class="w-56 min-h-screen flex flex-col flex-shrink-0 app-sidebar"
-         style="background-color:#222049;">
+<body class="fx-shell">
+  {% set p = request.url.path %}
+  {# ── Resolve cliente ativo para todo o template ── #}
+  {% set _ca_id = '' if painel_geral else request.cookies.get('cliente_ativo', '') %}
+  {% set _ns = namespace(nome='') %}
+  {% if _ca_id and clientes %}
+    {% for _c in clientes %}{% if _c.id|string == _ca_id %}{% set _ns.nome = _c.nome %}{% endif %}{% endfor %}
+  {% endif %}
 
-    <!-- Marca FLIC -->
-    <div class="px-3 py-3 border-b" style="border-color:rgba(94,147,204,0.2);">
-      <div class="bg-white rounded-xl px-3 py-2">
-        <img src="/static/1782164034225.png" alt="FLIC" class="h-10 w-auto">
-      </div>
+  <button type="button" class="fx-overlay" id="fx-overlay" hidden aria-label="Fechar menu" tabindex="-1"></button>
+
+  <!-- ================================================= SIDEBAR -->
+  <aside id="sidebar" class="fx-sidebar" aria-label="Menu principal">
+    <div class="fx-brand">
+      <a href="{{ '/lancamentos' if usuario.perfil == 'secretaria' else '/' }}" aria-label="FLIC — início">
+        <img src="/static/marca/flic-logo.svg" alt="FLIC" class="fx-logo fx-logo-light">
+        <img src="/static/marca/flic-logo-negativo.svg" alt="FLIC" class="fx-logo fx-logo-dark">
+        <img src="/static/marca/flic-simbolo.svg" alt="FLIC" class="fx-logo-icon fx-logo-icon-light">
+        <img src="/static/marca/flic-simbolo-negativo.svg" alt="FLIC" class="fx-logo-icon fx-logo-icon-dark">
+      </a>
     </div>
 
-    <!-- Navegação principal -->
-    {# ── Resolve cliente ativo para todo o template ── #}
-    {% set _ca_id = '' if painel_geral else request.cookies.get('cliente_ativo', '') %}
-    {% set _ns = namespace(nome='') %}
-    {% if _ca_id and clientes %}
-      {% for _c in clientes %}{% if _c.id|string == _ca_id %}{% set _ns.nome = _c.nome %}{% endif %}{% endfor %}
-    {% endif %}
-
-    <nav class="flex-1 px-3 py-4 space-y-0.5 text-sm">
+    <nav class="fx-nav">
       {% if usuario.perfil == 'secretaria' %}
-      {# Perfil Secretária: somente Contas a Receber → Lançamentos do cliente vinculado. #}
-      {% if usuario.cliente_vinculado %}
-      <div class="mx-1 mb-3 rounded-xl border border-blue-300/20 bg-blue-300/10 p-3">
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Empresa</p>
-        <p class="mt-1 text-sm font-semibold text-white break-words">{{ usuario.cliente_vinculado.nome }}</p>
-      </div>
-      {% endif %}
-      <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Receber</p>
-        <a href="/lancamentos/novo"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path == '/lancamentos/novo' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path == '/lancamentos/novo' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">+ Incluir lançamento</a>
-        <a href="/lancamentos"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path == '/lancamentos' or request.url.path.endswith('/editar') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path == '/lancamentos' or request.url.path.endswith('/editar') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">Lançamentos</a>
+        {# Perfil Secretária: somente Contas a Receber → Lançamentos do cliente vinculado. #}
+        {% if usuario.cliente_vinculado %}
+        <div class="fx-company">
+          <p>Empresa</p>
+          <p class="fx-company-name">{{ usuario.cliente_vinculado.nome }}</p>
+        </div>
+        <div class="fx-company-dot" data-tip="{{ usuario.cliente_vinculado.nome }}">{{ usuario.cliente_vinculado.nome[:1]|upper }}</div>
+        {% endif %}
+        <div class="fx-nav-section">
+          <p class="fx-nav-title">Contas a receber</p>
+          {{ item('/lancamentos', 'list-checks', 'Lançamentos', p == '/lancamentos' or p.endswith('/editar')) }}
+          {{ item('/lancamentos/novo', 'circle-plus', 'Incluir lançamento', p == '/lancamentos/novo') }}
+        </div>
       {% else %}
-      <a href="/painel" class="flex items-center gap-3 px-3 py-3 rounded-lg text-white font-semibold hover:bg-white/10">Painel geral</a>
-      <a href="/tarefas"
-         class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                {% if request.url.path.startswith('/tarefas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-         style="{% if request.url.path.startswith('/tarefas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-        </svg>
-        Tarefas
-      </a>
-      {% if not _ca_id %}
-      <a href="/" class="block px-3 py-2 rounded-lg text-white hover:bg-white/10">Dashboard geral</a>
-      {% endif %}
-      {% if _ca_id %}
+        <div class="fx-nav-section">
+          {{ item('/painel', 'layout-grid', 'Painel geral', p == '/painel') }}
+          {{ item('/tarefas', 'list-todo', 'Tarefas', p.startswith('/tarefas')) }}
+          {% if not _ca_id %}
+          {{ item('/', 'layout-dashboard', 'Dashboard geral', p == '/') }}
+          {% endif %}
+        </div>
 
-      {# ── Seletor de cliente ── #}
-      {% if _ns.nome %}
-      <div class="mx-1 my-3 rounded-xl border border-blue-300/20 bg-blue-300/10 p-3">
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Empresa atual</p>
-        <p class="mt-1 text-sm font-semibold text-white break-words">{{ _ns.nome }}</p>
-        <a href="/painel" class="mt-3 inline-block text-xs text-blue-200 hover:text-white">Trocar pelo painel geral &rarr;</a>
-      </div>
-      {% endif %}
+        {% if _ca_id %}
+          {% if _ns.nome %}
+          <div class="fx-nav-section">
+            <div class="fx-company">
+              <p>Empresa atual</p>
+              <p class="fx-company-name">{{ _ns.nome }}</p>
+              <a href="/painel"><i data-lucide="arrow-left-right" style="width:13px;height:13px"></i> Trocar empresa</a>
+            </div>
+            <a href="/painel" class="fx-company-dot" data-tip="{{ _ns.nome }} — trocar">{{ _ns.nome[:1]|upper }}</a>
+          </div>
+          {% endif %}
 
-      <a href="/"
-         class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                {% if request.url.path == '/' %}text-white font-semibold{% else %}hover:text-white{% endif %}"
-         style="{% if request.url.path == '/' %}background-color:rgba(94,147,204,0.2);color:white;{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-        <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-        </svg>
-        Dashboard
-      </a>
+          <div class="fx-nav-section">
+            {{ item('/', 'layout-dashboard', 'Dashboard', p == '/') }}
+          </div>
 
-      {# ══════════════════════════════════════════
-         CONTAS A RECEBER
-         Todos os perfis veem Lançamentos.
-         Conc. Cartão: apenas coord/editor/func.
-      ══════════════════════════════════════════ #}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Receber</p>
+          <div class="fx-nav-section">
+            <p class="fx-nav-title">Contas a receber</p>
+            {{ item('/lancamentos', 'receipt-text', 'Lançamentos', p == '/lancamentos' or p.startswith('/conciliacao/lancamentos')) }}
+            {% if usuario.perfil != 'medico' %}
+            {{ item('/lancamentos/novo', 'circle-plus', 'Incluir', p == '/lancamentos/novo', sub=true) }}
+            {% endif %}
+            {% if usuario.perfil not in ['secretaria', 'medico'] %}
+            {{ item('/conciliacao', 'credit-card', 'Conc. Cartão', p == '/conciliacao' or (p.startswith('/conciliacao') and not p.startswith('/conciliacao/banco') and not p.startswith('/conciliacao/lancamentos'))) }}
+            {% endif %}
+          </div>
 
-        {% if usuario.perfil != 'medico' %}
-        <a href="/lancamentos/novo" class="include-link flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg hover:text-white" {% if request.url.path == '/lancamentos/novo' %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> Incluir</a>
-        {% endif %}
-        <a href="/lancamentos"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if (request.url.path == '/lancamentos' or request.url.path.startswith('/conciliacao/lancamentos')) %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if (request.url.path == '/lancamentos' or request.url.path.startswith('/conciliacao/lancamentos')) %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          Lançamentos
-        </a>
+          {% if usuario.perfil not in ['secretaria', 'medico'] %}
+          <div class="fx-nav-section">
+            <p class="fx-nav-title">Conciliação</p>
+            {{ item('/conciliacao/banco', 'landmark', 'Banco', p.startswith('/conciliacao/banco')) }}
+            {{ item('/importacoes', 'upload', 'Importações', p.startswith('/importacoes')) }}
+          </div>
+          {% endif %}
 
-        {% if usuario.perfil not in ['secretaria', 'medico'] %}
-        <a href="/conciliacao"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path == '/conciliacao' or (request.url.path.startswith('/conciliacao') and not request.url.path.startswith('/conciliacao/banco') and not request.url.path.startswith('/conciliacao/lancamentos')) %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path == '/conciliacao' or (request.url.path.startswith('/conciliacao') and not request.url.path.startswith('/conciliacao/banco') and not request.url.path.startswith('/conciliacao/lancamentos')) %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-          </svg>
-          Conc. Cartão
-        </a>
-        {% endif %}
-      </div>
+          {% if usuario.perfil != 'secretaria' %}
+          <div class="fx-nav-section">
+            <p class="fx-nav-title">Contas a pagar</p>
+            {{ item('/contas-pagar', 'wallet', 'Lançamentos', p == '/contas-pagar') }}
+            {% if usuario.perfil != 'medico' %}
+            {{ item('/contas-pagar/novo', 'circle-plus', 'Incluir', p == '/contas-pagar/novo', sub=true) }}
+            {{ item('/fechamento', 'badge-check', 'Aprovação', p == '/fechamento') }}
+            {% endif %}
+          </div>
 
-      {# ══════════════════════════════════════════
-         CONCILIAÇÃO BANCÁRIA
-         Apenas coord/editor/func.
-      ══════════════════════════════════════════ #}
-      {% if usuario.perfil not in ['secretaria', 'medico'] %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Conciliação</p>
-
-        <a href="/conciliacao/banco"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/conciliacao/banco') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/conciliacao/banco') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/>
-          </svg>
-          Banco
-        </a>
-      </div>
-      {% endif %}
-
-      {# ══════════════════════════════════════════
-         IMPORTAÇÕES
-         Apenas coord/editor/func.
-      ══════════════════════════════════════════ #}
-      {% if usuario.perfil not in ['secretaria', 'medico'] %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <a href="/importacoes"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/importacoes') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/importacoes') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-          </svg>
-          Importações
-        </a>
-      </div>
-      {% endif %}
-
-      {# ══════════════════════════════════════════
-         CONTAS A PAGAR
-         Lançamentos: coord/editor/func/medico.
-         Aprovação: coord/editor/func.
-         Seção inteira: oculta para secretaria.
-      ══════════════════════════════════════════ #}
-      {% if usuario.perfil != 'secretaria' %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Contas a Pagar</p>
-
-        {% if usuario.perfil != 'medico' %}
-        <a href="/contas-pagar/novo" class="include-link flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg hover:text-white" {% if request.url.path == '/contas-pagar/novo' %}aria-current="page"{% endif %}><span aria-hidden="true">+</span> Incluir</a>
-        {% endif %}
-        <a href="/contas-pagar"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path == '/contas-pagar' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path == '/contas-pagar' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-          </svg>
-          Lançamentos
-        </a>
-
-        {% if usuario.perfil not in ['medico'] %}
-        <a href="/fechamento"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path == '/fechamento' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path == '/fechamento' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-          </svg>
-          Aprovação
-        </a>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      {# ══════════════════════════════════════════
-         GESTÃO
-         Receitas/Despesas/DRE: coord/editor/func/medico.
-         Orçamento e Fechamento (mensal): apenas coord/editor/func.
-         Seção oculta para secretaria.
-      ══════════════════════════════════════════ #}
-      {% if usuario.perfil != 'secretaria' %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Gestão</p>
-
-        <a href="/gestao/receitas"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/gestao/receitas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/gestao/receitas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          Receitas
-        </a>
-        <a href="/gestao/despesas"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/gestao/despesas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/gestao/despesas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/>
-          </svg>
-          Despesas
-        </a>
-
-        {% if usuario.perfil not in ['medico'] %}
-        <a href="/gestao/orcamento"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/gestao/orcamento') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/gestao/orcamento') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-          </svg>
-          Orçamento
-        </a>
+          <div class="fx-nav-section">
+            <p class="fx-nav-title">Gestão</p>
+            {{ item('/gestao/receitas', 'trending-up', 'Receitas', p.startswith('/gestao/receitas')) }}
+            {{ item('/gestao/despesas', 'trending-down', 'Despesas', p.startswith('/gestao/despesas')) }}
+            {% if usuario.perfil not in ['medico'] %}
+            {{ item('/gestao/orcamento', 'target', 'Orçamento', p.startswith('/gestao/orcamento')) }}
+            {% endif %}
+            {{ item('/gestao/dre', 'chart-column', 'DRE', p.startswith('/gestao/dre')) }}
+            {% if usuario.perfil not in ['medico'] %}
+            {{ item('/fechamento/mensal', 'calendar-check', 'Fechamento', p.startswith('/fechamento/mensal')) }}
+            {% endif %}
+          </div>
+          {% endif %}
         {% endif %}
 
-        <a href="/gestao/dre"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/gestao/dre') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/gestao/dre') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
-          </svg>
-          DRE
-        </a>
-
-        {% if usuario.perfil not in ['medico'] %}
-        <a href="/fechamento/mensal"
-           class="flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/fechamento/mensal') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/fechamento/mensal') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-          </svg>
-          Fechamento
-        </a>
+        {% if usuario.perfil in ['coordenador', 'editor', 'funcionario'] %}
+        <div class="fx-nav-section">
+          <p class="fx-nav-title">Cadastros</p>
+          {{ item('/admin/clientes', 'building-2', 'Clientes', p.startswith('/admin/clientes') or p == '/admin/equipe') }}
+          {{ item('/admin/anotacoes-clientes', 'notebook-pen', 'Anotações de clientes', p.startswith('/admin/anotacoes-clientes')) }}
+          {% if usuario.perfil in ['coordenador', 'editor'] %}
+          {{ item('/admin/grupos', 'boxes', 'Grupos de empresas', p.startswith('/admin/grupos')) }}
+          {{ item('/admin/servicos', 'stethoscope', 'Serviços', p.startswith('/admin/servicos')) }}
+          {% endif %}
+          {% if usuario.perfil == 'coordenador' %}
+          {{ item('/admin/funcionarios', 'users', 'Funcionários', p.startswith('/admin/funcionarios')) }}
+          {{ item('/admin/plano-contas', 'list-tree', 'Plano de contas', p.startswith('/admin/plano-contas')) }}
+          {% endif %}
+        </div>
         {% endif %}
-      </div>
-      {% endif %}
 
-      {% endif %}
-
-      {% if usuario.perfil in ['coordenador', 'editor', 'funcionario'] %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Cadastros</p>
-        <a href="/admin/clientes"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/clientes') or request.url.path == '/admin/equipe' %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/clientes') or request.url.path == '/admin/equipe' %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
-          </svg>
-          Clientes
-        </a>
-        <a href="/admin/anotacoes-clientes"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/anotacoes-clientes') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/anotacoes-clientes') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v11a2 2 0 01-2 2z"/>
-          </svg>
-          Anotações de Clientes
-        </a>
         {% if usuario.perfil in ['coordenador', 'editor'] %}
-        <a href="/admin/grupos"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/grupos') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/grupos') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 4h6"/>
-          </svg>
-          Grupos de Empresas
-        </a>
-        <a href="/admin/servicos"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/servicos') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/servicos') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-4 8l2 2 4-4"/>
-          </svg>
-          Serviços
-        </a>
+        <div class="fx-nav-section">
+          <p class="fx-nav-title">Auditoria</p>
+          {{ item('/auditoria/historico', 'history', 'Histórico de alterações', p.startswith('/auditoria/historico')) }}
+          {{ item('/auditoria/extratos', 'file-archive', 'Extratos de fechamento', p.startswith('/auditoria/extratos')) }}
+          {{ item('/admin/secretarias', 'user-round-cog', 'Secretárias', p.startswith('/admin/secretarias')) }}
+          {% if usuario.perfil == 'coordenador' %}
+          {{ item('/logs', 'scroll-text', 'Logs', p.startswith('/logs')) }}
+          {% endif %}
+        </div>
         {% endif %}
-        {% if usuario.perfil == 'coordenador' %}
-        <a href="/admin/funcionarios"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/funcionarios') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/funcionarios') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-3-3h-1M9 20H4v-2a3 3 0 013-3h1m1-4a4 4 0 118 0 4 4 0 01-8 0z"/>
-          </svg>
-          Funcionários
-        </a>
-        <a href="/admin/plano-contas"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/plano-contas') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/plano-contas') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
-          </svg>
-          Plano de Contas
-        </a>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      {% if usuario.perfil in ['coordenador', 'editor'] %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <p class="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style="color:rgba(94,147,204,0.55);">Auditoria</p>
-        <a href="/auditoria/historico"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/auditoria/historico') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/auditoria/historico') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">Histórico de alterações</a>
-        <a href="/auditoria/extratos"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/auditoria/extratos') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/auditoria/extratos') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">Extratos de fechamento</a>
-        <a href="/admin/secretarias"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/admin/secretarias') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/admin/secretarias') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">Secretárias</a>
-      </div>
-      {% endif %}
-
-      {% if usuario.perfil == 'coordenador' %}
-      <div class="pt-4 mt-2" style="border-top:1px solid rgba(94,147,204,0.2);">
-        <a href="/logs"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  {% if request.url.path.startswith('/logs') %}font-semibold text-white{% else %}hover:text-white{% endif %}"
-           style="{% if request.url.path.startswith('/logs') %}background-color:rgba(94,147,204,0.2);{% else %}color:rgba(244,244,244,0.65);{% endif %}">
-          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          Logs
-        </a>
-      </div>
-      {% endif %}
       {% endif %}{# /perfil secretária #}
     </nav>
 
-    <!-- Usuário logado + logout -->
-    <div class="px-4 py-4" style="border-top:1px solid rgba(94,147,204,0.2);">
-      <div class="flex items-center gap-2 mb-2">
-        <div class="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
-             style="background-color:#5e93cc;">
-          {{ usuario.nome[0].upper() if usuario.nome else '?' }}
-        </div>
-        <div class="min-w-0">
-          <p class="text-xs text-white font-medium truncate">{{ usuario.nome }}</p>
-          <p class="text-[10px] capitalize" style="color:rgba(94,147,204,0.7);">{{ usuario.perfil }}</p>
+    <div class="fx-user">
+      <div class="fx-user-card">
+        <div class="fx-avatar" aria-hidden="true">{{ usuario.nome[0].upper() if usuario.nome else '?' }}</div>
+        <div class="fx-user-meta min-w-0">
+          <p class="fx-user-name truncate">{{ usuario.nome }}</p>
+          <p class="fx-user-role">{{ usuario.perfil|rotulo_perfil }}</p>
         </div>
       </div>
-      <a href="/ajuda/erros" class="block py-1 text-xs transition-colors hover:text-white"
-         style="color:rgba(244,244,244,0.45);">Códigos de erro</a>
-      <form method="post" action="/logout">
-        <button type="submit"
-                class="w-full text-left text-xs transition-colors py-1 hover:text-white"
-                style="color:rgba(244,244,244,0.45);">
-          Sair →
-        </button>
-      </form>
+      <div class="fx-user-actions">
+        <a href="/ajuda/erros" data-tip="Códigos de erro"><i data-lucide="circle-help"></i><span>Ajuda</span></a>
+        <form method="post" action="/logout" style="flex:1;display:flex">
+          <button type="submit" data-tip="Sair" data-sem-carregamento style="flex:1"><i data-lucide="log-out"></i><span>Sair</span></button>
+        </form>
+      </div>
     </div>
   </aside>
 
-  <!-- =========================================================
-       CONTEÚDO PRINCIPAL
-  ========================================================== -->
-  <div class="flex-1 flex flex-col min-w-0">
-
-    <!-- Topbar -->
-    <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between app-topbar">
-      <button type="button" id="mobile-nav-toggle" class="mobile-nav-button rounded-lg border border-gray-200" aria-label="Abrir menu" title="Menu" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
-      <div class="flex items-center gap-3 min-w-0">
-        <h2 class="text-base font-semibold flex-shrink-0" style="color:#222049;">{% block page_title %}{% endblock %}</h2>
+  <!-- ================================================= CONTEÚDO -->
+  <div class="fx-main">
+    <header class="fx-topbar">
+      <button type="button" id="fx-mobile-toggle" class="fx-icon-btn" aria-label="Abrir menu" aria-expanded="false" aria-controls="sidebar"><i data-lucide="menu"></i></button>
+      <button type="button" id="fx-collapse-toggle" class="fx-icon-btn" data-tip="Recolher menu" data-tip-pos="bottom" aria-label="Recolher ou expandir menu" aria-controls="sidebar"><i data-lucide="panel-left"></i></button>
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        <h1>{% block page_title %}{% endblock %}</h1>
         {% if _ns.nome %}
-        <span style="background:#eef4fb; color:#5e93cc; border:1px solid #bfd4ee; border-radius:6px; padding:2px 10px; font-size:11px; font-weight:700; white-space:nowrap; max-width:200px; overflow:hidden; text-overflow:ellipsis;">
-          {{ _ns.nome }}
-        </span>
+        <a href="/painel" class="fx-chip" title="Trocar empresa"><i data-lucide="building-2"></i><span class="truncate">{{ _ns.nome }}</span></a>
+        {% elif usuario.perfil == 'secretaria' and usuario.cliente_vinculado %}
+        <span class="fx-chip"><i data-lucide="building-2"></i><span class="truncate">{{ usuario.cliente_vinculado.nome }}</span></span>
         {% endif %}
       </div>
-      <span class="text-xs text-gray-400 flex-shrink-0">{{ now.strftime('%d/%m/%Y') if now else '' }}</span>
+      {% if now %}<span class="fx-topbar-date">{{ now.strftime('%d/%m/%Y') }}</span>{% endif %}
+      <button type="button" class="fx-icon-btn fx-theme-toggle" data-theme-toggle data-tip="Modo escuro" data-tip-pos="bottom" aria-label="Alternar tema">
+        <i data-lucide="moon" class="fx-moon"></i><i data-lucide="sun" class="fx-sun"></i>
+      </button>
     </header>
 
-    <!-- Flash messages -->
-    {% if flash_success %}
-    <div class="mx-6 mt-4 rounded-lg border text-sm px-4 py-3 flash-card"
-         style="background:#f0f7f0;border-color:#b6d9b6;color:#2d6a2d;">
-      {{ flash_success }}
-    </div>
-    {% endif %}
-    {% if flash_error %}
-    <div class="mx-6 mt-4 rounded-lg border text-sm px-4 py-3 flash-card"
-         style="background:#fef2f2;border-color:#fca5a5;color:#b91c1c;">
-      {{ flash_error }}
-    </div>
-    {% endif %}
+    {# Mensagens do servidor viram toasts (fx-toasts). #}
+    {% if flash_success %}<div hidden data-flash="{{ flash_success }}" data-flash-tipo="sucesso"></div>{% endif %}
+    {% if flash_error %}<div hidden data-flash="{{ flash_error }}" data-flash-tipo="erro"></div>{% endif %}
+    <div id="fx-toasts" class="fx-toasts" aria-live="polite"></div>
 
-    <!-- Conteúdo da página -->
-    <main class="flex-1 p-6 overflow-auto app-content-shell">
+    <main class="fx-content app-content-shell">
       {% block content %}{% endblock %}
     </main>
   </div>
 
-  <script>
-    (() => {
-      const sidebar = document.getElementById('sidebar');
-      const button = document.getElementById('mobile-nav-toggle');
-      const overlay = document.getElementById('mobile-nav-overlay');
-      const mobile = matchMedia('(max-width: 767px)');
-      function setOpen(open) {
-        const shown = open && mobile.matches;
-        sidebar.dataset.open = String(shown);
-        sidebar.inert = mobile.matches && !shown;
-        button.setAttribute('aria-expanded', String(shown));
-        button.setAttribute('aria-label', shown ? 'Fechar menu' : 'Abrir menu');
-        overlay.hidden = !shown;
-        document.body.style.overflow = shown ? 'hidden' : '';
-        if (shown) sidebar.querySelector('a')?.focus();
-      }
-      button.addEventListener('click', () => setOpen(sidebar.dataset.open !== 'true'));
-      overlay.addEventListener('click', () => { setOpen(false); button.focus(); });
-      document.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && sidebar.dataset.open === 'true') { setOpen(false); button.focus(); }
-      });
-      mobile.addEventListener('change', () => setOpen(false));
-      setOpen(false);
-    })();
-    (function () {
-      const PAGE_SIZE_DEFAULT = 25;
-
-      function isEnhanced(table) {
-        return table.dataset.tableEnhanced === '1';
-      }
-
-      function getSearchText(row) {
-        return (row.innerText || row.textContent || '').toLowerCase();
-      }
-
-      function isPlaceholderRow(row, table) {
-        const cells = Array.from(row.children || []);
-        if (cells.length !== 1) return false;
-        const colCount = table.querySelectorAll('thead th').length;
-        const text = (cells[0].innerText || cells[0].textContent || '').trim().toLowerCase();
-        return cells[0].colSpan >= Math.max(colCount, 1)
-          && /nenhum|nenhuma|sem registro|sem resultado/.test(text);
-      }
-
-      function buildEmptyRow(table) {
-        const row = document.createElement('tr');
-        row.className = 'table-empty-filter';
-        const cell = document.createElement('td');
-        const colCount = Math.max(1, table.querySelectorAll('thead th').length || row.children.length);
-        cell.colSpan = colCount;
-        cell.className = 'px-4 py-8 text-center text-gray-400';
-        cell.textContent = 'Nenhum resultado encontrado.';
-        row.appendChild(cell);
-        return row;
-      }
-
-      function enhanceTable(table, index) {
-        if (isEnhanced(table) || table.dataset.noTableTools === '1') return;
-        const tbody = table.tBodies && table.tBodies[0];
-        if (!tbody) return;
-
-        const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => !isPlaceholderRow(row, table));
-        if (!rows.length) return;
-
-        table.dataset.tableEnhanced = '1';
-        rows.forEach(row => {
-          row.dataset.searchText = getSearchText(row);
-        });
-
-        const state = {
-          query: '',
-          page: 1,
-          pageSize: PAGE_SIZE_DEFAULT,
-        };
-
-        const anchor = table.parentElement && table.parentElement.classList.contains('overflow-x-auto')
-          ? table.parentElement
-          : table;
-
-        const tools = document.createElement('div');
-        tools.className = 'table-tools';
-        tools.innerHTML = `
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <input type="search" aria-label="Pesquisar na tabela" placeholder="Pesquisar na tabela...">
-            <select aria-label="Registros por página">
-              <option value="10">10 por página</option>
-              <option value="25" selected>25 por página</option>
-              <option value="50">50 por página</option>
-              <option value="100">100 por página</option>
-              <option value="0">Todos</option>
-            </select>
-          </div>
-          <span class="table-count"></span>
-        `;
-
-        const pager = document.createElement('div');
-        pager.className = 'table-pager';
-        pager.innerHTML = `
-          <span class="table-page-info"></span>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button type="button" data-page-action="first">Primeira</button>
-            <button type="button" data-page-action="prev">Anterior</button>
-            <button type="button" data-page-action="next">Próxima</button>
-            <button type="button" data-page-action="last">Última</button>
-          </div>
-        `;
-
-        anchor.parentNode.insertBefore(tools, anchor);
-        anchor.parentNode.insertBefore(pager, anchor.nextSibling);
-
-        const emptyRow = buildEmptyRow(table);
-        tbody.appendChild(emptyRow);
-
-        const input = tools.querySelector('input');
-        const select = tools.querySelector('select');
-        const count = tools.querySelector('.table-count');
-        const pageInfo = pager.querySelector('.table-page-info');
-        const buttons = Array.from(pager.querySelectorAll('button[data-page-action]'));
-
-        function getFilteredRows() {
-          if (!state.query) return rows;
-          return rows.filter(row => row.dataset.searchText.includes(state.query));
-        }
-
-        function render() {
-          const filtered = getFilteredRows();
-          const total = filtered.length;
-          const pageSize = state.pageSize || Math.max(total, 1);
-          const totalPages = Math.max(1, Math.ceil(total / pageSize));
-          state.page = Math.min(Math.max(state.page, 1), totalPages);
-
-          const start = state.pageSize ? (state.page - 1) * pageSize : 0;
-          const end = state.pageSize ? start + pageSize : total;
-          const visible = new Set(filtered.slice(start, end));
-
-          rows.forEach(row => {
-            row.style.display = visible.has(row) ? '' : 'none';
-          });
-
-          emptyRow.style.display = total === 0 ? '' : 'none';
-          const firstItem = total ? start + 1 : 0;
-          const lastItem = state.pageSize ? Math.min(end, total) : total;
-          count.textContent = `${total} registro(s)`;
-          pageInfo.textContent = total
-            ? `Mostrando ${firstItem}-${lastItem} de ${total}`
-            : 'Nenhum registro';
-
-          buttons.forEach(btn => {
-            const action = btn.dataset.pageAction;
-            btn.disabled = total === 0
-              || !state.pageSize
-              || ((action === 'first' || action === 'prev') && state.page <= 1)
-              || ((action === 'next' || action === 'last') && state.page >= totalPages);
-          });
-        }
-
-        input.addEventListener('input', () => {
-          state.query = input.value.trim().toLowerCase();
-          state.page = 1;
-          render();
-        });
-
-        select.addEventListener('change', () => {
-          state.pageSize = parseInt(select.value, 10) || 0;
-          state.page = 1;
-          render();
-        });
-
-        buttons.forEach(btn => {
-          btn.addEventListener('click', () => {
-            const filtered = getFilteredRows();
-            const pageSize = state.pageSize || Math.max(filtered.length, 1);
-            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-            if (btn.dataset.pageAction === 'first') state.page = 1;
-            if (btn.dataset.pageAction === 'prev') state.page -= 1;
-            if (btn.dataset.pageAction === 'next') state.page += 1;
-            if (btn.dataset.pageAction === 'last') state.page = totalPages;
-            render();
-          });
-        });
-
-        render();
-      }
-
-      function enhanceAllTables(root) {
-        (root || document).querySelectorAll('table').forEach(enhanceTable);
-      }
-
-      document.addEventListener('DOMContentLoaded', () => enhanceAllTables(document));
-      document.body.addEventListener('htmx:afterSwap', event => enhanceAllTables(event.target));
-    })();
-  </script>
-
+  <script src="/static/vendor/lucide.min.js"></script>
+  <script src="/static/js/flic-ui.js?v=3"></script>
   {% block extra_js %}{% endblock %}
-<script src="/static/js/confirmacao_conciliacao.js"></script>
+  <script src="/static/js/confirmacao_conciliacao.js"></script>
 </body>
 </html>

@@ -1,0 +1,28 @@
+{# Incluído no <head> de todas as páginas: tema sem "piscar", ícones do site e design system. #}
+<script>
+  (function () {
+    var r = document.documentElement;
+    try {
+      var t = localStorage.getItem('flic-tema');
+      var escuro = t ? t === 'escuro' : (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      if (escuro) r.classList.add('dark');
+      if (localStorage.getItem('flic-sidebar') === 'recolhida') r.setAttribute('data-sidebar', 'collapsed');
+    } catch (e) {}
+  })();
+</script>
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="/static/favicon.ico" sizes="any" />
+<link rel="icon" type="image/svg+xml" href="/static/marca/flic-app-icon.svg" />
+<link rel="icon" type="image/png" href="/static/flic_icone.png" />
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+<link rel="preload" href="/static/fonts/manrope-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/static/fonts/sora-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: { extend: { fontFamily: { sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'sans-serif'], display: ['Sora', 'sans-serif'], mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'] } } },
+  };
+</script>
+<link rel="stylesheet" href="/static/css/flic.css?v=4" />
+<link rel="stylesheet" href="/static/css/flic-tema.css?v=3" />

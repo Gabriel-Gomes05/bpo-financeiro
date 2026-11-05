@@ -49,3 +49,24 @@ templates = ApplicationTemplates(directory="app/templates")
 templates.env.globals["T"] = T
 templates.env.globals["now"] = _Today()
 templates.env.globals["codigo_erro"] = _codigo_erro
+
+
+def _brl(valor) -> str:
+    """1234.5 -> '1.234,50' (apresentação; não arredonda regras de negócio)."""
+    try:
+        numero = float(valor or 0)
+    except (TypeError, ValueError):
+        return "0,00"
+    return f"{numero:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _rotulo_perfil(perfil) -> str:
+    valor = getattr(perfil, "value", perfil) or ""
+    return {
+        "coordenador": "Coordenador", "editor": "Editor", "funcionario": "Funcionário",
+        "secretaria": "Secretária", "medico": "Médico",
+    }.get(str(valor), str(valor).capitalize())
+
+
+templates.env.filters["brl"] = _brl
+templates.env.filters["rotulo_perfil"] = _rotulo_perfil
