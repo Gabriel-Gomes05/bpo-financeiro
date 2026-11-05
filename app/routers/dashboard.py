@@ -11,7 +11,7 @@ from app.auth import get_usuario_atual, ve_todos_os_clientes
 from app.database import get_db
 from app.models import (
     Atendimento, ClienteBPO, ContaPagar, DivergenciaConciliacao,
-    FechamentoDiario, StatusConciliacao, StatusContaPagar, Usuario, PerfilUsuario,
+    FechamentoDiario, MovimentacaoBancaria, StatusConciliacao, StatusContaPagar, Usuario, PerfilUsuario,
 )
 from app.services import tarefas_service
 
@@ -63,6 +63,20 @@ async def dashboard(
     contexto["medias"] = _medias_mensais(
         db, hoje, [cliente_ativo_id] if cliente_ativo_id else [c.id for c in clientes], 3,
     )
+    # Somente leitura, para os indicadores e o gráfico do painel (mesmos critérios das médias acima).
+    ids_escopo = [cliente_ativo_id] if cliente_ativo_id else [c.id for c in clientes]
+    contexto["indicadores"] = _indicadores(db, hoje, ids_escopo)
+    contexto["serie_mensal"] = _serie_mensal(db, hoje, ids_escopo, 6)
+    contexto["saldos_bancarios"] = []
+    contexto["movimentos_recentes"] = []
+    if cliente_ativo_id:
+        from app.routers.conciliacao_banco import _resumo_saldos_bancarios
+        contexto["saldos_bancarios"] = _resumo_saldos_bancarios(db, cliente_ativo_id)
+        contexto["movimentos_recentes"] = db.query(MovimentacaoBancaria).filter(
+            MovimentacaoBancaria.cliente_id == cliente_ativo_id,
+            MovimentacaoBancaria.deleted_at.is_(None),
+            MovimentacaoBancaria.arquivado_conciliacao_banco.is_(False),
+        ).order_by(MovimentacaoBancaria.data_movimento.desc(), MovimentacaoBancaria.id.desc()).limit(6).all()
     return templates.TemplateResponse(
         "dashboard.html",
         {"request": request, "usuario": usuario, "hoje": hoje, **contexto, "clientes": clientes},
@@ -87,6 +101,87 @@ def _medias_mensais(db: Session, hoje: date, ids_clientes: list[int], meses: int
         "recebido": _brl(recebido / meses), "pago": _brl(pago / meses),
         "saldo": _brl((recebido - pago) / meses), "saldo_negativo": recebido < pago,
     }
+
+
+def _soma_recebido(db: Session, ids: list[int], inicio: date, fim: date) -> Decimal:
+    """Recebimentos conciliados com crédito em [inicio, fim) — mesmo critério de _medias_mensais."""
+    return db.query(func.sum(Atendimento.valor_liquido)).filter(
+        Atendimento.cliente_id.in_(ids),
+        Atendimento.status_conciliacao == StatusConciliacao.conciliado,
+        Atendimento.data_credito >= inicio, Atendimento.data_credito < fim,
+    ).scalar() or Decimal("0")
+
+
+def _soma_pago(db: Session, ids: list[int], inicio: date, fim: date) -> Decimal:
+    """Contas pagas com pagamento em [inicio, fim) — mesmo critério de _medias_mensais."""
+    return db.query(func.sum(ContaPagar.valor)).filter(
+        ContaPagar.cliente_id.in_(ids), ContaPagar.status == StatusContaPagar.pago,
+        ContaPagar.data_pagamento >= inicio, ContaPagar.data_pagamento < fim,
+    ).scalar() or Decimal("0")
+
+
+def _mes_anterior(d: date) -> date:
+    return (d.replace(day=1) - timedelta(days=1)).replace(day=1)
+
+
+def _variacao(atual: Decimal, anterior: Decimal):
+    if not anterior:
+        return None
+    return float((atual - anterior) / anterior * 100)
+
+
+def _indicadores(db: Session, hoje: date, ids: list[int]) -> dict:
+    """Números do mês corrente comparados ao mesmo período do mês anterior (somente leitura)."""
+    if not ids:
+        return {}
+    inicio = hoje.replace(day=1)
+    amanha = hoje + timedelta(days=1)
+    ini_ant = _mes_anterior(hoje)
+    fim_ant = min(ini_ant.replace(day=min(hoje.day, 28)) + timedelta(days=1), inicio)
+    if hoje.day > 28:
+        fim_ant = inicio  # meses curtos: compara com o mês anterior inteiro
+    recebido = _soma_recebido(db, ids, inicio, amanha)
+    recebido_ant = _soma_recebido(db, ids, ini_ant, fim_ant)
+    pago = _soma_pago(db, ids, inicio, amanha)
+    pago_ant = _soma_pago(db, ids, ini_ant, fim_ant)
+
+    pendentes = db.query(func.count(Atendimento.id), func.sum(Atendimento.valor_servico)).filter(
+        Atendimento.cliente_id.in_(ids), Atendimento.status_conciliacao != StatusConciliacao.conciliado,
+    ).one()
+    em_aberto = db.query(func.count(ContaPagar.id), func.sum(ContaPagar.valor)).filter(
+        ContaPagar.cliente_id.in_(ids), ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO),
+    ).one()
+    vencidas = db.query(func.count(ContaPagar.id), func.sum(ContaPagar.valor)).filter(
+        ContaPagar.cliente_id.in_(ids), ContaPagar.status.in_(STATUS_PAGAR_EM_ABERTO), ContaPagar.vencimento < hoje,
+    ).one()
+    return {
+        "recebido": recebido, "recebido_var": _variacao(recebido, recebido_ant),
+        "pago": pago, "pago_var": _variacao(pago, pago_ant),
+        "resultado": recebido - pago,
+        "a_receber_qtd": pendentes[0] or 0, "a_receber_valor": pendentes[1] or Decimal("0"),
+        "a_pagar_qtd": em_aberto[0] or 0, "a_pagar_valor": em_aberto[1] or Decimal("0"),
+        "vencidas_qtd": vencidas[0] or 0, "vencidas_valor": vencidas[1] or Decimal("0"),
+    }
+
+
+MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def _serie_mensal(db: Session, hoje: date, ids: list[int], meses: int) -> dict:
+    """Recebido x pago por mês (últimos `meses`, incluindo o atual) para o gráfico do painel."""
+    rotulos, recebidos, pagos = [], [], []
+    if not ids:
+        return {"rotulos": rotulos, "recebido": recebidos, "pago": pagos}
+    inicio = hoje.replace(day=1)
+    for _ in range(meses - 1):
+        inicio = _mes_anterior(inicio)
+    for _ in range(meses):
+        proximo = (inicio + timedelta(days=32)).replace(day=1)
+        rotulos.append(f"{MESES_CURTOS[inicio.month - 1]}/{str(inicio.year)[2:]}")
+        recebidos.append(float(_soma_recebido(db, ids, inicio, proximo)))
+        pagos.append(float(_soma_pago(db, ids, inicio, proximo)))
+        inicio = proximo
+    return {"rotulos": rotulos, "recebido": recebidos, "pago": pagos}
 
 
 AVISO_MAXIMO_DIAS = 30

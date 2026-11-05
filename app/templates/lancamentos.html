@@ -3,72 +3,130 @@
 {% block page_title %}Contas a Receber - Lançamentos{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+{% set _todos = atendimentos %}
+{% set _pend = _todos|selectattr('status_conciliacao.value', 'equalto', 'pendente')|list %}
+{% set _conc = _todos|selectattr('status_conciliacao.value', 'equalto', 'conciliado')|list %}
+{% set _div = _todos|selectattr('status_conciliacao.value', 'equalto', 'divergencia')|list %}
+{% set _base = '/lancamentos?data_inicio=' ~ data_inicio ~ '&data_fim=' ~ data_fim ~ ('&forma_pagamento=' ~ forma_pagamento_selecionada if forma_pagamento_selecionada else '') %}
+{% set _di = data_inicio.split('-') %}{% set _df = data_fim.split('-') %}
+<style>
+  .lanc-resumo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 1024px) { .lanc-resumo { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .lanc-card { display: block; padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-xs); }
+  .lanc-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+  .lanc-card[aria-current="true"] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
+  .lanc-card .rot { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+  .lanc-card .num { margin-top: 8px; font-size: 22px; font-weight: 650; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .lanc-card .sub { margin-top: 2px; font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .lanc-card .fx-kpi-icon { width: 26px; height: 26px; border-radius: 8px; }
+  .lanc-card .fx-kpi-icon svg { width: 14px; height: 14px; }
+  .lanc-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+  .lanc-filtros label { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+  .lanc-filtros input, .lanc-filtros select { height: 36px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); padding: 0 10px; font-size: 13px; color: var(--text); }
+  .lanc-acao { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--text-3); border: 1px solid transparent; }
+  .lanc-acao:hover { background: var(--surface-3); color: var(--text); border-color: var(--border); }
+  .lanc-acao.perigo:hover { background: var(--danger-soft); color: var(--danger-text); }
+  .lanc-acao svg { width: 15px; height: 15px; }
+</style>
 
-  {% if flash %}
-  <div class="rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-800">
-    ⚠ {{ flash }}
+<div class="space-y-5">
+
+  {% if flash %}<div hidden data-flash="{{ flash }}" data-flash-tipo="aviso"></div>{% endif %}
+
+  {# ───── Cabeçalho #}
+  <div class="fx-page-head flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h2>{% if usuario.perfil == 'secretaria' %}Olá, {{ usuario.nome.split()[0] }}{% else %}Lançamentos{% endif %}</h2>
+      <p>
+        {% if usuario.perfil == 'secretaria' %}Lançamentos a receber de {{ _di[2] }}/{{ _di[1] }}/{{ _di[0] }} a {{ _df[2] }}/{{ _df[1] }}/{{ _df[0] }}.
+        {% if _pend %}Você tem <strong style="color:var(--warning-text)">{{ _pend|length }} aguardando conciliação</strong>.{% else %}Tudo em dia neste período.{% endif %}
+        {% else %}Contas a receber · {{ _di[2] }}/{{ _di[1] }}/{{ _di[0] }} a {{ _df[2] }}/{{ _df[1] }}/{{ _df[0] }}{% endif %}
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      {% if usuario.perfil not in ['medico', 'secretaria'] %}
+      <a href="/importacoes" class="fx-btn fx-btn-secondary"><i data-lucide="upload"></i>Importar planilha</a>
+      {% endif %}
+      {% if usuario.perfil != 'medico' %}
+      <a href="/lancamentos/novo" class="fx-btn fx-btn-primary"><i data-lucide="plus"></i>Novo lançamento</a>
+      {% endif %}
+    </div>
   </div>
-  {% endif %}
 
-
-  {% if usuario.perfil not in ['medico', 'secretaria'] %}
-  <a href="/importacoes" class="text-sm text-blue-700 hover:underline">Importar planilha</a>
-  {% endif %}
+  {# ───── Resumo do período (clique filtra) #}
+  <div class="lanc-resumo">
+    <a href="{{ _base }}" class="lanc-card" {% if not status_conciliacao_selecionado %}aria-current="true"{% endif %}>
+      <span class="rot"><span class="fx-kpi-icon fx-tone-brand"><i data-lucide="receipt-text"></i></span>Todos no período</span>
+      <p class="num">{{ _todos|length }}</p>
+      <p class="sub">R$ {{ _todos|sum(attribute='valor_servico')|brl }}</p>
+    </a>
+    <a href="{{ _base }}&status_conciliacao=pendente" class="lanc-card" {% if status_conciliacao_selecionado == 'pendente' %}aria-current="true"{% endif %}>
+      <span class="rot"><span class="fx-kpi-icon fx-tone-warning"><i data-lucide="hourglass"></i></span>Aguardando conciliação</span>
+      <p class="num">{{ _pend|length }}</p>
+      <p class="sub">R$ {{ _pend|sum(attribute='valor_servico')|brl }}</p>
+    </a>
+    <a href="{{ _base }}&status_conciliacao=conciliado" class="lanc-card" {% if status_conciliacao_selecionado == 'conciliado' %}aria-current="true"{% endif %}>
+      <span class="rot"><span class="fx-kpi-icon fx-tone-success"><i data-lucide="circle-check"></i></span>Conciliados</span>
+      <p class="num">{{ _conc|length }}</p>
+      <p class="sub">R$ {{ _conc|sum(attribute='valor_servico')|brl }}</p>
+    </a>
+    <a href="{{ _base }}&status_conciliacao=divergencia" class="lanc-card" {% if status_conciliacao_selecionado == 'divergencia' %}aria-current="true"{% endif %}>
+      <span class="rot"><span class="fx-kpi-icon {{ 'fx-tone-danger' if _div else 'fx-tone-neutral' }}"><i data-lucide="triangle-alert"></i></span>Com divergência</span>
+      <p class="num">{{ _div|length }}</p>
+      <p class="sub">{% if _div %}Precisam de atenção{% else %}Nenhuma{% endif %}</p>
+    </a>
+  </div>
 
   <!-- Lista de lançamentos -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
-    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
-      <div>
-        <h3 class="font-semibold text-gray-700">Lançamentos</h3>
-        <p class="text-xs text-gray-400 mt-0.5">{{ atendimentos|length }} registro(s) no período</p>
+  <div class="fx-card">
+    <div class="space-y-3 border-b px-5 py-4" style="border-color:var(--border)">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="fx-segmented" role="group" aria-label="Período rápido">
+          <button type="button" data-periodo="hoje" data-sem-carregamento>Hoje</button>
+          <button type="button" data-periodo="7" data-sem-carregamento>7 dias</button>
+          <button type="button" data-periodo="mes" data-sem-carregamento>Este mês</button>
+          <button type="button" data-periodo="anterior" data-sem-carregamento>Mês passado</button>
+        </div>
+        <div class="flex items-center gap-2 text-xs" style="color:var(--text-3)">
+          <i data-lucide="building-2" style="width:14px;height:14px"></i>{% include "partials/empresa_atual.html" %}
+        </div>
       </div>
 
-      <div class="flex items-center gap-2 flex-wrap">
-        {% if usuario.perfil != 'medico' %}<a href="/lancamentos/novo"
-           class="rounded-lg bg-[#222049] hover:bg-[#1a1836] px-4 py-1.5 text-xs font-semibold text-white transition">+ Incluir</a>{% endif %}
-
-        <!-- Filtro por cliente + datas -->
-        <form method="get" action="/lancamentos" class="flex items-center gap-2 flex-wrap">
-          <select name="cliente_id"
-                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none" style="display:none" aria-hidden="true" tabindex="-1">
-<option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
-</select>
-{% include "partials/empresa_atual.html" %}
-          <input type="date" name="data_inicio" value="{{ data_inicio }}"
-                 class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none" />
-          <input type="date" name="data_fim" value="{{ data_fim }}"
-                 class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none" />
-          <select name="status_conciliacao"
-                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none">
-            <option value="">Conciliação: todas</option>
+      <!-- Filtro por cliente + datas -->
+      <form method="get" action="/lancamentos" class="lanc-filtros" id="form-filtros-lancamentos">
+        <select name="cliente_id" style="display:none" aria-hidden="true" tabindex="-1">
+          <option value="{{ request.cookies.get('cliente_ativo', '') }}" selected>Empresa atual</option>
+        </select>
+        <div><label for="f-di">De</label><input id="f-di" type="date" name="data_inicio" value="{{ data_inicio }}"></div>
+        <div><label for="f-df">Até</label><input id="f-df" type="date" name="data_fim" value="{{ data_fim }}"></div>
+        <div><label for="f-st">Conciliação</label>
+          <select id="f-st" name="status_conciliacao">
+            <option value="">Todas</option>
             <option value="pendente" {% if status_conciliacao_selecionado == 'pendente' %}selected{% endif %}>Pendente</option>
             <option value="conciliado" {% if status_conciliacao_selecionado == 'conciliado' %}selected{% endif %}>Conciliado</option>
             <option value="divergencia" {% if status_conciliacao_selecionado == 'divergencia' %}selected{% endif %}>Divergência</option>
           </select>
-          <select name="forma_pagamento"
-                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 outline-none">
-            <option value="">Forma: todas</option>
+        </div>
+        <div><label for="f-fp">Forma de pagamento</label>
+          <select id="f-fp" name="forma_pagamento">
+            <option value="">Todas</option>
             <option value="pix" {% if forma_pagamento_selecionada == 'pix' %}selected{% endif %}>Pix</option>
             <option value="transferencia" {% if forma_pagamento_selecionada == 'transferencia' %}selected{% endif %}>Transferência</option>
             <option value="cartao_credito" {% if forma_pagamento_selecionada == 'cartao_credito' %}selected{% endif %}>Cartão de crédito</option>
             <option value="cartao_debito" {% if forma_pagamento_selecionada == 'cartao_debito' %}selected{% endif %}>Cartão de débito</option>
             <option value="dinheiro" {% if forma_pagamento_selecionada == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
           </select>
-          <button type="submit"
-                  class="rounded-lg bg-[#222049] px-3 py-1.5 text-xs text-white font-semibold hover:bg-[#1a1836] transition">Filtrar</button>
-        </form>
+        </div>
+        <button type="submit" class="fx-btn fx-btn-primary"><i data-lucide="filter"></i>Filtrar</button>
+        {% if status_conciliacao_selecionado or forma_pagamento_selecionada %}
+        <a href="/lancamentos?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}" class="fx-btn fx-btn-ghost"><i data-lucide="x"></i>Limpar</a>
+        {% endif %}
 
         <!-- Seletor de colunas -->
-        <div class="relative" id="col-picker-wrapper">
-          <button type="button" onclick="toggleColPicker()"
-                  class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 flex items-center gap-1.5 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
-            </svg>
-            Colunas ▾
+        <div class="relative ml-auto" id="col-picker-wrapper">
+          <button type="button" onclick="toggleColPicker()" class="fx-btn fx-btn-secondary" data-sem-carregamento>
+            <i data-lucide="columns-3"></i>Colunas
           </button>
-
           <div id="col-picker" class="hidden absolute right-0 top-full mt-1 bg-white rounded-xl border border-gray-200 shadow-xl z-50 p-4 w-80">
             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Colunas visíveis</p>
             <div class="grid grid-cols-2 gap-y-2 gap-x-4">
@@ -84,25 +142,25 @@
             </div>
           </div>
         </div>
-      </div>
+      </form>
     </div>
 
-
     {% if usuario.perfil not in ['medico', 'secretaria'] %}
-    <form id="form-lote" data-total-filtro="{{ total_filtro }}" method="post" action="/lancamentos/lote/excluir" class="p-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
-      <strong class="text-sm">Ações em lote</strong>
+    <form id="form-lote" data-total-filtro="{{ total_filtro }}" method="post" action="/lancamentos/lote/excluir" class="px-5 pt-4 flex flex-wrap items-center gap-3" onsubmit="return confirmarLote(event)">
+      <strong class="text-sm" style="color:var(--text)">Ações em lote</strong>
       <input type="hidden" name="filtros" value="{{ request.url.query }}">
       <input type="hidden" name="filtros_lote" value="{{ filtros_lote }}">
       <input type="hidden" name="total_esperado" value="{{ total_filtro }}">
       <span id="total-selecionados" class="text-sm text-gray-500">0 selecionado(s)</span>
-      <button type="submit" name="acao" value="excluir" class="rounded-lg bg-red-600 text-white px-3 py-2 text-sm">Excluir selecionados</button>
+      <button type="submit" name="acao" value="excluir" class="fx-btn fx-btn-sm" style="background:var(--danger);color:#fff"><i data-lucide="trash-2"></i>Excluir selecionados</button>
     </form>
-    <div id="lote-todos" class="mx-4 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900" role="status" hidden></div>
-    <p class="px-4 pb-3 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação serão desconciliados antes, após sua confirmação.</p>
+    <div id="lote-todos" class="mx-5 mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900" role="status" hidden></div>
+    <p class="px-5 pt-2 text-xs text-gray-500">Selecione os itens exibidos após aplicar os filtros. Registros com pagamento ou conciliação serão desconciliados antes, após sua confirmação.</p>
     {% endif %}
+    <div class="px-3 pb-3 pt-4">
     <div class="overflow-x-auto">
       <table id="tbl-lancamentos" class="w-full text-sm">
-        <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+        <thead>
           <tr>
             <th class="px-4 py-3">{% if usuario.perfil not in ['medico', 'secretaria'] %}<input type="checkbox" id="selecionar-todos" aria-label="Selecionar todos os itens exibidos" onchange="document.querySelectorAll('.selecao-lote:not(:disabled)').forEach(c => c.checked = this.checked); atualizarSelecaoLote()">{% endif %}</th>
             <th data-col="data"              class="px-4 py-3 text-left whitespace-nowrap">Data</th>
@@ -152,7 +210,7 @@
             </td>
             <td data-col="especialidade"     class="px-4 py-3 text-gray-500">{{ a.especialidade or '—' }}</td>
             <td data-col="descricao_servico" class="px-4 py-3 text-gray-600 max-w-[160px] truncate">{{ a.descricao_servico or a.tipo_servico or '—' }}</td>
-            <td data-col="valor_servico"     class="px-4 py-3 text-right font-medium text-gray-800 whitespace-nowrap">R$ {{ '%.2f'|format(a.valor_servico|float) }}</td>
+            <td data-col="valor_servico"     class="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap tabular">R$ {{ a.valor_servico|brl }}</td>
             <td data-col="condicao"          class="px-4 py-3 text-gray-500 text-xs capitalize">{{ (a.condicao_pagamento.value if a.condicao_pagamento else '—').replace('_', ' ') }}</td>
             <td data-col="forma_pagamento"   class="px-4 py-3 text-gray-500 text-xs capitalize whitespace-nowrap">{{ (a.forma_pagamento.value if a.forma_pagamento else '—').replace('_', ' ') }}</td>
             <td data-col="parcela"           class="px-4 py-3 text-center text-gray-500 whitespace-nowrap">
@@ -166,28 +224,24 @@
               {%- if a.taxa_cartao %}{{ '%.2f'|format(a.taxa_cartao|float) }}%{% else %}—{% endif -%}
             </td>
             <td data-col="valor_liquido"     class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
-              {%- if a.valor_liquido %}R$ {{ '%.2f'|format(a.valor_liquido|float) }}{% else %}—{% endif -%}
+              {%- if a.valor_liquido %}R$ {{ a.valor_liquido|brl }}{% else %}—{% endif -%}
             </td>
             <td data-col="data_credito"      class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.data_credito.strftime('%d/%m/%Y') if a.data_credito else '—' }}</td>
             <td data-col="banco_recebimento" class="px-4 py-3 text-gray-500 text-xs">{{ a.banco_recebimento or '—' }}</td>
             <td data-col="prev_recebimento"  class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">{{ a.data_prevista_recebimento.strftime('%d/%m/%Y') if a.data_prevista_recebimento else '—' }}</td>
             <td data-col="status"            class="px-4 py-3 text-center whitespace-nowrap">
-              {% if a.status_conciliacao.value == 'conciliado' %}
-                <span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">Conciliado</span>
-              {% elif a.status_conciliacao.value == 'divergencia' %}
-                <span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">Divergência</span>
-              {% else %}
-                <span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">Pendente</span>
-              {% endif %}
+              {% if a.status_conciliacao.value == 'conciliado' %}<span class="fx-badge fx-badge-success">Conciliado</span>
+              {% elif a.status_conciliacao.value == 'divergencia' %}<span class="fx-badge fx-badge-danger">Divergência</span>
+              {% else %}<span class="fx-badge fx-badge-warning">Pendente</span>{% endif %}
             </td>
             <td data-col="valor_clinica"     class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
-              {%- if a.valor_clinica %}R$ {{ '%.2f'|format(a.valor_clinica|float) }}{% else %}—{% endif -%}
+              {%- if a.valor_clinica %}R$ {{ a.valor_clinica|brl }}{% else %}—{% endif -%}
             </td>
             <td data-col="pct_medico"        class="px-4 py-3 text-right text-gray-500 text-xs">
               {%- if a.percentual_medico %}{{ '%.2f'|format(a.percentual_medico|float) }}%{% else %}—{% endif -%}
             </td>
             <td data-col="valor_medico"      class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
-              {%- if a.valor_medico %}R$ {{ '%.2f'|format(a.valor_medico|float) }}{% else %}—{% endif -%}
+              {%- if a.valor_medico %}R$ {{ a.valor_medico|brl }}{% else %}—{% endif -%}
             </td>
             <td data-col="data_pgto_medico"  class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ a.data_pagamento_medico.strftime('%d/%m/%Y') if a.data_pagamento_medico else '—' }}</td>
             <td data-col="observacao"        class="px-4 py-3 text-gray-500 text-xs max-w-[180px] truncate">{{ a.observacao or '—' }}</td>
@@ -195,14 +249,12 @@
             <td class="px-4 py-3 text-center whitespace-nowrap">
               {% if usuario.perfil != 'medico' %}
               <div class="flex items-center justify-center gap-1">
-                <a href="/lancamentos/{{ a.id }}/editar"
-                   class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100 transition">✏ Editar</a>
+                <a href="/lancamentos/{{ a.id }}/editar" class="lanc-acao" data-tip="Editar" data-tip-pos="bottom" aria-label="Editar lançamento"><i data-lucide="pencil"></i></a>
                 {% if usuario.perfil != 'secretaria' %}
                 <form method="post" action="/lancamentos/{{ a.id }}/excluir"
                       onsubmit="return confirm('Excluir este lançamento?')" class="inline">
                   <input type="hidden" name="cliente_id" value="{{ a.cliente_id }}">
-                  <button type="submit"
-                          class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition">✕ Excluir</button>
+                  <button type="submit" class="lanc-acao perigo" data-tip="Excluir" data-tip-pos="bottom" aria-label="Excluir lançamento" data-sem-carregamento><i data-lucide="trash-2"></i></button>
                 </form>
                 {% endif %}
               </div>
@@ -213,11 +265,12 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="27" class="px-4 py-8 text-center text-gray-400">Nenhum lançamento encontrado no período.</td>
+            <td colspan="27" class="px-4 py-8 text-center text-gray-400">Nenhum lançamento encontrado no período.{% if usuario.perfil != 'medico' %} <a href="/lancamentos/novo" class="font-semibold" style="color:var(--brand)">Incluir lançamento</a>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+    </div>
     </div>
   </div>
 
@@ -358,6 +411,34 @@
       document.getElementById('col-picker').classList.add('hidden');
     }
   });
+
+  // atalhos de período (preenchem as datas e filtram)
+  document.querySelectorAll('[data-periodo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const hoje = new Date(); let ini = new Date(hoje), fim = new Date(hoje);
+      if (btn.dataset.periodo === '7') ini.setDate(hoje.getDate() - 6);
+      if (btn.dataset.periodo === 'mes') ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      if (btn.dataset.periodo === 'anterior') { ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1); fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); }
+      const form = document.getElementById('form-filtros-lancamentos');
+      form.data_inicio.value = iso(ini); form.data_fim.value = iso(fim);
+      form.requestSubmit();
+    });
+  });
+  (function marcarPeriodo() {
+    const form = document.getElementById('form-filtros-lancamentos');
+    const di = form.data_inicio.value, df = form.data_fim.value;
+    const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const h = new Date(), s7 = new Date(h); s7.setDate(h.getDate() - 6);
+    const mapa = {
+      hoje: [iso(h), iso(h)], '7': [iso(s7), iso(h)],
+      mes: [iso(new Date(h.getFullYear(), h.getMonth(), 1)), iso(h)],
+      anterior: [iso(new Date(h.getFullYear(), h.getMonth() - 1, 1)), iso(new Date(h.getFullYear(), h.getMonth(), 0))],
+    };
+    Object.entries(mapa).forEach(([k, [a, b]]) => {
+      if (a === di && b === df) document.querySelector(`[data-periodo="${k}"]`)?.setAttribute('aria-pressed', 'true');
+    });
+  })();
 
   // inicialização
   (function () {

@@ -211,3 +211,16 @@ def test_login_rate_limit_is_per_account_and_message_is_generic(isolated_http):
     assert [response.status_code for response in responses] == [400, 400, 400, 400, 400, 429]
     assert email not in responses[-1].text
     assert "credenciais informadas" in responses[-1].text
+
+
+def test_estaticos_ficam_fora_do_limite_global_e_em_cache(isolated_http, monkeypatch):
+    monkeypatch.setattr(security, "GLOBAL_RATE_LIMIT_REQUESTS", 2)
+    with TestClient(app) as client:
+        for _ in range(5):
+            estatico = client.get("/static/css/flic.css")
+            assert estatico.status_code == 200
+        assert estatico.headers["Cache-Control"] == "public, max-age=604800"
+        pagina = client.get("/login")
+        assert pagina.headers["Cache-Control"] == "no-store"
+        bloqueado = [client.get("/login").status_code for _ in range(3)]
+        assert 429 in bloqueado  # páginas continuam limitadas

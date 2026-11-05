@@ -2,168 +2,272 @@
 {% block title %}Dashboard — FLIC{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
 
+{% macro variacao(v, inverter=false) -%}
+  {% if v is not none %}
+    {% set bom = (v >= 0) != inverter %}
+    <span class="fx-badge no-dot {{ 'fx-badge-success' if bom else 'fx-badge-danger' }}" title="Comparado ao mesmo período do mês anterior">
+      <i data-lucide="{{ 'trending-up' if v >= 0 else 'trending-down' }}" style="width:12px;height:12px"></i>{{ '%+.1f'|format(v) }}%
+    </span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro alertas_card(alertas, mostrar_cliente) -%}
+<div class="fx-card overflow-hidden">
+  <div class="flex items-center gap-3 px-5 py-4 border-b" style="border-color:var(--border)">
+    <span class="fx-kpi-icon fx-tone-warning"><i data-lucide="bell-ring"></i></span>
+    <div class="min-w-0">
+      <h3 class="fx-section-title">Contas recorrentes vencendo</h3>
+      <p class="fx-section-sub">Avisos configurados nos lançamentos recorrentes</p>
+    </div>
+    <span class="ml-auto fx-badge fx-badge-warning no-dot">{{ alertas|length }}</span>
+  </div>
+  <ul class="divide-y divide-slate-100">
+    {% for alerta in alertas %}
+    <li class="flex items-center justify-between gap-4 px-5 py-3">
+      <div class="min-w-0">
+        <p class="truncate text-sm font-medium" style="color:var(--text)">{{ alerta.conta.descricao }}</p>
+        <p class="truncate text-xs" style="color:var(--text-3)">{% if mostrar_cliente %}{{ alerta.conta.cliente.nome }}{% endif %}{% if alerta.conta.fornecedor %}{% if mostrar_cliente %} · {% endif %}{{ alerta.conta.fornecedor }}{% endif %}</p>
+      </div>
+      <div class="flex flex-shrink-0 items-center gap-3">
+        {% if alerta.conta.valor %}<span class="text-sm font-semibold tabular" style="color:var(--text)">R$ {{ alerta.conta.valor|brl }}</span>{% endif %}
+        <span class="fx-badge {{ 'fx-badge-danger' if alerta.urgente else 'fx-badge-warning' }}">
+          {% if alerta.dias_restantes == 0 %}Hoje{% elif alerta.dias_restantes == 1 %}Amanhã{% else %}{{ alerta.dias_restantes }} dias{% endif %} · {{ alerta.vencimento.strftime('%d/%m') }}
+        </span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{%- endmacro %}
+
 {% block content %}
 <style>
-  .dashboard-colunas { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
-  .dashboard-medias { border: 1px solid #dbe7f5; border-radius: 20px; background: linear-gradient(150deg, #fff, #eef5ff); box-shadow: 0 12px 32px #183d7510; padding: 24px; }
-  .dashboard-medias[hidden] { display: none; }
+  .dash-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+  .dash-medias[hidden] { display: none; }
   @media (min-width: 1280px) {
-    .dashboard-colunas.medias-abertas { grid-template-columns: minmax(0, 1fr) 280px; }
-    .dashboard-medias { position: sticky; top: 16px; }
+    .dash-grid.medias-abertas { grid-template-columns: minmax(0, 1fr) 300px; }
+    .dash-medias { position: sticky; top: 84px; }
   }
+  .dash-modulo { display: flex; gap: 12px; padding: 16px; }
+  .dash-modulo .fx-kpi-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .dash-modulo .fx-kpi-icon svg { width: 18px; height: 18px; }
+  .dash-chart-wrap { position: relative; height: 260px; }
+  .dash-legenda { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+  .dash-legenda::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--cor); }
 </style>
-<div class="flex justify-end mb-4">
-  <button id="alternar-medias" type="button" aria-expanded="true" aria-controls="painel-medias" class="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700">Ocultar médias</button>
-</div>
-<div id="dashboard-colunas" class="dashboard-colunas medias-abertas">
-<div class="min-w-0">
 
-{# ═══════════════════════════════════════════════════════════
-   BLOCOS POR PROCESSO — resumo de cada módulo (Contas a Receber,
-   Contas a Pagar, Conciliação, Fechamento), no escopo de cliente(s)
-   já aplicado pelo modo abaixo. Aparece em qualquer modo/perfil.
-═══════════════════════════════════════════════════════════ #}
-{% if blocos_processo %}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  {% for bloco in blocos_processo %}
-  <a href="{{ bloco.link }}"
-     class="block bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:border-[#5e93cc]/50 hover:shadow-md transition-colors">
-    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ bloco.titulo }}</p>
-    <p class="text-sm font-semibold text-gray-800 mt-2">{{ bloco.linha1 }}</p>
-    {% if bloco.linha2 %}<p class="text-xs text-gray-500 mt-1">{{ bloco.linha2 }}</p>{% endif %}
-  </a>
-  {% endfor %}
-</div>
-{% endif %}
-
-{# Minhas tarefas (lista ou calendário) — só no dashboard geral, sem cliente selecionado #}
-{% if not cliente_foco %}
-<div class="mb-6">
-  {% set base_url = '/' %}
-  {% include "partials/minhas_tarefas.html" %}
-</div>
-{% endif %}
-
-{# ═══════════════════════════════════════════════════════════
-   VISÃO FOCADA — aparece para qualquer perfil quando
-   há um cliente ativo selecionado
-═══════════════════════════════════════════════════════════ #}
-{% if cliente_foco %}
-<div class="space-y-6">
-
+{# ───────────────────────────── Cabeçalho #}
+<div class="fx-page-head mb-6 flex flex-wrap items-end justify-between gap-4">
   <div>
-    <h2 class="text-xl font-bold text-gray-800">{{ cliente_foco.nome }}</h2>
-    <p class="text-sm text-gray-500 mt-1">{{ hoje.strftime('%d/%m/%Y') }} — dados deste cliente</p>
+    {% if cliente_foco %}
+      <h2>{{ cliente_foco.nome }}</h2>
+      <p>Visão financeira da empresa · {{ hoje.strftime('%d/%m/%Y') }}</p>
+    {% elif usuario.perfil == 'coordenador' %}
+      <h2>Visão geral</h2>
+      <p>Todos os clientes · selecione uma empresa no Painel geral para o detalhe.</p>
+    {% else %}
+      <h2>Olá, {{ usuario.nome.split()[0] }}</h2>
+      <p>Resumo dos seus clientes · {{ hoje.strftime('%d/%m/%Y') }}</p>
+    {% endif %}
+  </div>
+  <button id="alternar-medias" type="button" aria-expanded="true" aria-controls="painel-medias" class="fx-btn fx-btn-secondary fx-btn-sm" data-sem-carregamento>
+    <i data-lucide="panel-right"></i><span>Ocultar médias</span>
+  </button>
+</div>
+
+<div id="dashboard-colunas" class="dash-grid medias-abertas">
+<div class="min-w-0 space-y-5">
+
+  {# ───────────────────────────── Indicadores do mês #}
+  {% if indicadores %}
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="fx-card fx-kpi">
+      <div class="flex items-center justify-between gap-2">
+        <span class="fx-kpi-label"><span class="fx-kpi-icon fx-tone-success"><i data-lucide="arrow-down-left"></i></span>Recebido no mês</span>
+        {{ variacao(indicadores.recebido_var) }}
+      </div>
+      <p class="fx-kpi-value" data-count-up="{{ indicadores.recebido|float }}" data-count-format="brl" data-count-prefix="R$ ">R$ {{ indicadores.recebido|brl }}</p>
+      <p class="fx-kpi-sub">Recebimentos conciliados</p>
+    </div>
+    <div class="fx-card fx-kpi">
+      <div class="flex items-center justify-between gap-2">
+        <span class="fx-kpi-label"><span class="fx-kpi-icon fx-tone-danger"><i data-lucide="arrow-up-right"></i></span>Pago no mês</span>
+        {{ variacao(indicadores.pago_var, inverter=true) }}
+      </div>
+      <p class="fx-kpi-value" data-count-up="{{ indicadores.pago|float }}" data-count-format="brl" data-count-prefix="R$ ">R$ {{ indicadores.pago|brl }}</p>
+      <p class="fx-kpi-sub">Contas quitadas</p>
+    </div>
+    <div class="fx-card fx-kpi">
+      <div class="flex items-center justify-between gap-2">
+        <span class="fx-kpi-label"><span class="fx-kpi-icon fx-tone-brand"><i data-lucide="scale"></i></span>Resultado do mês</span>
+      </div>
+      <p class="fx-kpi-value" style="{% if indicadores.resultado < 0 %}color:var(--danger-text){% endif %}">{% if indicadores.resultado < 0 %}− {% endif %}R$ {{ (indicadores.resultado|abs)|brl }}</p>
+      <p class="fx-kpi-sub">Recebido menos pago</p>
+    </div>
+    <a href="/contas-pagar" class="fx-card fx-kpi fx-card-hover block">
+      <div class="flex items-center justify-between gap-2">
+        <span class="fx-kpi-label"><span class="fx-kpi-icon {{ 'fx-tone-warning' if indicadores.vencidas_qtd else 'fx-tone-neutral' }}"><i data-lucide="calendar-clock"></i></span>A pagar em aberto</span>
+        {% if indicadores.vencidas_qtd %}<span class="fx-badge fx-badge-danger">{{ indicadores.vencidas_qtd }} vencida{{ 's' if indicadores.vencidas_qtd > 1 }}</span>{% endif %}
+      </div>
+      <p class="fx-kpi-value">R$ {{ indicadores.a_pagar_valor|brl }}</p>
+      <p class="fx-kpi-sub">{{ indicadores.a_pagar_qtd }} conta{{ 's' if indicadores.a_pagar_qtd != 1 }}{% if indicadores.vencidas_qtd %} · R$ {{ indicadores.vencidas_valor|brl }} vencido{% endif %}</p>
+    </a>
+  </div>
+  {% endif %}
+
+  {# ───────────────────────────── Gráfico #}
+  {% if serie_mensal and serie_mensal.rotulos %}
+  <div class="fx-card p-5">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="fx-section-title">Recebido × pago</h3>
+        <p class="fx-section-sub">Últimos 6 meses · recebimentos conciliados e contas quitadas</p>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="dash-legenda" style="--cor:#3D7BFF">Recebido</span>
+        <span class="dash-legenda" style="--cor:#C9D0E3" data-legenda-pago>Pago</span>
+      </div>
+    </div>
+    <div class="dash-chart-wrap">
+      <div class="fx-skeleton absolute inset-0" data-chart-skeleton></div>
+      <canvas id="grafico-mensal" aria-label="Gráfico de recebido e pago por mês" role="img"></canvas>
+    </div>
+    <script type="application/json" id="dados-grafico">{{ serie_mensal|tojson }}</script>
+  </div>
+  {% endif %}
+
+  {# ───────────────────────────── Módulos (resumo por processo) #}
+  {% if blocos_processo %}
+  {% set icones_modulo = {'Contas a Receber': ('receipt-text', 'fx-tone-success'), 'Contas a Pagar': ('wallet', 'fx-tone-danger'), 'Conciliação': ('landmark', 'fx-tone-brand'), 'Fechamento': ('calendar-check', 'fx-tone-info')} %}
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    {% for bloco in blocos_processo %}
+    {% set ic = icones_modulo.get(bloco.titulo, ('circle-dot', 'fx-tone-neutral')) %}
+    <a href="{{ bloco.link }}" class="fx-card fx-card-hover dash-modulo">
+      <span class="fx-kpi-icon {{ ic[1] }}"><i data-lucide="{{ ic[0] }}"></i></span>
+      <div class="min-w-0">
+        <p class="text-xs font-semibold" style="color:var(--text-3)">{{ bloco.titulo }}</p>
+        <p class="mt-1 text-sm font-semibold leading-snug" style="color:var(--text)">{{ bloco.linha1 }}</p>
+        {% if bloco.linha2 %}<p class="mt-0.5 text-xs" style="color:var(--text-3)">{{ bloco.linha2 }}</p>{% endif %}
+      </div>
+      <i data-lucide="chevron-right" class="ml-auto self-center flex-shrink-0" style="width:16px;height:16px;color:var(--text-4)"></i>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+{# ═══════════════════════════════════════════ VISÃO DE UMA EMPRESA #}
+{% if cliente_foco %}
+
+  <div class="grid grid-cols-1 gap-5 2xl:grid-cols-2">
+    {# Saldos bancários #}
+    <div class="fx-card overflow-hidden">
+      <div class="flex items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+        <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="landmark"></i></span>
+        <div><h3 class="fx-section-title">Saldos bancários</h3><p class="fx-section-sub">Saldo previsto e andamento da conciliação</p></div>
+        <a href="/conciliacao/banco?cliente_id={{ cliente_foco.id }}" class="fx-btn fx-btn-ghost fx-btn-sm ml-auto">Conciliar <i data-lucide="arrow-right"></i></a>
+      </div>
+      {% if saldos_bancarios %}
+      <ul class="divide-y divide-slate-100">
+        {% for s in saldos_bancarios %}
+        {% set pct = (s.conciliados * 100 / s.total_movimentos)|round|int if s.total_movimentos else 0 %}
+        <li class="px-5 py-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold" style="color:var(--text)">{{ s.conta.nome }}</p>
+              <p class="text-xs" style="color:var(--text-3)">{{ s.conciliados }} de {{ s.total_movimentos }} movimentos conciliados</p>
+            </div>
+            <div class="text-right">
+              <p class="text-base font-semibold tabular" style="color:{{ 'var(--danger-text)' if s.saldo_previsto is not none and s.saldo_previsto < 0 else 'var(--text)' }}">{% if s.saldo_previsto is not none %}R$ {{ s.saldo_previsto|brl }}{% else %}—{% endif %}</p>
+              {% if s.conferido %}<span class="fx-badge fx-badge-success">Conferido</span>{% elif s.pendentes %}<span class="fx-badge fx-badge-warning">{{ s.pendentes }} pendente{{ 's' if s.pendentes > 1 }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="fx-progress mt-3"><span style="width:{{ pct }}%;{% if pct == 100 %}background:var(--success){% endif %}"></span></div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="fx-empty"><span class="fx-empty-icon"><i data-lucide="landmark"></i></span>Nenhuma conta bancária com saldo cadastrada.</div>
+      {% endif %}
+    </div>
+
+    {# Movimentações recentes #}
+    <div class="fx-card overflow-hidden">
+      <div class="flex items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+        <span class="fx-kpi-icon fx-tone-info"><i data-lucide="arrow-left-right"></i></span>
+        <div><h3 class="fx-section-title">Movimentações recentes</h3><p class="fx-section-sub">Últimos lançamentos do extrato</p></div>
+      </div>
+      {% if movimentos_recentes %}
+      <ul class="divide-y divide-slate-100">
+        {% for m in movimentos_recentes %}
+        {% set entrada = m.sentido == 'recebimento' %}
+        <li class="flex items-center gap-3 px-5 py-3">
+          <span class="fx-kpi-icon {{ 'fx-tone-success' if entrada else 'fx-tone-neutral' }}"><i data-lucide="{{ 'arrow-down-left' if entrada else 'arrow-up-right' }}"></i></span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium" style="color:var(--text)">{{ m.descricao or ('Crédito' if entrada else 'Débito') }}</p>
+            <p class="text-xs" style="color:var(--text-3)">{{ m.data_movimento.strftime('%d/%m/%Y') if m.data_movimento else '—' }}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-sm font-semibold tabular" style="color:{{ 'var(--success-text)' if entrada else 'var(--text)' }}">{{ '+' if entrada else '−' }} R$ {{ m.valor|brl }}</p>
+            {% if m.status.value == 'conciliada' %}<span class="fx-badge fx-badge-success">Conciliado</span>{% else %}<span class="fx-badge fx-badge-neutral">Pendente</span>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="fx-empty"><span class="fx-empty-icon"><i data-lucide="file-spreadsheet"></i></span>Nenhum extrato importado ainda.</div>
+      {% endif %}
+    </div>
   </div>
 
-  <!-- Tarefas vinculadas a este cliente -->
+  {# Tarefas da empresa #}
   {% set voltar = '/' %}
-  <div class="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-blue-100 flex items-center gap-2" style="background:#eff6ff;">
-      <h3 class="font-semibold text-[#222049]">Tarefas deste cliente</h3>
-      <span class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">{{ tarefas_cliente|length }}</span>
-      <a href="/tarefas?cliente={{ cliente_foco.id }}&novo=1" class="ml-auto text-xs font-semibold text-[#315f91] hover:underline">+ Nova tarefa</a>
-      <a href="/tarefas?cliente={{ cliente_foco.id }}" class="text-xs font-semibold text-[#315f91] hover:underline">Ver todas →</a>
+  <div class="fx-card overflow-hidden">
+    <div class="flex flex-wrap items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+      <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="list-todo"></i></span>
+      <div><h3 class="fx-section-title">Tarefas deste cliente</h3><p class="fx-section-sub">{{ tarefas_concluidas }} de {{ total_tarefas }} concluída(s) hoje · {{ tarefas_cliente|length }} pendente(s)</p></div>
+      <div class="ml-auto flex gap-2">
+        <a href="/tarefas?cliente={{ cliente_foco.id }}&novo=1" class="fx-btn fx-btn-secondary fx-btn-sm"><i data-lucide="plus"></i>Nova tarefa</a>
+        <a href="/tarefas?cliente={{ cliente_foco.id }}" class="fx-btn fx-btn-ghost fx-btn-sm">Ver todas</a>
+      </div>
     </div>
     {% if request.query_params.get('ok_tarefa') %}
-    <p class="bg-green-50 px-5 py-2 text-sm text-green-700">{{ request.query_params.get('ok_tarefa') }}</p>
+    <div hidden data-flash="{{ request.query_params.get('ok_tarefa') }}" data-flash-tipo="sucesso"></div>
     {% elif request.query_params.get('erro_tarefa') %}
-    <p class="bg-red-50 px-5 py-2 text-sm text-red-700">{{ request.query_params.get('erro_tarefa') }}</p>
+    <div hidden data-flash="{{ request.query_params.get('erro_tarefa') }}" data-flash-tipo="erro"></div>
     {% endif %}
     <ul class="divide-y divide-slate-100">
       {% for t in tarefas_cliente %}
         {% set mostrar_cliente = false %}
         {% include "partials/tarefa_item.html" %}
       {% else %}
-      <li class="px-5 py-4 text-sm text-gray-400">Nenhuma tarefa pendente para este cliente.</li>
+      <li class="fx-empty"><span class="fx-empty-icon"><i data-lucide="check-check"></i></span>Nenhuma tarefa pendente para este cliente.</li>
       {% endfor %}
     </ul>
   </div>
 
-  <!-- Alertas de contas recorrentes -->
-  {% if alertas_recorrentes %}
-  <div class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-amber-100 flex items-center gap-2" style="background:#fffbeb;">
-      <svg class="h-5 w-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-      </svg>
-      <h3 class="font-semibold text-amber-800">Contas recorrentes com vencimento próximo</h3>
-      <span class="ml-auto rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{{ alertas_recorrentes|length }}</span>
-    </div>
-    <div class="divide-y divide-amber-50">
-      {% for alerta in alertas_recorrentes %}
-      <div class="px-5 py-3 flex items-center justify-between gap-4 {% if alerta.urgente %}bg-red-50{% endif %}">
-        <div class="min-w-0">
-          <p class="font-medium text-gray-800 truncate">{{ alerta.conta.descricao }}</p>
-          <p class="text-xs text-gray-500">{% if alerta.conta.fornecedor %}{{ alerta.conta.fornecedor }}{% endif %}{% if alerta.conta.valor %} · R$ {{ '%.2f'|format(alerta.conta.valor|float) }}{% endif %}</p>
-        </div>
-        <div class="flex items-center gap-3 flex-shrink-0">
-          <p class="text-sm font-semibold {% if alerta.urgente %}text-red-700{% else %}text-amber-700{% endif %}">{{ alerta.vencimento.strftime('%d/%m/%Y') }}</p>
-          <span class="rounded-full px-3 py-1 text-xs font-bold {% if alerta.dias_restantes == 0 %}bg-red-600 text-white{% elif alerta.urgente %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-700{% endif %}">
-            {% if alerta.dias_restantes == 0 %}Hoje!{% elif alerta.dias_restantes == 1 %}Amanhã{% else %}{{ alerta.dias_restantes }}d{% endif %}
-          </span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
+  {% if alertas_recorrentes %}{{ alertas_card(alertas_recorrentes, false) }}{% endif %}
 
-  <!-- Cards de métricas clicáveis -->
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <p class="text-xs text-gray-400 uppercase tracking-wide">Tarefas hoje</p>
-      <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_tarefas }}</p>
-      <p class="text-xs text-gray-400 mt-1">{{ tarefas_concluidas }} concluída(s)</p>
-    </div>
-
-    <div class="bg-green-50 rounded-xl border border-green-200 p-4 shadow-sm">
-      <p class="text-xs text-green-600 uppercase tracking-wide">Concluídas</p>
-      <p class="text-3xl font-bold text-green-700 mt-1">{{ tarefas_concluidas }}</p>
-      <p class="text-xs text-green-500 mt-1">de {{ total_tarefas }} hoje</p>
-    </div>
-
-    <a href="/contas-pagar?cliente_id={{ cliente_foco.id }}"
-       class="block rounded-xl border p-4 shadow-sm transition-colors
-              {% if total_vencendo > 0 %}bg-amber-50 border-amber-300 hover:bg-amber-100{% else %}bg-white border-gray-200 hover:bg-gray-50{% endif %}">
-      <p class="text-xs {% if total_vencendo > 0 %}text-amber-600{% else %}text-gray-400{% endif %} uppercase tracking-wide">Contas vencendo</p>
-      <p class="text-3xl font-bold {% if total_vencendo > 0 %}text-amber-700{% else %}text-gray-400{% endif %} mt-1">{{ total_vencendo }}</p>
-      {% if total_vencendo > 0 %}<p class="text-xs text-amber-500 mt-1">Clique para ver →</p>{% endif %}
-    </a>
-
-    <a href="/conciliacao?cliente_id={{ cliente_foco.id }}"
-       class="block rounded-xl border p-4 shadow-sm transition-colors
-              {% if total_divergencias > 0 %}bg-red-50 border-red-300 hover:bg-red-100{% else %}bg-white border-gray-200 hover:bg-gray-50{% endif %}">
-      <p class="text-xs {% if total_divergencias > 0 %}text-red-500{% else %}text-gray-400{% endif %} uppercase tracking-wide">Divergências</p>
-      <p class="text-3xl font-bold {% if total_divergencias > 0 %}text-red-600{% else %}text-gray-400{% endif %} mt-1">{{ total_divergencias }}</p>
-      {% if total_divergencias > 0 %}<p class="text-xs text-red-400 mt-1">Clique para analisar →</p>{% endif %}
-    </a>
-  </div>
-
-  <!-- Contas vencidas detalhadas -->
+  {# Contas vencidas / a vencer #}
   {% if contas_vencendo %}
-  <div class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-amber-100 flex items-center justify-between" style="background:#fffbeb;">
-      <h3 class="font-semibold text-amber-800">Contas vencidas / a vencer</h3>
-      <a href="/contas-pagar?cliente_id={{ cliente_foco.id }}" class="text-xs text-amber-700 hover:underline font-semibold">Ver todas →</a>
+  <div class="fx-card overflow-hidden">
+    <div class="flex items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+      <span class="fx-kpi-icon fx-tone-danger"><i data-lucide="calendar-x-2"></i></span>
+      <div><h3 class="fx-section-title">Contas vencidas / vencendo hoje</h3><p class="fx-section-sub">{{ contas_vencendo|length }} conta(s) em aberto</p></div>
+      <a href="/contas-pagar?cliente_id={{ cliente_foco.id }}" class="fx-btn fx-btn-ghost fx-btn-sm ml-auto">Ver todas <i data-lucide="arrow-right"></i></a>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-xs uppercase text-gray-500">
-          <tr>
-            <th class="px-4 py-3 text-left">Vencimento</th>
-            <th class="px-4 py-3 text-left">Descrição</th>
-            <th class="px-4 py-3 text-left">Fornecedor</th>
-            <th class="px-4 py-3 text-right">Valor</th>
-          </tr>
-        </thead>
+    <div class="overflow-x-auto px-2 pb-2">
+      <table class="w-full text-sm" data-no-table-tools="1">
+        <thead><tr>
+          <th class="px-4 py-3 text-left">Vencimento</th><th class="px-4 py-3 text-left">Descrição</th>
+          <th class="px-4 py-3 text-left">Fornecedor</th><th class="px-4 py-3 text-right">Valor</th>
+        </tr></thead>
         <tbody>
           {% for c in contas_vencendo %}
           <tr>
-            <td class="px-4 py-2.5 text-red-600 font-semibold whitespace-nowrap">{{ c.vencimento.strftime('%d/%m/%Y') }}</td>
-            <td class="px-4 py-2.5 text-gray-700">{{ c.descricao }}</td>
-            <td class="px-4 py-2.5 text-gray-500 text-xs">{{ c.fornecedor or '—' }}</td>
-            <td class="px-4 py-2.5 text-right font-bold text-rose-700 whitespace-nowrap">R$ {{ '%.2f'|format(c.valor|float) }}</td>
+            <td class="px-4 py-3 whitespace-nowrap"><span class="fx-badge fx-badge-danger">{{ c.vencimento.strftime('%d/%m/%Y') }}</span></td>
+            <td class="px-4 py-3" style="color:var(--text)">{{ c.descricao }}</td>
+            <td class="px-4 py-3 text-xs" style="color:var(--text-3)">{{ c.fornecedor or '—' }}</td>
+            <td class="px-4 py-3 text-right font-semibold whitespace-nowrap tabular" style="color:var(--text)">R$ {{ c.valor|brl }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -172,108 +276,59 @@
   </div>
   {% endif %}
 
-</div>
-
-{# ═══════════════════════════════════════════════════════════
-   VISÃO COORDENADOR SEM CLIENTE SELECIONADO — visão geral
-═══════════════════════════════════════════════════════════ #}
-{% elif usuario.perfil == 'coordenador' %}
-<div class="space-y-6">
-
-  <div>
-    <h2 class="text-xl font-bold text-gray-800">Visão geral da equipe</h2>
-    <p class="text-sm text-gray-500 mt-1">Selecione um cliente no menu lateral para ver o dashboard específico.</p>
-  </div>
-
-  <!-- Cards resumo global -->
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <p class="text-xs text-gray-400 uppercase tracking-wide">Clientes ativos</p>
-      <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_clientes }}</p>
-    </div>
-    <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <p class="text-xs text-gray-400 uppercase tracking-wide">Tarefas hoje</p>
-      <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_tarefas }}</p>
-    </div>
-    <div class="bg-amber-50 rounded-xl border border-amber-200 p-4 shadow-sm">
-      <p class="text-xs text-amber-600 uppercase tracking-wide">Contas vencendo</p>
-      <p class="text-3xl font-bold text-amber-700 mt-1">{{ total_vencendo }}</p>
-    </div>
-    <div class="{% if total_divergencias > 0 %}bg-red-50 border-red-200{% else %}bg-white border-gray-200{% endif %} rounded-xl border p-4 shadow-sm">
-      <p class="text-xs {% if total_divergencias > 0 %}text-red-500{% else %}text-gray-400{% endif %} uppercase tracking-wide">Divergências</p>
-      <p class="text-3xl font-bold {% if total_divergencias > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ total_divergencias }}</p>
-    </div>
-  </div>
-
-  <!-- Alertas recorrentes globais -->
-  {% if alertas_recorrentes %}
-  <div class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-amber-100 flex items-center gap-2" style="background:#fffbeb;">
-      <svg class="h-5 w-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-      </svg>
-      <h3 class="font-semibold text-amber-800">Contas recorrentes com vencimento próximo</h3>
-      <span class="ml-auto rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{{ alertas_recorrentes|length }}</span>
-    </div>
-    <div class="divide-y divide-amber-50">
-      {% for alerta in alertas_recorrentes %}
-      <div class="px-5 py-3 flex items-center justify-between gap-4 {% if alerta.urgente %}bg-red-50{% endif %}">
-        <div class="min-w-0">
-          <p class="font-medium text-gray-800 truncate">{{ alerta.conta.descricao }}</p>
-          <p class="text-xs text-gray-500">{{ alerta.conta.cliente.nome }}{% if alerta.conta.fornecedor %} · {{ alerta.conta.fornecedor }}{% endif %}{% if alerta.conta.valor %} · R$ {{ '%.2f'|format(alerta.conta.valor|float) }}{% endif %}</p>
-        </div>
-        <div class="flex items-center gap-3 flex-shrink-0">
-          <p class="text-sm font-semibold {% if alerta.urgente %}text-red-700{% else %}text-amber-700{% endif %}">{{ alerta.vencimento.strftime('%d/%m/%Y') }}</p>
-          <span class="rounded-full px-3 py-1 text-xs font-bold {% if alerta.dias_restantes == 0 %}bg-red-600 text-white{% elif alerta.urgente %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-700{% endif %}">
-            {% if alerta.dias_restantes == 0 %}Hoje!{% elif alerta.dias_restantes == 1 %}Amanhã{% else %}{{ alerta.dias_restantes }}d{% endif %}
-          </span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+  {# Atalhos para divergências #}
+  {% if total_divergencias > 0 %}
+  <a href="/conciliacao?cliente_id={{ cliente_foco.id }}" class="fx-card fx-card-hover flex items-center gap-3 px-5 py-4">
+    <span class="fx-kpi-icon fx-tone-danger"><i data-lucide="triangle-alert"></i></span>
+    <div><p class="text-sm font-semibold" style="color:var(--text)">{{ total_divergencias }} divergência(s) de conciliação</p><p class="text-xs" style="color:var(--text-3)">Clique para analisar</p></div>
+    <i data-lucide="chevron-right" class="ml-auto" style="width:16px;height:16px;color:var(--text-4)"></i>
+  </a>
   {% endif %}
 
-  <!-- Tabela por funcionário -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-gray-100">
-      <h3 class="font-semibold text-gray-700">Funcionários e clientes</h3>
+{# ═══════════════════════════════════════════ COORDENADOR — VISÃO GERAL #}
+{% elif usuario.perfil == 'coordenador' %}
+
+  <div>{% set base_url = '/' %}{% include "partials/minhas_tarefas.html" %}</div>
+
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    {% for rot, val, ic, tom in [('Clientes ativos', total_clientes, 'building-2', 'fx-tone-brand'), ('Tarefas hoje', total_tarefas, 'list-todo', 'fx-tone-info'), ('Contas vencendo', total_vencendo, 'calendar-clock', 'fx-tone-warning' if total_vencendo else 'fx-tone-neutral'), ('Divergências', total_divergencias, 'triangle-alert', 'fx-tone-danger' if total_divergencias else 'fx-tone-neutral')] %}
+    <div class="fx-card fx-kpi">
+      <span class="fx-kpi-label"><span class="fx-kpi-icon {{ tom }}"><i data-lucide="{{ ic }}"></i></span>{{ rot }}</span>
+      <p class="fx-kpi-value" data-count-up="{{ val }}">{{ val }}</p>
     </div>
-    <div class="overflow-x-auto">
+    {% endfor %}
+  </div>
+
+  {% if alertas_recorrentes %}{{ alertas_card(alertas_recorrentes, true) }}{% endif %}
+
+  <div class="fx-card overflow-hidden">
+    <div class="flex items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+      <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="users"></i></span>
+      <div><h3 class="fx-section-title">Funcionários e clientes</h3><p class="fx-section-sub">Produtividade de hoje e pendências por responsável</p></div>
+    </div>
+    <div class="overflow-x-auto px-2 pb-2">
       <table class="w-full text-sm">
-        <thead class="text-xs uppercase text-gray-500">
-          <tr>
-            <th class="px-5 py-3 text-left">Funcionário</th>
-            <th class="px-5 py-3 text-left">Clientes</th>
-            <th class="px-5 py-3 text-center">Tarefas hoje</th>
-            <th class="px-5 py-3 text-center">Concluídas</th>
-            <th class="px-5 py-3 text-center">Pendentes</th>
-            <th class="px-5 py-3 text-center">Vencendo</th>
-            <th class="px-5 py-3 text-center">Divergências</th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th class="px-4 py-3 text-left">Funcionário</th><th class="px-4 py-3 text-left">Clientes</th>
+          <th class="px-4 py-3 text-center">Tarefas hoje</th><th class="px-4 py-3 text-center">Concluídas</th>
+          <th class="px-4 py-3 text-center">Pendentes</th><th class="px-4 py-3 text-center">Vencendo</th><th class="px-4 py-3 text-center">Divergências</th>
+        </tr></thead>
         <tbody>
           {% for func in funcionarios %}
           <tr>
-            <td class="px-5 py-3 font-medium text-gray-800">{{ func.nome }}</td>
-            <td class="px-5 py-3 text-gray-600">
-              {% for c in func.clientes_ativos %}
-                <span class="inline-block bg-[#5e93cc]/10 text-[#222049] text-xs px-2 py-0.5 rounded-full mr-1">{{ c.nome }}</span>
-              {% else %}<span class="text-gray-400">—</span>{% endfor %}
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2.5"><span class="fx-avatar" style="width:28px;height:28px;font-size:11px">{{ func.nome[:1]|upper }}</span><span class="font-medium" style="color:var(--text)">{{ func.nome }}</span></div>
             </td>
-            <td class="px-5 py-3 text-center text-gray-700">{{ func.total_tarefas }}</td>
-            <td class="px-5 py-3 text-center text-green-600 font-medium">{{ func.tarefas_concluidas }}</td>
-            <td class="px-5 py-3 text-center text-amber-600 font-medium">{{ func.tarefas_pendentes }}</td>
-            <td class="px-5 py-3 text-center">
-              {% if func.vencendo > 0 %}
-                <span class="inline-block bg-red-50 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-full">{{ func.vencendo }}</span>
-              {% else %}<span class="text-gray-400">0</span>{% endif %}
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap gap-1">
+              {% for c in func.clientes_ativos %}<span class="fx-badge no-dot fx-badge-info">{{ c.nome }}</span>{% else %}<span style="color:var(--text-4)">—</span>{% endfor %}
+              </div>
             </td>
-            <td class="px-5 py-3 text-center">
-              {% if func.divergencias > 0 %}
-                <span class="inline-block bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{{ func.divergencias }}</span>
-              {% else %}<span class="text-gray-400">—</span>{% endif %}
-            </td>
+            <td class="px-4 py-3 text-center tabular" style="color:var(--text-2)">{{ func.total_tarefas }}</td>
+            <td class="px-4 py-3 text-center tabular" style="color:var(--success-text)">{{ func.tarefas_concluidas }}</td>
+            <td class="px-4 py-3 text-center tabular" style="color:var(--warning-text)">{{ func.tarefas_pendentes }}</td>
+            <td class="px-4 py-3 text-center">{% if func.vencendo > 0 %}<span class="fx-badge fx-badge-warning">{{ func.vencendo }}</span>{% else %}<span style="color:var(--text-4)">0</span>{% endif %}</td>
+            <td class="px-4 py-3 text-center">{% if func.divergencias > 0 %}<span class="fx-badge fx-badge-danger">{{ func.divergencias }}</span>{% else %}<span style="color:var(--text-4)">—</span>{% endif %}</td>
           </tr>
           {% else %}
           <tr><td colspan="7" class="px-5 py-8 text-center text-gray-400">Nenhum funcionário cadastrado.</td></tr>
@@ -283,129 +338,87 @@
     </div>
   </div>
 
-</div>
-
-{# ═══════════════════════════════════════════════════════════
-   VISÃO FUNCIONÁRIO SEM CLIENTE SELECIONADO
-═══════════════════════════════════════════════════════════ #}
+{# ═══════════════════════════════════════════ FUNCIONÁRIO — VISÃO GERAL #}
 {% else %}
-<div class="space-y-6">
 
-  <div>
-    <h2 class="text-xl font-bold text-gray-800">Olá, {{ usuario.nome.split()[0] }}!</h2>
-    <p class="text-sm text-gray-500 mt-1">Selecione um cliente no menu lateral ou veja o resumo abaixo.</p>
+  <div>{% set base_url = '/' %}{% include "partials/minhas_tarefas.html" %}</div>
+
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    {% set quarto = ('Divergências', total_divergencias, 'triangle-alert', 'fx-tone-danger') if total_divergencias > 0 else ('Pendentes', tarefas_pendentes, 'hourglass', 'fx-tone-warning') %}
+    {% for rot, val, ic, tom in [('Meus clientes', meus_clientes|length, 'building-2', 'fx-tone-brand'), ('Tarefas hoje', total_tarefas, 'list-todo', 'fx-tone-info'), ('Concluídas', tarefas_concluidas, 'check-check', 'fx-tone-success'), quarto] %}
+    <div class="fx-card fx-kpi">
+      <span class="fx-kpi-label"><span class="fx-kpi-icon {{ tom }}"><i data-lucide="{{ ic }}"></i></span>{{ rot }}</span>
+      <p class="fx-kpi-value" data-count-up="{{ val }}">{{ val }}</p>
+    </div>
+    {% endfor %}
   </div>
 
-  <!-- Alertas de contas recorrentes -->
-  {% if alertas_recorrentes %}
-  <div class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-amber-100 flex items-center gap-2" style="background:#fffbeb;">
-      <svg class="h-5 w-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-      </svg>
-      <h3 class="font-semibold text-amber-800">Contas recorrentes com vencimento próximo</h3>
-      <span class="ml-auto rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{{ alertas_recorrentes|length }}</span>
-    </div>
-    <div class="divide-y divide-amber-50">
-      {% for alerta in alertas_recorrentes %}
-      <div class="px-5 py-3 flex items-center justify-between gap-4 {% if alerta.urgente %}bg-red-50{% endif %}">
-        <div class="min-w-0">
-          <p class="font-medium text-gray-800 truncate">{{ alerta.conta.descricao }}</p>
-          <p class="text-xs text-gray-500">{{ alerta.conta.cliente.nome }}{% if alerta.conta.fornecedor %} · {{ alerta.conta.fornecedor }}{% endif %}{% if alerta.conta.valor %} · R$ {{ '%.2f'|format(alerta.conta.valor|float) }}{% endif %}</p>
-        </div>
-        <div class="flex items-center gap-3 flex-shrink-0">
-          <p class="text-sm font-semibold {% if alerta.urgente %}text-red-700{% else %}text-amber-700{% endif %}">{{ alerta.vencimento.strftime('%d/%m/%Y') }}</p>
-          <span class="rounded-full px-3 py-1 text-xs font-bold {% if alerta.dias_restantes == 0 %}bg-red-600 text-white{% elif alerta.urgente %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-700{% endif %}">
-            {% if alerta.dias_restantes == 0 %}Hoje!{% elif alerta.dias_restantes == 1 %}Amanhã{% else %}{{ alerta.dias_restantes }}d{% endif %}
-          </span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
+  {% if alertas_recorrentes %}{{ alertas_card(alertas_recorrentes, true) }}{% endif %}
 
-  <!-- Cards resumo geral do funcionário -->
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <p class="text-xs text-gray-400 uppercase tracking-wide">Meus clientes</p>
-      <p class="text-3xl font-bold text-gray-900 mt-1">{{ meus_clientes|length }}</p>
+  <div class="fx-card overflow-hidden">
+    <div class="flex items-center gap-3 border-b px-5 py-4" style="border-color:var(--border)">
+      <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="building-2"></i></span>
+      <div><h3 class="fx-section-title">Seus clientes</h3><p class="fx-section-sub">Situação de hoje</p></div>
     </div>
-    <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <p class="text-xs text-gray-400 uppercase tracking-wide">Tarefas hoje</p>
-      <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_tarefas }}</p>
-    </div>
-    <div class="bg-green-50 rounded-xl border border-green-200 p-4 shadow-sm">
-      <p class="text-xs text-green-600 uppercase tracking-wide">Concluídas</p>
-      <p class="text-3xl font-bold text-green-700 mt-1">{{ tarefas_concluidas }}</p>
-    </div>
-    <div class="{% if total_divergencias > 0 %}bg-red-50 border-red-200{% else %}bg-amber-50 border-amber-200{% endif %} rounded-xl border p-4 shadow-sm">
-      {% if total_divergencias > 0 %}
-      <p class="text-xs text-red-500 uppercase tracking-wide">Divergências</p>
-      <p class="text-3xl font-bold text-red-600 mt-1">{{ total_divergencias }}</p>
-      {% else %}
-      <p class="text-xs text-amber-600 uppercase tracking-wide">Pendentes</p>
-      <p class="text-3xl font-bold text-amber-700 mt-1">{{ tarefas_pendentes }}</p>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- Resumo por cliente -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm">
-    <div class="px-5 py-4 border-b border-gray-100">
-      <h3 class="font-semibold text-gray-700">Seus clientes</h3>
-    </div>
-    <div class="p-5 space-y-3">
+    <ul class="divide-y divide-slate-100">
       {% for info in resumo_clientes %}
-      <div class="flex items-center justify-between rounded-lg border
-                  {% if info.divergencias > 0 %}border-red-200 bg-red-50/30{% elif info.vencendo > 0 %}border-amber-200 bg-amber-50/20{% else %}border-gray-100 bg-gray-50{% endif %}
-                  px-4 py-3">
-        <div>
-          <p class="font-medium text-gray-800">{{ info.cliente.nome }}</p>
-          <p class="text-xs text-gray-500">{{ info.tarefas_concluidas }}/{{ info.total_tarefas }} tarefas hoje</p>
+      <li class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="fx-avatar" style="width:32px;height:32px;border-radius:10px">{{ info.cliente.nome[:1]|upper }}</span>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-semibold" style="color:var(--text)">{{ info.cliente.nome }}</p>
+            <p class="text-xs" style="color:var(--text-3)">{{ info.tarefas_concluidas }}/{{ info.total_tarefas }} tarefas hoje</p>
+          </div>
         </div>
-        <div class="flex items-center gap-2 flex-wrap justify-end">
-          {% if info.vencendo > 0 %}
-          <a href="/contas-pagar?cliente_id={{ info.cliente.id }}"
-             class="bg-amber-100 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full border border-amber-200 hover:bg-amber-200 transition-colors">
-            {{ info.vencendo }} vencendo →
-          </a>
-          {% endif %}
-          {% if info.divergencias > 0 %}
-          <a href="/conciliacao?cliente_id={{ info.cliente.id }}"
-             class="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-full border border-red-200 hover:bg-red-200 transition-colors">
-            ⚠ {{ info.divergencias }} divergência(s) →
-          </a>
-          {% endif %}
-          {% if info.vencendo == 0 and info.divergencias == 0 %}
-          <span class="text-xs text-green-600 font-medium">✓ Em dia</span>
-          {% endif %}
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          {% if info.vencendo > 0 %}<a href="/contas-pagar?cliente_id={{ info.cliente.id }}" class="fx-badge fx-badge-warning">{{ info.vencendo }} vencendo</a>{% endif %}
+          {% if info.divergencias > 0 %}<a href="/conciliacao?cliente_id={{ info.cliente.id }}" class="fx-badge fx-badge-danger">{{ info.divergencias }} divergência(s)</a>{% endif %}
+          {% if info.vencendo == 0 and info.divergencias == 0 %}<span class="fx-badge fx-badge-success">Em dia</span>{% endif %}
         </div>
-      </div>
+      </li>
       {% else %}
-      <p class="text-sm text-gray-400 text-center py-4">Nenhum cliente atribuído a você ainda.</p>
+      <li class="fx-empty"><span class="fx-empty-icon"><i data-lucide="building-2"></i></span>Nenhum cliente atribuído a você ainda.</li>
       {% endfor %}
-    </div>
+    </ul>
   </div>
 
-</div>
 {% endif %}
-
 </div>
-<aside id="painel-medias" class="dashboard-medias" aria-labelledby="titulo-medias">
-  <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Histórico financeiro</p>
-  <h2 id="titulo-medias" class="mt-2 text-lg font-bold text-slate-800">Média mensal</h2>
-  <p class="mt-2 text-xs leading-relaxed text-slate-500">Últimos 3 meses completos<br>{{ medias.inicio.strftime('%d/%m/%Y') }} a {{ medias.fim.strftime('%d/%m/%Y') }}</p>
-  <dl class="mt-6 space-y-5">
-    <div><dt class="text-sm text-slate-500">Recebimentos</dt><dd class="mt-1 text-xl font-bold text-emerald-700">R$ {{ medias.recebido }}</dd></div>
-    <div><dt class="text-sm text-slate-500">Pagamentos</dt><dd class="mt-1 text-xl font-bold text-slate-800">R$ {{ medias.pago }}</dd></div>
-    <div class="border-t border-blue-100 pt-5"><dt class="text-sm text-slate-500">Saldo médio</dt><dd class="mt-1 text-xl font-bold {{ 'text-red-600' if medias.saldo_negativo else 'text-blue-700' }}">R$ {{ medias.saldo }}</dd></div>
+
+{# ───────────────────────────── Médias (painel lateral) #}
+<aside id="painel-medias" class="dash-medias fx-card p-5" aria-labelledby="titulo-medias">
+  <div class="flex items-center gap-2.5">
+    <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="chart-no-axes-combined"></i></span>
+    <div>
+      <h2 id="titulo-medias" class="fx-section-title">Média mensal</h2>
+      <p class="fx-section-sub">Últimos 3 meses completos</p>
+    </div>
+  </div>
+  <p class="mt-3 text-xs" style="color:var(--text-3)">{{ medias.inicio.strftime('%d/%m/%Y') }} a {{ medias.fim.strftime('%d/%m/%Y') }}</p>
+  <dl class="mt-5 space-y-4">
+    <div class="rounded-xl p-3.5" style="background:var(--surface-2);border:1px solid var(--border)">
+      <dt class="flex items-center gap-1.5 text-xs font-medium" style="color:var(--text-3)"><i data-lucide="arrow-down-left" style="width:13px;height:13px;color:var(--success)"></i>Recebimentos</dt>
+      <dd class="mt-1 text-lg font-semibold tabular" style="color:var(--success-text)">R$ {{ medias.recebido }}</dd>
+    </div>
+    <div class="rounded-xl p-3.5" style="background:var(--surface-2);border:1px solid var(--border)">
+      <dt class="flex items-center gap-1.5 text-xs font-medium" style="color:var(--text-3)"><i data-lucide="arrow-up-right" style="width:13px;height:13px;color:var(--danger)"></i>Pagamentos</dt>
+      <dd class="mt-1 text-lg font-semibold tabular" style="color:var(--text)">R$ {{ medias.pago }}</dd>
+    </div>
+    <div class="rounded-xl p-3.5" style="background:{{ 'var(--danger-soft)' if medias.saldo_negativo else 'var(--brand-soft)' }}">
+      <dt class="text-xs font-medium" style="color:var(--text-2)">Saldo médio</dt>
+      <dd class="mt-1 text-xl font-semibold tabular" style="color:{{ 'var(--danger-text)' if medias.saldo_negativo else 'var(--brand)' }}">R$ {{ medias.saldo }}</dd>
+    </div>
   </dl>
-  <p class="mt-6 text-xs leading-relaxed text-slate-500">Recebimentos conciliados e contas integralmente pagas, pelas datas de crédito e pagamento. Meses sem movimento entram na média com zero.</p>
+  <p class="mt-5 text-xs leading-relaxed" style="color:var(--text-3)">Recebimentos conciliados e contas integralmente pagas, pelas datas de crédito e pagamento. Meses sem movimento entram na média com zero.</p>
 </aside>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/vendor/chart.umd.min.js"></script>
 <script>
 (() => {
+  // painel de médias (preferência guardada no navegador)
   const button = document.getElementById('alternar-medias');
   const panel = document.getElementById('painel-medias');
   const grid = document.getElementById('dashboard-colunas');
@@ -414,14 +427,74 @@
     panel.hidden = !aberto;
     grid.classList.toggle('medias-abertas', aberto);
     button.setAttribute('aria-expanded', String(aberto));
-    button.textContent = aberto ? 'Ocultar médias' : 'Mostrar médias';
+    button.querySelector('span').textContent = aberto ? 'Ocultar médias' : 'Mostrar médias';
   }
-  try { mostrar(localStorage.getItem(key) !== 'oculto'); } catch (_) {}
+  try { mostrar(localStorage.getItem(key) !== 'oculto'); } catch (_) { mostrar(true); }
   button.addEventListener('click', () => {
     const aberto = panel.hidden;
     mostrar(aberto);
     try { localStorage.setItem(key, aberto ? 'aberto' : 'oculto'); } catch (_) {}
   });
+
+  // gráfico recebido x pago
+  const fonte = document.getElementById('dados-grafico');
+  const canvas = document.getElementById('grafico-mensal');
+  if (!fonte || !canvas || !window.Chart) return;
+  const dados = JSON.parse(fonte.textContent);
+  const brl = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const curto = v => Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi'
+                  : Math.abs(v) >= 1e3 ? (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : v.toLocaleString('pt-BR');
+  let grafico;
+  function cores() {
+    const s = getComputedStyle(document.documentElement);
+    const escuro = document.documentElement.classList.contains('dark');
+    return {
+      recebido: '#3D7BFF',
+      pago: escuro ? '#31406E' : '#C9D0E3',
+      grade: s.getPropertyValue('--border').trim(),
+      texto: s.getPropertyValue('--text-3').trim(),
+      tooltip: escuro ? '#EEF2FF' : '#13214A',
+      tooltipTexto: escuro ? '#13214A' : '#EEF2FF',
+    };
+  }
+  function desenhar() {
+    const c = cores();
+    document.querySelector('[data-legenda-pago]')?.style.setProperty('--cor', c.pago);
+    if (grafico) grafico.destroy();
+    grafico = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: dados.rotulos,
+        datasets: [
+          { label: 'Recebido', data: dados.recebido, backgroundColor: c.recebido, borderRadius: 6, maxBarThickness: 26 },
+          { label: 'Pago', data: dados.pago, backgroundColor: c.pago, borderRadius: 6, maxBarThickness: 26 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 650, easing: 'easeOutCubic' },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: c.tooltip, titleColor: c.tooltipTexto, bodyColor: c.tooltipTexto, padding: 10, cornerRadius: 8,
+            boxPadding: 4, usePointStyle: true,
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${brl(ctx.parsed.y)}`,
+              footer: itens => itens.length === 2 ? `Resultado: ${brl(itens[0].parsed.y - itens[1].parsed.y)}` : '',
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, ticks: { color: c.texto, font: { family: 'Manrope', size: 12 } } },
+          y: { beginAtZero: true, border: { display: false }, grid: { color: c.grade }, ticks: { color: c.texto, font: { family: 'IBM Plex Mono', size: 11 }, callback: v => 'R$ ' + curto(v), maxTicksLimit: 5 } },
+        },
+      },
+    });
+    document.querySelector('[data-chart-skeleton]')?.remove();
+  }
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(desenhar);
+  document.addEventListener('flic:tema', desenhar);
 })();
 </script>
 {% endblock %}
