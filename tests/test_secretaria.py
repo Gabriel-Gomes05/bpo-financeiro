@@ -337,13 +337,16 @@ def test_cookie_e_url_de_outro_cliente_sao_ignorados(db):
 
 
 def test_secretaria_nao_abre_nem_edita_lancamento_de_outro_cliente(db):
+    # Outro cliente: 404 (não revela que o registro existe) na leitura e na escrita.
     req = como_secretaria(db, "GET", "/lancamentos/200/editar")
-    assert chamar(lancamentos.form_editar_lancamento, at_id=200, request=req, db=db,
-                  usuario=u(db, MARIA)).headers["location"] == "/lancamentos"
+    with pytest.raises(HTTPException) as exc:
+        chamar(lancamentos.form_editar_lancamento, at_id=200, request=req, db=db, usuario=u(db, MARIA))
+    assert exc.value.status_code == 404
     req = como_secretaria(db, "POST", "/lancamentos/200/editar")
-    resposta = chamar(lancamentos.salvar_edicao_lancamento, at_id=200, request=req, data_atendimento=date(2026, 11, 4),
-                      valor_servico="1", db=db, usuario=u(db, MARIA))
-    assert resposta.headers["location"] == "/lancamentos"
+    with pytest.raises(HTTPException) as exc:
+        chamar(lancamentos.salvar_edicao_lancamento, at_id=200, request=req, data_atendimento=date(2026, 11, 4),
+               valor_servico="1", db=db, usuario=u(db, MARIA))
+    assert exc.value.status_code == 404
     db.expire_all()
     assert db.get(Atendimento, 200).valor_servico == Decimal("90.00")
 

@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
@@ -49,12 +50,8 @@ router = APIRouter()
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def formatar_brl(valor: Decimal) -> str:

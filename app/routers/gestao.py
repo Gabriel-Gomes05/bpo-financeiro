@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -23,12 +24,8 @@ require_gestao = require_permission(Permission.GESTAO)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if usuario.perfil == PerfilUsuario.coordenador:
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _brl(v) -> str:

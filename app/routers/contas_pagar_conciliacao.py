@@ -10,6 +10,7 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy.orm import Session
 
@@ -38,12 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _contas_pendentes(db: Session, cliente_id: int):
@@ -275,8 +272,8 @@ async def conciliar_cartao_pagar(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_pagar_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_pagar_id)
 
     if (
         mov and conta
@@ -304,7 +301,7 @@ async def ignorar_cartao_pagar(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if mov and mov.cliente_id in ids_permitidos:
         mov.status = StatusMovimentacaoBancaria.revisada
         db.commit()
@@ -504,8 +501,8 @@ async def conciliar_linha_banco_pagar(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    linha = db.query(ExtratoLinhaBancaria).filter(ExtratoLinhaBancaria.id == linha_id).first()
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_pagar_id).first()
+    linha = obter_do_tenant(db, usuario, ExtratoLinhaBancaria, linha_id)
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_pagar_id)
 
     if (
         linha and conta
@@ -533,7 +530,7 @@ async def ignorar_linha_banco_pagar(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    linha = db.query(ExtratoLinhaBancaria).filter(ExtratoLinhaBancaria.id == linha_id).first()
+    linha = obter_do_tenant(db, usuario, ExtratoLinhaBancaria, linha_id)
     if linha and linha.cliente_id in ids_permitidos:
         linha.status = StatusExtratoLinha.ignorado
         db.commit()

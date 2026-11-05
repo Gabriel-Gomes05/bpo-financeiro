@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
@@ -39,18 +40,8 @@ require_lancamentos = require_permission(Permission.LANCAMENTOS)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    if usuario.perfil == PerfilUsuario.secretaria:
-        # Somente o cliente do cadastro dela; cookie, URL e formulário são ignorados.
-        return db.query(ClienteBPO).filter(
-            ClienteBPO.id == usuario.cliente_id,
-            ClienteBPO.ativo == True,
-        ).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _calcular_intervalos(forma_pagamento: str, parcela_total: int, recorrencia: Optional[str]):
@@ -461,7 +452,7 @@ async def form_editar_lancamento(
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
-    at = db.query(Atendimento).filter(Atendimento.id == at_id).first()
+    at = obter_do_tenant(db, usuario, Atendimento, at_id)
     if not at or at.cliente_id not in ids_permitidos:
         return RedirectResponse(url="/lancamentos", status_code=303)
     centros_custo = db.query(CentroCusto).filter(
@@ -530,7 +521,7 @@ async def salvar_edicao_lancamento(
         raise erro("FLIC-AUT-002")
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
-    at = db.query(Atendimento).filter(Atendimento.id == at_id).first()
+    at = obter_do_tenant(db, usuario, Atendimento, at_id)
 
     if not at or at.cliente_id not in ids_permitidos:
         return RedirectResponse(url="/lancamentos", status_code=303)
@@ -696,7 +687,7 @@ async def excluir_lancamento(
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
-    at = db.query(Atendimento).filter(Atendimento.id == at_id).first()
+    at = obter_do_tenant(db, usuario, Atendimento, at_id)
 
     if not at or at.cliente_id not in ids_permitidos or at.cliente_id != cliente_id:
         return RedirectResponse(url=f"/lancamentos?cliente_id={cliente_id}", status_code=303)
@@ -983,7 +974,7 @@ async def importar_visao_contas_a_receber(
 async def desconciliar_lancamento(at_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_lancamentos)):
     if usuario.perfil == PerfilUsuario.medico:
         raise erro("FLIC-AUT-002")
-    at = db.query(Atendimento).filter(Atendimento.id == at_id, Atendimento.cliente_id.in_([c.id for c in clientes_do_usuario(db, usuario)])).first()
+    at = obter_do_tenant(db, usuario, Atendimento, at_id)
     if not at:
         raise erro("FLIC-REC-013")
     exigir_confirmacao(confirmar_conciliacao)

@@ -16,6 +16,7 @@ import pandas as pd
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -108,12 +109,8 @@ def _conta_bancaria_valida(db: Session, cliente_id: int, conta_bancaria_id: Opti
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _ids_clientes_do_usuario(db: Session, usuario: Usuario) -> list[int]:
@@ -438,7 +435,7 @@ async def clonar_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     ids_permitidos = _ids_clientes_do_usuario(db, usuario)
     if not conta or conta.cliente_id not in ids_permitidos:
         return RedirectResponse(url="/contas-pagar", status_code=303)
@@ -465,7 +462,7 @@ async def baixar_documento_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         raise erro("FLIC-PAG-010")
     if not conta.documento_path:
@@ -490,7 +487,7 @@ async def form_editar_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_atual),
 ):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
@@ -533,7 +530,7 @@ async def salvar_edicao_conta(
         raise erro("FLIC-PAG-001")
     if not valor.is_finite() or valor < 0 or valor > Decimal("9999999999.99") or valor != valor.quantize(Decimal("0.01")):
         raise erro("FLIC-PAG-002")
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
     vencimento_original = conta.vencimento
@@ -709,7 +706,7 @@ async def excluir_conta(
         raise erro("FLIC-AUT-002")
     if escopo not in {"somente", "recorrencia"}:
         raise erro("FLIC-PAG-005")
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     ids_permitidos = _ids_clientes_do_usuario(db, usuario)
     destino = f"/contas-pagar?cliente_id={cliente_id}"
     if not conta or conta.cliente_id not in ids_permitidos or conta.cliente_id != cliente_id:
@@ -1122,7 +1119,7 @@ async def alterar_status_conta_rota(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta:
         return RedirectResponse(url="/contas-pagar", status_code=303)
 
@@ -1152,7 +1149,7 @@ async def alterar_recebido_conta(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_contas_pagar),
 ):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta or conta.cliente_id not in _ids_clientes_do_usuario(db, usuario):
         return RedirectResponse(url="/contas-pagar", status_code=303)
     conta.recebido = recebido
@@ -1171,7 +1168,7 @@ async def agendar_pagamento(
     usuario: Usuario = Depends(get_usuario_atual),
 ):
     """Wrapper de compatibilidade — equivalente a status=agendado."""
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta:
         return RedirectResponse(url="/contas-pagar", status_code=303)
     clientes = clientes_do_usuario(db, usuario)
@@ -1188,7 +1185,7 @@ async def cancelar_conta(
     usuario: Usuario = Depends(require_contas_pagar),
 ):
     """Wrapper de compatibilidade — equivalente a status=cancelado."""
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta:
         return RedirectResponse(url="/contas-pagar", status_code=303)
     clientes = clientes_do_usuario(db, usuario)
@@ -1305,7 +1302,7 @@ async def aplicar_lote_contas(
 async def desconciliar_conta(conta_id: int, confirmar_conciliacao: bool = Form(False), db: Session = Depends(get_db), usuario: Usuario = Depends(require_contas_pagar)):
     if usuario.perfil == PerfilUsuario.medico:
         raise erro("FLIC-AUT-002")
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id, ContaPagar.cliente_id.in_(_ids_clientes_do_usuario(db, usuario))).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if not conta:
         raise erro("FLIC-PAG-010")
     exigir_confirmacao(confirmar_conciliacao)

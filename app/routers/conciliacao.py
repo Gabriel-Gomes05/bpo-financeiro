@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -58,12 +59,8 @@ logger = logging.getLogger(__name__)
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _carregar_vendas_a_conciliar(db: Session, cliente_id: int):
@@ -441,8 +438,8 @@ async def conciliar_venda(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    venda = db.query(VendaCartao).filter(VendaCartao.id == venda_id).first()
-    at    = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
+    venda = obter_do_tenant(db, usuario, VendaCartao, venda_id)
+    at    = obter_do_tenant(db, usuario, Atendimento, atendimento_id)
 
     if (venda and at
             and venda.cliente_id in ids_ok
@@ -477,7 +474,7 @@ async def editar_venda(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    venda = db.query(VendaCartao).filter(VendaCartao.id == venda_id).first()
+    venda = obter_do_tenant(db, usuario, VendaCartao, venda_id)
     if not venda or venda.cliente_id not in ids_ok:
         return RedirectResponse(url=f"/conciliacao?cliente_id={cliente_id}", status_code=303)
 
@@ -523,7 +520,7 @@ async def reabrir_lote(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    lote = db.query(TransferenciaCartao).filter(TransferenciaCartao.id == lote_id).first()
+    lote = obter_do_tenant(db, usuario, TransferenciaCartao, lote_id)
     if not lote or lote.cliente_id not in ids_ok or lote.cliente_id != cliente_id:
         return RedirectResponse(url=f"/conciliacao?cliente_id={cliente_id}", status_code=303)
 
@@ -556,7 +553,7 @@ async def desvincular_venda(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    venda = db.query(VendaCartao).filter(VendaCartao.id == venda_id).first()
+    venda = obter_do_tenant(db, usuario, VendaCartao, venda_id)
     if venda and venda.cliente_id in ids_ok and venda.status == StatusVendaCartao.conciliado:
         at = db.query(Atendimento).filter(Atendimento.id == venda.atendimento_id).first()
         if at:
@@ -587,7 +584,7 @@ async def criar_e_conciliar_venda(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    venda = db.query(VendaCartao).filter(VendaCartao.id == venda_id).first()
+    venda = obter_do_tenant(db, usuario, VendaCartao, venda_id)
     if not venda or venda.cliente_id not in ids_ok or venda.cliente_id != cliente_id:
         return RedirectResponse(url=f"/conciliacao?cliente_id={cliente_id}", status_code=303)
 
@@ -639,7 +636,7 @@ async def cancelar_venda(
 ):
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
-    venda = db.query(VendaCartao).filter(VendaCartao.id == venda_id).first()
+    venda = obter_do_tenant(db, usuario, VendaCartao, venda_id)
     if venda and venda.cliente_id in ids_ok and venda.status == StatusVendaCartao.pendente:
         venda.status = StatusVendaCartao.cancelado
         db.commit()

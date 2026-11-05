@@ -119,7 +119,9 @@ def test_conciliado_e_outro_cliente_nao_sao_editados(dados):
     assert at.valor_servico == 100
     at.status_conciliacao = StatusConciliacao.pendente
     db.commit()
-    assert editar(dados, usuario=SimpleNamespace(id=99, perfil=PerfilUsuario.funcionario)).status_code == 303
+    with pytest.raises(HTTPException) as exc:  # outra empresa: 404, sem revelar que o registro existe
+        editar(dados, usuario=SimpleNamespace(id=99, perfil=PerfilUsuario.funcionario))
+    assert exc.value.status_code == 404
     assert at.valor_servico == 100
 
 
