@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}Tutorial — FLIC{% endblock %}
+{% block page_title %}Tutorial{% endblock %}
+
+{% block content %}
+<style>
+  .tut-hero {
+    position: relative; overflow: hidden; isolation: isolate; border-radius: 20px; padding: 28px; color: #fff;
+    background: radial-gradient(120% 140% at 0% 0%, #23387A 0%, #13214A 58%, #0E1838 100%);
+  }
+  .tut-hero::after { content: ""; position: absolute; z-index: -1; width: 360px; height: 360px; right: -110px; top: -150px; border-radius: 999px; background: radial-gradient(circle, rgba(61,123,255,.38), transparent 65%); }
+  .tut-hero .tut-simbolo { position: absolute; right: 28px; bottom: 22px; width: 92px; opacity: .14; z-index: -1; }
+  .tut-progresso { height: 8px; border-radius: 999px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .tut-progresso > span { display: block; height: 100%; width: 0; border-radius: inherit; background: #3D7BFF; transition: width .5s var(--ease); }
+  .tut-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+  @media (min-width: 1100px) { .tut-layout { grid-template-columns: 260px minmax(0, 1fr); } .tut-indice { position: sticky; top: 84px; max-height: calc(100vh - 100px); overflow-y: auto; } }
+  .tut-indice-grupo { margin-top: 14px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 4px; }
+  .tut-indice a { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px; font-size: 13px; color: var(--text-2); }
+  .tut-indice a:hover { background: var(--surface-3); color: var(--text); }
+  .tut-indice a.ativo { background: var(--brand-soft); color: var(--text); font-weight: 600; }
+  .tut-indice a svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .tut-check { margin-left: auto; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; border: 1.5px solid var(--border-strong); flex-shrink: 0; }
+  .tut-check svg { width: 11px !important; height: 11px !important; opacity: 0; color: #fff; }
+  [data-feito="true"] .tut-check { background: var(--success); border-color: var(--success); }
+  [data-feito="true"] .tut-check svg { opacity: 1; }
+  .tut-modulo { scroll-margin-top: 84px; }
+  .tut-figura { position: relative; display: block; width: 100%; overflow: hidden; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-3); cursor: zoom-in; }
+  .tut-figura img { display: block; width: 100%; height: auto; transition: transform .35s var(--ease); }
+  .tut-figura:hover img { transform: scale(1.012); }
+  .tut-figura .tut-zoom { position: absolute; right: 10px; top: 10px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; background: rgba(19,33,74,.72); backdrop-filter: blur(4px); opacity: 0; transition: opacity .2s; }
+  .tut-figura:hover .tut-zoom { opacity: 1; }
+  .tut-figura .tut-zoom svg { width: 13px; height: 13px; }
+  .tut-passos { counter-reset: passo; display: grid; gap: 12px; }
+  .tut-passo { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+  .tut-passo::before { counter-increment: passo; content: counter(passo); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--brand-text); background: var(--brand-soft); }
+  .tut-passo h4 { font-size: 14px; font-weight: 650; color: var(--text); margin-top: 4px; }
+  .tut-passo p { margin-top: 2px; font-size: 13.5px; line-height: 1.6; color: var(--text-2); }
+  .tut-dica { display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--info-soft); color: var(--info-text); font-size: 13px; line-height: 1.55; }
+  .tut-dica svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; }
+  .tut-extras { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .tut-extras figcaption { margin-top: 6px; font-size: 12px; color: var(--text-3); }
+  .tut-concluir[aria-pressed="true"] { background: var(--success-soft); color: var(--success-text); border-color: transparent; }
+  #tut-lightbox { position: fixed; inset: 0; z-index: 95; display: none; place-items: center; padding: 24px; background: rgba(8,14,32,.82); backdrop-filter: blur(4px); cursor: zoom-out; }
+  #tut-lightbox.aberto { display: grid; animation: fx-fade-in .2s var(--ease); }
+  #tut-lightbox img { max-width: min(1440px, 100%); max-height: 88vh; border-radius: 12px; box-shadow: var(--shadow-lg); animation: fx-modal-in .25s var(--ease); }
+  #tut-lightbox p { margin-top: 12px; color: #EEF2FF; font-size: 13px; text-align: center; }
+</style>
+
+{% set total = modulos|length %}
+<div class="space-y-6" data-tutorial data-chave="flic-tutorial-{{ perfil_id }}-{{ usuario.id }}" data-total="{{ total }}">
+
+  {# ───── Apresentação do treinamento do perfil #}
+  <section class="tut-hero">
+    <img src="/static/marca/flic-simbolo-negativo.svg" alt="" class="tut-simbolo">
+    <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest" style="color:#9DB9FF">
+      <i data-lucide="graduation-cap" style="width:15px;height:15px"></i> Treinamento · perfil {{ perfil.nome }}
+    </p>
+    <h2 class="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Aprenda a usar o FLIC, {{ usuario.nome.split()[0] }}</h2>
+    <p class="mt-2 max-w-2xl text-sm" style="color:rgba(238,242,255,.78)">{{ perfil.papel }} Este treinamento mostra só o que o seu perfil pode fazer — {{ total }} módulos, com as telas reais do sistema.</p>
+    <div class="mt-6 flex flex-wrap items-center gap-4">
+      <div class="min-w-[220px] flex-1 max-w-md">
+        <div class="mb-1.5 flex justify-between text-xs" style="color:rgba(238,242,255,.8)"><span>Seu progresso</span><span data-progresso-texto>0 de {{ total }} módulos</span></div>
+        <div class="tut-progresso"><span data-progresso-barra></span></div>
+      </div>
+      <a href="#" class="fx-btn" style="background:#3D7BFF;color:#fff" data-continuar><i data-lucide="play"></i><span>Começar</span></a>
+      <button type="button" class="fx-btn" style="background:rgba(255,255,255,.1);color:#EEF2FF" data-reiniciar data-sem-carregamento><i data-lucide="rotate-ccw"></i>Recomeçar</button>
+    </div>
+  </section>
+
+  <div class="tut-layout">
+    {# ───── Índice #}
+    <nav class="tut-indice fx-card p-3" aria-label="Módulos do treinamento">
+      <label class="relative block">
+        <i data-lucide="search" style="position:absolute;left:10px;top:50%;width:15px;height:15px;transform:translateY(-50%);color:var(--text-3)"></i>
+        <input type="search" placeholder="Buscar no tutorial..." data-busca-tutorial
+               class="w-full rounded-lg border px-3 py-2 pl-8 text-sm" style="border-color:var(--border-strong);background:var(--surface)">
+      </label>
+      {% for grupo, itens in grupos.items() %}
+      <p class="tut-indice-grupo">{{ grupo }}</p>
+      {% for item in itens %}
+      <a href="#{{ item.modulo.id }}" data-indice="{{ item.modulo.id }}" data-feito="false">
+        <i data-lucide="{{ item.modulo.icone }}"></i><span>{{ item.modulo.titulo }}</span>
+        <span class="tut-check"><i data-lucide="check"></i></span>
+      </a>
+      {% endfor %}
+      {% endfor %}
+    </nav>
+
+    {# ───── Módulos #}
+    <div class="min-w-0 space-y-6">
+      <section class="fx-card p-5" id="seu-menu">
+        <div class="flex items-center gap-3">
+          <span class="fx-kpi-icon fx-tone-brand"><i data-lucide="panel-left"></i></span>
+          <div>
+            <h3 class="fx-section-title">O seu menu</h3>
+            <p class="fx-section-sub">É assim que o FLIC aparece para o perfil {{ perfil.nome }}.</p>
+          </div>
+        </div>
+        <button type="button" class="tut-figura mt-4" data-ampliar="/static/tutorial/{{ perfil.imagem }}.webp" data-legenda="Tela inicial do perfil {{ perfil.nome }}" data-sem-carregamento>
+          <img src="/static/tutorial/{{ perfil.imagem }}.webp" alt="Tela inicial do perfil {{ perfil.nome }}" loading="lazy" width="1440" height="900">
+          <span class="tut-zoom"><i data-lucide="zoom-in"></i>Ampliar</span>
+        </button>
+      </section>
+
+      {% for item in modulos %}
+      {% set m = item.modulo %}
+      <article class="tut-modulo fx-card p-5 sm:p-6" id="{{ m.id }}" data-modulo="{{ m.id }}"
+               data-texto="{{ (m.titulo ~ ' ' ~ m.resumo ~ ' ' ~ (item.passos|map(attribute='titulo')|join(' ')) ~ ' ' ~ (item.passos|map(attribute='texto')|join(' ')))|lower }}">
+        <header class="flex flex-wrap items-start gap-3">
+          <span class="fx-kpi-icon fx-tone-brand" style="width:38px;height:38px;border-radius:11px"><i data-lucide="{{ m.icone }}"></i></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3)">Módulo {{ loop.index }} de {{ total }} · {{ m.grupo }}</p>
+            <h3 class="mt-0.5 text-lg font-semibold tracking-tight" style="color:var(--text)">{{ m.titulo }}</h3>
+            <p class="mt-1 text-sm" style="color:var(--text-2)">{{ m.resumo }}</p>
+          </div>
+        </header>
+
+        {% if item.imagem %}
+        <button type="button" class="tut-figura mt-5" data-ampliar="/static/tutorial/{{ item.imagem }}.webp" data-legenda="{{ m.titulo }}" data-sem-carregamento>
+          <img src="/static/tutorial/{{ item.imagem }}.webp" alt="Tela: {{ m.titulo }}" loading="lazy" width="1440" height="900">
+          <span class="tut-zoom"><i data-lucide="zoom-in"></i>Ampliar</span>
+        </button>
+        {% endif %}
+
+        {% if item.passos %}
+        <h4 class="mt-6 text-sm font-semibold" style="color:var(--text)">Passo a passo</h4>
+        <ol class="tut-passos mt-3">
+          {% for p in item.passos %}
+          <li class="tut-passo"><div><h4>{{ p.titulo }}</h4><p>{{ p.texto }}</p></div></li>
+          {% endfor %}
+        </ol>
+        {% endif %}
+
+        {% for dica in m.dicas %}
+        <div class="tut-dica mt-5"><i data-lucide="lightbulb"></i><span>{{ dica }}</span></div>
+        {% endfor %}
+
+        {% if item.extras %}
+        <div class="tut-extras mt-5">
+          {% for arquivo, legenda in item.extras %}
+          <figure>
+            <button type="button" class="tut-figura" data-ampliar="/static/tutorial/{{ arquivo }}.webp" data-legenda="{{ legenda }}" data-sem-carregamento>
+              <img src="/static/tutorial/{{ arquivo }}.webp" alt="{{ legenda }}" loading="lazy" width="1440" height="900">
+            </button>
+            <figcaption>{{ legenda }}</figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <footer class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4" style="border-color:var(--border)">
+          <button type="button" class="fx-btn fx-btn-secondary tut-concluir" data-concluir="{{ m.id }}" aria-pressed="false" data-sem-carregamento>
+            <i data-lucide="circle-check"></i><span>Marcar como concluído</span>
+          </button>
+          {% if not loop.last %}
+          <a href="#{{ modulos[loop.index].modulo.id }}" class="fx-btn fx-btn-ghost">Próximo: {{ modulos[loop.index].modulo.titulo }} <i data-lucide="arrow-right"></i></a>
+          {% else %}
+          <span class="text-sm font-medium" style="color:var(--success-text)">Último módulo — parabéns por chegar até aqui!</span>
+          {% endif %}
+        </footer>
+      </article>
+      {% endfor %}
+      <p class="fx-empty hidden" data-busca-vazia>Nada encontrado no tutorial.</p>
+    </div>
+  </div>
+</div>
+
+<div id="tut-lightbox" role="dialog" aria-modal="true" aria-label="Imagem ampliada">
+  <div><img alt=""><p></p></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+  const raiz = document.querySelector('[data-tutorial]');
+  const chave = raiz.dataset.chave;
+  const total = Number(raiz.dataset.total);
+  const ler = () => { try { return new Set(JSON.parse(localStorage.getItem(chave) || '[]')); } catch (_) { return new Set(); } };
+  const gravar = s => { try { localStorage.setItem(chave, JSON.stringify([...s])); } catch (_) {} };
+  const ordem = [...document.querySelectorAll('[data-modulo]')].map(el => el.dataset.modulo);
+
+  function atualizar() {
+    const feitos = ler();
+    document.querySelectorAll('[data-indice]').forEach(a => { a.dataset.feito = String(feitos.has(a.dataset.indice)); });
+    document.querySelectorAll('[data-concluir]').forEach(b => {
+      const ok = feitos.has(b.dataset.concluir);
+      b.setAttribute('aria-pressed', String(ok));
+      b.querySelector('span').textContent = ok ? 'Concluído' : 'Marcar como concluído';
+    });
+    const n = ordem.filter(id => feitos.has(id)).length;
+    document.querySelector('[data-progresso-texto]').textContent = `${n} de ${total} módulos`;
+    document.querySelector('[data-progresso-barra]').style.width = `${total ? Math.round(n * 100 / total) : 0}%`;
+    const proximo = ordem.find(id => !feitos.has(id));
+    const continuar = document.querySelector('[data-continuar]');
+    continuar.href = '#' + (proximo || ordem[0] || 'seu-menu');
+    continuar.querySelector('span').textContent = n === 0 ? 'Começar' : (proximo ? 'Continuar de onde parei' : 'Revisar do início');
+  }
+
+  document.addEventListener('click', e => {
+    const botao = e.target.closest('[data-concluir]');
+    if (botao) {
+      const feitos = ler(); const id = botao.dataset.concluir;
+      if (feitos.has(id)) feitos.delete(id); else {
+        feitos.add(id);
+        if (window.FLIC) FLIC.toast(feitos.size === total ? 'Você concluiu todo o treinamento. 🎉' : 'Módulo concluído.', 'sucesso');
+      }
+      gravar(feitos); atualizar();
+    }
+    if (e.target.closest('[data-reiniciar]')) { gravar(new Set()); atualizar(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  });
+
+  // destaca no índice o módulo que está na tela
+  const links = new Map([...document.querySelectorAll('[data-indice]')].map(a => [a.dataset.indice, a]));
+  const obs = new IntersectionObserver(entradas => {
+    entradas.forEach(en => { if (en.isIntersecting) { links.forEach(a => a.classList.remove('ativo')); links.get(en.target.dataset.modulo)?.classList.add('ativo'); } });
+  }, { rootMargin: '-35% 0px -60% 0px' });
+  document.querySelectorAll('[data-modulo]').forEach(el => obs.observe(el));
+
+  // busca
+  const norm = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  document.querySelector('[data-busca-tutorial]').addEventListener('input', ev => {
+    const q = norm(ev.target.value.trim()); let n = 0;
+    document.querySelectorAll('[data-modulo]').forEach(el => {
+      const ok = !q || norm(el.dataset.texto).includes(q);
+      el.hidden = !ok; if (ok) n++;
+      const link = links.get(el.dataset.modulo); if (link) link.style.display = ok ? '' : 'none';
+    });
+    document.querySelector('[data-busca-vazia]').classList.toggle('hidden', n > 0);
+  });
+
+  // ampliar imagens
+  const caixa = document.getElementById('tut-lightbox');
+  document.addEventListener('click', e => {
+    const fig = e.target.closest('[data-ampliar]');
+    if (fig) {
+      caixa.querySelector('img').src = fig.dataset.ampliar;
+      caixa.querySelector('img').alt = fig.dataset.legenda || '';
+      caixa.querySelector('p').textContent = fig.dataset.legenda || '';
+      caixa.classList.add('aberto');
+    } else if (e.target.closest('#tut-lightbox')) caixa.classList.remove('aberto');
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') caixa.classList.remove('aberto'); });
+
+  atualizar();
+})();
+</script>
+{% endblock %}

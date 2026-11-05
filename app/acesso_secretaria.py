@@ -24,6 +24,7 @@ ROTAS_LIBERADAS = (
     (frozenset({"POST"}), re.compile(r"/lancamentos")),
     (_LEITURA | {"POST"}, re.compile(r"/lancamentos/\d+/editar")),
     (_LEITURA, re.compile(r"/ajuda/erros")),
+    (_LEITURA, re.compile(r"/tutorial")),
 )
 PAGINAS_INICIAIS = {"/", "/inicio", "/painel"}
 PAGINA_INICIAL_SECRETARIA = "/lancamentos"

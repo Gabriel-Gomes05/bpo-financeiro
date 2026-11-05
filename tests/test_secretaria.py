@@ -253,7 +253,7 @@ def test_toda_rota_do_sistema_fora_da_lista_e_negada():
     assert liberadas == {
         ("GET", "/lancamentos"), ("GET", "/lancamentos/novo"), ("POST", "/lancamentos"),
         ("GET", "/lancamentos/{at_id}/editar"), ("POST", "/lancamentos/{at_id}/editar"),
-        ("GET", "/ajuda/erros"),
+        ("GET", "/ajuda/erros"), ("GET", "/tutorial"),
     }
 
 
@@ -312,7 +312,7 @@ def test_menu_da_secretaria_so_tem_contas_a_receber(db):
     html = chamar(lancamentos.listar_lancamentos, request=req, db=db, usuario=u(db, MARIA)).body.decode()
     menu = html.split('<nav', 1)[1].split('</nav>', 1)[0]
     links = set(re.findall(r'href="([^"]+)"', menu))
-    assert links == {"/lancamentos/novo", "/lancamentos"}
+    assert links == {"/lancamentos/novo", "/lancamentos", "/tutorial"}
     assert "Empresa ABC" in menu
     assert "/excluir" not in html and "form-lote" not in html and "/importacoes" not in html
 

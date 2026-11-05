@@ -43,6 +43,7 @@ from app.routers import (
     procedimentos,
     secretarias,
     tarefas,
+    tutorial,
 )
 from app.security import MaxBodySizeMiddleware, SecurityMiddleware
 
@@ -125,6 +126,7 @@ app.include_router(procedimentos.router)
 app.include_router(importacoes.router)
 app.include_router(tarefas.router)
 app.include_router(ajuda.router)
+app.include_router(tutorial.router)
 
 
 @app.get("/health", include_in_schema=False)
