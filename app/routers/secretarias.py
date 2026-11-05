@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.acesso_objetos import consulta_empresas_permitidas
 from app.auth import hash_senha, normalizar_email, validar_senha_nova, ve_todos_os_clientes
 from app.authorization import Permission, require_permission
 from app.database import get_db
@@ -17,11 +18,8 @@ require_secretarias = require_permission(Permission.SECRETARIAS)
 
 
 def _meus_clientes(db: Session, usuario: Usuario):
-    """Clientes ativos que o usuário enxerga: todos (coordenador) ou os designados a ele (editor)."""
-    query = db.query(ClienteBPO).filter(ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None))
-    if not ve_todos_os_clientes(usuario):
-        query = query.filter(ClienteBPO.funcionario_id == usuario.id)
-    return query
+    """Clientes ativos que o usuário enxerga (regra central em app.acesso_objetos)."""
+    return consulta_empresas_permitidas(db, usuario)
 
 
 def _clientes_ativos(db: Session, usuario: Usuario):

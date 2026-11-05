@@ -54,10 +54,8 @@ def normalizar_link(valor: Optional[str]) -> Optional[str]:
 
 
 def clientes_permitidos(db: Session, usuario: Usuario) -> list[ClienteBPO]:
-    query = db.query(ClienteBPO).filter(ClienteBPO.ativo.is_(True), ClienteBPO.deleted_at.is_(None))
-    if not ve_todos_os_clientes(usuario):
-        query = query.filter(ClienteBPO.funcionario_id == usuario.id)
-    return query.order_by(ClienteBPO.nome).all()
+    from app.acesso_objetos import empresas_permitidas
+    return empresas_permitidas(db, usuario)
 
 
 def tarefas_visiveis(db: Session, usuario: Usuario):

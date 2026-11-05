@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app.acesso_objetos import empresas_permitidas, ids_empresas_permitidas, obter_do_tenant
 from app.jinja import templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -171,6 +172,14 @@ def _aplicar_regra_existentes(db: Session, cliente_id: int, regra_id: int, usuar
     )
 
 
+def _regra_do_tenant(db: Session, usuario: Usuario, regra_id: int, cliente_id: int) -> RegraNegocioBancaria:
+    """Regra ativa da empresa do formulário; de outra empresa, inativa ou inexistente → 404."""
+    regra = obter_do_tenant(db, usuario, RegraNegocioBancaria, regra_id, cliente_id=cliente_id)
+    if not regra.ativo:
+        raise erro("FLIC-GER-404")
+    return regra
+
+
 @router.post("/conciliacao/banco/regras/{regra_id}/criar-lancamento")
 async def alternar_criacao_lancamento(
     regra_id: int, cliente_id: int = Form(...), db: Session = Depends(get_banco_db),
@@ -179,8 +188,8 @@ async def alternar_criacao_lancamento(
     """Liga/desliga a criação automática do lançamento quando a regra não encontra correspondente."""
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    regra = next(iter(regras_svc.regras_ativas(db, cliente_id, [regra_id])), None)
-    if not regra or regra.acao == "transferencia":
+    regra = _regra_do_tenant(db, usuario, regra_id, cliente_id)
+    if regra.acao == "transferencia":
         raise erro("FLIC-CON-019")
     regra.criar_lancamento = not regra.criar_lancamento
     db.commit()
@@ -194,8 +203,7 @@ async def aplicar_regra_existentes(
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    if not regras_svc.regras_ativas(db, cliente_id, [regra_id]):
-        raise erro("FLIC-CON-019")
+    _regra_do_tenant(db, usuario, regra_id, cliente_id)
     return _aplicar_regra_existentes(db, cliente_id, regra_id, usuario.id, usuario.nome)
 
 
@@ -206,12 +214,9 @@ async def excluir_regra_bancaria(
 ):
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    regra = db.query(RegraNegocioBancaria).filter(
-        RegraNegocioBancaria.id == regra_id, RegraNegocioBancaria.cliente_id == cliente_id,
-    ).first()
-    if regra:
-        regra.ativo = False
-        db.commit()
+    regra = _regra_do_tenant(db, usuario, regra_id, cliente_id)
+    regra.ativo = False
+    db.commit()
     return RedirectResponse(f"/conciliacao/banco?cliente_id={cliente_id}#regras-bancarias", 303)
 
 
@@ -343,14 +348,8 @@ def _montar_rateios_banco(db: Session, cliente_id: int, valor_total: Decimal, ra
 
 
 def clientes_do_usuario(db: Session, usuario: Usuario):
-    if ve_todos_os_clientes(usuario):
-        return db.query(ClienteBPO).filter(ClienteBPO.ativo == True).all()
-    return db.query(ClienteBPO).filter(
-        ClienteBPO.funcionario_id == usuario.id,
-        ClienteBPO.ativo == True,
-    ).all()
-
-
+    """Empresas que o usuário pode operar (regra central em app.acesso_objetos)."""
+    return empresas_permitidas(db, usuario)
 
 
 def _carregar_movimentacoes(db: Session, cliente_id: int):
@@ -1160,7 +1159,7 @@ async def criar_pagamento_parcial_banco(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     autorizado = (
         conta
         and conta.cliente_id == cliente_id
@@ -1333,8 +1332,8 @@ async def conciliar_movimentacao(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
-    at = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
+    at = obter_do_tenant(db, usuario, Atendimento, atendimento_id)
 
     if (mov and at
             and mov.cliente_id in ids_permitidos
@@ -1356,9 +1355,7 @@ async def conciliar_movimentacao_selecionados(
     destino = f"/conciliacao/banco?cliente_id={cliente_id}"
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    mov = db.query(MovimentacaoBancaria).filter(
-        MovimentacaoBancaria.id == mov_id, MovimentacaoBancaria.cliente_id == cliente_id,
-    ).with_for_update().first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id, cliente_id=cliente_id, para_atualizar=True)
     ids = list(dict.fromkeys(atendimento_ids))
     lancamentos = db.query(Atendimento).filter(
         Atendimento.id.in_(ids), Atendimento.cliente_id == cliente_id,
@@ -1392,9 +1389,7 @@ async def conciliar_saida_selecionadas(
     destino = f"/conciliacao/banco?cliente_id={cliente_id}"
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    mov = db.query(MovimentacaoBancaria).filter(
-        MovimentacaoBancaria.id == mov_id, MovimentacaoBancaria.cliente_id == cliente_id,
-    ).with_for_update().first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id, cliente_id=cliente_id, para_atualizar=True)
     ids = list(dict.fromkeys(conta_ids))
     contas = db.query(ContaPagar).filter(
         ContaPagar.id.in_(ids), ContaPagar.cliente_id == cliente_id,
@@ -1442,9 +1437,7 @@ async def conciliar_lancamento_movimentos(
     destino = f"/conciliacao/banco?cliente_id={cliente_id}"
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    at = db.query(Atendimento).filter(
-        Atendimento.id == at_id, Atendimento.cliente_id == cliente_id,
-    ).with_for_update().first()
+    at = obter_do_tenant(db, usuario, Atendimento, at_id, cliente_id=cliente_id, para_atualizar=True)
     movs = _movimentos_selecionados(db, cliente_id, mov_ids)
     if not at or not movs:
         return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
@@ -1479,9 +1472,7 @@ async def conciliar_conta_movimentos(
     destino = f"/conciliacao/banco?cliente_id={cliente_id}"
     if cliente_id not in [c.id for c in clientes_do_usuario(db, usuario)]:
         raise erro("FLIC-AUT-004")
-    conta = db.query(ContaPagar).filter(
-        ContaPagar.id == conta_id, ContaPagar.cliente_id == cliente_id,
-    ).with_for_update().first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id, cliente_id=cliente_id, para_atualizar=True)
     movs = _movimentos_selecionados(db, cliente_id, mov_ids)
     if not conta or not movs:
         return RedirectResponse(f"{destino}&erro=agrupado_soma", status_code=303)
@@ -1517,7 +1508,7 @@ async def revisar_movimentacao(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if mov and mov.cliente_id in ids_permitidos:
         mov.status = StatusMovimentacaoBancaria.revisada
         db.commit()
@@ -1533,7 +1524,7 @@ async def arquivar_movimentacao(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if mov and mov.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         mov.arquivado_conciliacao_banco = True
         db.commit()
@@ -1551,7 +1542,7 @@ async def restaurar_movimentacao(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if mov and mov.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         mov.arquivado_conciliacao_banco = False
         db.commit()
@@ -1566,7 +1557,7 @@ async def arquivar_lancamento_sistema(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    atendimento = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
+    atendimento = obter_do_tenant(db, usuario, Atendimento, atendimento_id)
     if atendimento and atendimento.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         atendimento.arquivado_conciliacao_banco = True
         db.commit()
@@ -1584,7 +1575,7 @@ async def restaurar_lancamento_sistema(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    atendimento = db.query(Atendimento).filter(Atendimento.id == atendimento_id).first()
+    atendimento = obter_do_tenant(db, usuario, Atendimento, atendimento_id)
     if atendimento and atendimento.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         atendimento.arquivado_conciliacao_banco = False
         db.commit()
@@ -1599,7 +1590,7 @@ async def arquivar_conta_sistema(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if conta and conta.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         conta.arquivado_conciliacao_banco = True
         db.commit()
@@ -1617,7 +1608,7 @@ async def restaurar_conta_sistema(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
     if conta and conta.cliente_id == cliente_id and cliente_id in [c.id for c in clientes]:
         conta.arquivado_conciliacao_banco = False
         db.commit()
@@ -1634,7 +1625,7 @@ async def desvincular_movimentacao_pix(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if not mov or mov.cliente_id not in ids_ok or mov.cliente_id != cliente_id:
         return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}#movimentacoes", status_code=303)
 
@@ -1662,7 +1653,7 @@ async def criar_e_conciliar(
     clientes = clientes_do_usuario(db, usuario)
     ids_permitidos = [c.id for c in clientes]
 
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
     if not mov or mov.cliente_id not in ids_permitidos or mov.cliente_id != cliente_id:
         return RedirectResponse(url=f"/conciliacao/banco?cliente_id={cliente_id}", status_code=303)
 
@@ -1762,8 +1753,8 @@ async def conciliar_lote_com_banco(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    lote = db.query(TransferenciaCartao).filter(TransferenciaCartao.id == lote_id).first()
-    mov  = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    lote = obter_do_tenant(db, usuario, TransferenciaCartao, lote_id)
+    mov  = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
 
     if (lote and mov
             and lote.cliente_id in ids_ok
@@ -1799,7 +1790,7 @@ async def desvincular_lote(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    lote = db.query(TransferenciaCartao).filter(TransferenciaCartao.id == lote_id).first()
+    lote = obter_do_tenant(db, usuario, TransferenciaCartao, lote_id)
 
     if lote and lote.cliente_id in [c.id for c in clientes]:
         mov = db.query(MovimentacaoBancaria).filter(
@@ -1829,8 +1820,8 @@ async def conciliar_saida_com_conta(
     clientes = clientes_do_usuario(db, usuario)
     ids_ok = [c.id for c in clientes]
 
-    mov   = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    mov   = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
+    conta = obter_do_tenant(db, usuario, ContaPagar, conta_id)
 
     if (mov and conta
             and mov.cliente_id in ids_ok
@@ -1855,7 +1846,7 @@ async def desvincular_saida(
     usuario: Usuario = Depends(require_conciliacao),
 ):
     clientes = clientes_do_usuario(db, usuario)
-    mov = db.query(MovimentacaoBancaria).filter(MovimentacaoBancaria.id == mov_id).first()
+    mov = obter_do_tenant(db, usuario, MovimentacaoBancaria, mov_id)
 
     if mov and mov.cliente_id in [c.id for c in clientes]:
         desfazer_movimento_pagamento(db, mov)  # todas as contas que o débito pagou

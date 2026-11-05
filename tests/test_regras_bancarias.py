@@ -285,7 +285,7 @@ def test_reaplicar_regra_de_outro_cliente_e_negado(db):
     regra = db.query(RegraNegocioBancaria).one()
     with pytest.raises(ErroFlic) as exc:
         chamar(conciliacao_banco.aplicar_regra_existentes, regra_id=regra.id, cliente_id=B, db=db, usuario=db.get(Usuario, 1))
-    assert exc.value.codigo == "FLIC-CON-019"
+    assert (exc.value.codigo, exc.value.status_code) == ("FLIC-GER-404", 404)
 
 
 # 10 ----------------------------------------------------------------- execução repetida
